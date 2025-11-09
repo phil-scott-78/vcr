@@ -51,7 +51,7 @@ public class PlaywrightBrowser : IDisposable
             // Browsers not installed - install them
             progress?.Invoke("Playwright browsers not found. Installing Chromium (this may take 30-60 seconds)...");
 
-            var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium"]);
+            var exitCode = Microsoft.Playwright.Program.Main(["install", "chromium", "--no-shell"]);
 
             if (exitCode != 0)
             {
@@ -82,6 +82,7 @@ public class PlaywrightBrowser : IDisposable
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = headless,
+            Channel = "chromium",
             SlowMo = slowMo,
             Args =
             [

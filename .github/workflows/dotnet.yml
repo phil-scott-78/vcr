@@ -29,7 +29,7 @@ jobs:
       run: dotnet build -c Debug
 
     - name: Install Playwright Browsers
-      run: pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net9.0/playwright.ps1 install --with-deps
+      run: pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net9.0/playwright.ps1 install chromium --no-shell
 
     - name: Test (Debug)
       run: dotnet test -c Debug --no-build
@@ -38,6 +38,5 @@ jobs:
       if: startsWith(github.event.ref, 'refs/tags/')
       run: |
         dotnet build
-        pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net9.0/playwright.ps1 install --with-deps
         dotnet tool install --global dotnet-releaser
-        dotnet-releaser run --nuget-token ${{secrets.NUGET_TOKEN}} --github-token ${{secrets.GITHUB_TOKEN}} src/VcrSharp.Cli/dotnet-releaser.toml
+        dotnet-releaser run --nuget-token ${{secrets.NUGET_TOKEN}} --github-token ${{secrets.GITHUB_TOKEN}} dotnet-releaser.toml

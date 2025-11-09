@@ -25,11 +25,19 @@ jobs:
       with:
         global-json-file: global.json
 
-    - name: Build and Test (Debug)
-      run: dotnet test -c Debug
+    - name: Build
+      run: dotnet build -c Debug
+
+    - name: Install Playwright Browsers
+      run: pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net9.0/playwright.ps1 install --with-deps
+
+    - name: Test (Debug)
+      run: dotnet test -c Debug --no-build
 
     - name: Build, Tests, Cover, Pack and Publish (on push tag)
       if: startsWith(github.event.ref, 'refs/tags/')
       run: |
+        dotnet build
+        pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net9.0/playwright.ps1 install --with-deps
         dotnet tool install --global dotnet-releaser
         dotnet-releaser run --nuget-token ${{secrets.NUGET_TOKEN}} --github-token ${{secrets.GITHUB_TOKEN}} src/VcrSharp.Cli/dotnet-releaser.toml

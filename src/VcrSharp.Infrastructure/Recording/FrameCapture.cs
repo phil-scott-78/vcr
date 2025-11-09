@@ -1,0 +1,225 @@
+using System;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
+using VcrSharp.Core.Recording;
+using VcrSharp.Core.Session;
+using VcrSharp.Infrastructure.Playwright;
+
+namespace VcrSharp.Infrastructure.Recording;
+
+/// <summary>
+/// Manages frame capture during terminal recording sessions.
+/// Implements a high-precision async timer loop to capture frames at the configured framerate.
+/// Uses background I/O queue to prevent file writes from blocking the capture loop.
+/// </summary>
+public class FrameCapture : IFrameCapture, IAsyncDisposable
+{
+    private readonly TerminalPage _terminalPage;
+    private readonly SessionOptions _options;
+    private readonly SessionState _state;
+    private readonly FrameStorage _storage;
+    private readonly FrameWriteQueue _writeQueue;
+    private Task? _captureTask;
+    private CancellationTokenSource? _cancellationTokenSource;
+
+    /// <summary>
+    /// Gets whether the capture loop is currently running.
+    /// </summary>
+    public bool IsRunning => _captureTask is { IsCompleted: false };
+
+    /// <summary>
+    /// Gets the stopwatch used for frame timing.
+    /// </summary>
+    public Stopwatch Stopwatch { get; }
+
+    /// <summary>
+    /// Gets the timestamp when frame capture actually stopped.
+    /// This represents the time of the last captured frame.
+    /// </summary>
+    public TimeSpan ActualStopTime { get; private set; }
+
+    /// <summary>
+    /// Initializes a new instance of FrameCapture.
+    /// </summary>
+    /// <param name="terminalPage">The terminal page to capture frames from</param>
+    /// <param name="options">Session options containing framerate settings</param>
+    /// <param name="state">Session state for tracking capture status</param>
+    /// <param name="storage">Frame storage manager</param>
+    public FrameCapture(
+        TerminalPage terminalPage,
+        SessionOptions options,
+        SessionState state,
+        FrameStorage storage)
+    {
+        _terminalPage = terminalPage ?? throw new ArgumentNullException(nameof(terminalPage));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
+        _state = state ?? throw new ArgumentNullException(nameof(state));
+        _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+        Stopwatch = new Stopwatch();
+        _writeQueue = new FrameWriteQueue();
+    }
+
+    /// <summary>
+    /// Starts the frame capture loop.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the capture loop</param>
+    /// <returns>Task that completes when capture loop stops</returns>
+    public Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        if (IsRunning)
+            throw new InvalidOperationException("Capture is already running");
+
+        _cancellationTokenSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Stopwatch.Restart();
+        _state.FramesCaptured = 0;
+
+        _captureTask = CaptureLoopAsync(_cancellationTokenSource.Token);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Stops the frame capture loop and flushes all queued frames to disk.
+    /// </summary>
+    /// <returns>Task that completes when capture loop has stopped and all frames are written</returns>
+    public async Task StopAsync()
+    {
+        if (!IsRunning)
+            return;
+
+        if (_cancellationTokenSource != null)
+        {
+            await _cancellationTokenSource.CancelAsync();
+        }
+
+        if (_captureTask != null)
+        {
+            try
+            {
+                await _captureTask;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when cancelling
+            }
+        }
+
+        // Record the actual time when capture stopped (before stopping the stopwatch)
+        ActualStopTime = Stopwatch.Elapsed;
+
+        Stopwatch.Stop();
+        _state.ElapsedTime = Stopwatch.Elapsed;
+
+        // Flush all queued frames to disk before returning
+        await _writeQueue.CompleteAsync();
+    }
+
+    /// <summary>
+    /// Captures a single frame immediately and returns the frame number.
+    /// Captures text and cursor layers separately and queues them for background writing.
+    /// </summary>
+    /// <returns>The frame number that was captured</returns>
+    public async Task<int> CaptureFrameAsync()
+    {
+        var frameNumber = _state.FramesCaptured + 1;
+        var timestamp = Stopwatch.Elapsed;
+
+        // Capture both layers (VHS approach - defer compositing to FFmpeg)
+        var (textBytes, cursorBytes) = await _terminalPage.CaptureLayersAsync();
+
+        // Get file paths for both layers
+        var textPath = _storage.GetFrameLayerPath(frameNumber, "text");
+        var cursorPath = _storage.GetFrameLayerPath(frameNumber, "cursor");
+
+        // Enqueue for background writing (non-blocking)
+        await _writeQueue.EnqueueAsync(textPath, textBytes);
+        await _writeQueue.EnqueueAsync(cursorPath, cursorBytes);
+
+        // Record frame metadata with timestamp
+        var metadata = new FrameMetadata
+        {
+            FrameNumber = frameNumber,
+            Timestamp = timestamp,
+            IsVisible = _state.IsCapturing
+        };
+        _storage.RecordFrameMetadata(metadata);
+
+        _state.FramesCaptured = frameNumber;
+        return frameNumber;
+    }
+
+    /// <summary>
+    /// Main capture loop that runs at the configured framerate.
+    /// </summary>
+    /// <param name="cancellationToken">Token to cancel the loop</param>
+    private async Task CaptureLoopAsync(CancellationToken cancellationToken)
+    {
+        // Calculate frame interval based on framerate
+        var frameInterval = TimeSpan.FromSeconds(1.0 / _options.Framerate);
+        var nextFrameTime = Stopwatch.Elapsed;
+
+        while (!cancellationToken.IsCancellationRequested && !_state.IsCancelled)
+        {
+            try
+            {
+                // Capture frame if recording is active (not hidden)
+                if (_state.IsCapturing)
+                {
+                    await CaptureFrameAsync();
+                }
+
+                // Update elapsed time
+                _state.ElapsedTime = Stopwatch.Elapsed;
+
+                // Calculate next frame time
+                nextFrameTime += frameInterval;
+
+                // Wait until next frame time (with drift compensation)
+                var now = Stopwatch.Elapsed;
+                var delay = nextFrameTime - now;
+
+                if (delay > TimeSpan.Zero)
+                {
+                    await Task.Delay(delay, cancellationToken);
+                }
+                else
+                {
+                    // We're falling behind, skip the delay but maintain schedule
+                    nextFrameTime = now;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected when cancelling
+                break;
+            }
+            catch (Exception)
+            {
+                // Log error but continue capturing
+                // In production, this should use proper logging
+            }
+        }
+    }
+
+    /// <summary>
+    /// Captures a screenshot to a specific file path (for Screenshot command).
+    /// </summary>
+    /// <param name="path">The file path to save the screenshot</param>
+    /// <returns>Task that completes when screenshot is saved</returns>
+    public async Task CaptureScreenshotAsync(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("Path cannot be empty", nameof(path));
+
+        await _terminalPage.ScreenshotAsync(path);
+    }
+
+    /// <summary>
+    /// Disposes resources and ensures all queued frames are written.
+    /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        await _writeQueue.DisposeAsync();
+        GC.SuppressFinalize(this);
+    }
+}

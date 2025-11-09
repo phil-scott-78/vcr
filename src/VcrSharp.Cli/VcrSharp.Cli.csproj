@@ -1,0 +1,53 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+
+    <!-- Disable trimming for this assembly - Spectre.Console.Cli is not trim-compatible -->
+    <IsTrimmable>false</IsTrimmable>
+
+    <!-- Suppress NU5111 warnings from Playwright package scripts -->
+    <NoWarn>$(NoWarn);NU5111</NoWarn>
+
+    <!-- NuGet Package Configuration -->
+    <PackageId>vcr</PackageId>
+    <Authors>Phil Scott</Authors>
+    <Description>A .NET terminal recorder that turns .tape files into GIFs and videos. Write your terminal demos as code, then render them to video.</Description>
+    <PackageProjectUrl>https://github.com/phil-scott-78/vcr</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/phil-scott-78/vcr</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>terminal;recording;gif;video;vhs;automation;cli;screencast;demo</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RollForward>Major</RollForward>
+
+    <!-- Dotnet Tool Configuration -->
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>vcr</ToolCommandName>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <ProjectReference Include="..\VcrSharp.Core\VcrSharp.Core.csproj" />
+    <ProjectReference Include="..\VcrSharp.Infrastructure\VcrSharp.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Serilog" Version="4.3.0" />
+    <PackageReference Include="Spectre.Console" Version="0.53.0" />
+    <PackageReference Include="Spectre.Console.Cli" Version="0.53.0" />
+    <PackageReference Include="Errata" Version="0.14.0" />
+    <PackageReference Include="minver" Version="6.0.0">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>

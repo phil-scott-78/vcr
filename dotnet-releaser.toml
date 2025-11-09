@@ -1,0 +1,36 @@
+# configuration file for dotnet-releaser
+profile = "custom"
+
+[msbuild]
+project = "VcrSharp.sln"
+build_debug = true
+
+[msbuild.properties]
+DotNetReleaser = "true"
+verbosity="d"
+
+[test]
+run_tests_for_debug = true
+
+[nuget]
+publish_draft = true # publish draft NuGet package per commit
+
+[github]
+user = "phil-scott-78"
+repo = "vcr"
+
+# Only build for platforms that Playwright supports
+# Playwright .NET does not support Windows ARM
+
+[[pack]]
+rid = ["win-x64"]
+kinds = ["zip"]
+
+[[pack]]
+rid = ["linux-x64"]
+kinds = ["zip", "deb"]
+
+[[pack]]
+rid = ["osx-x64"]
+kinds = ["zip"]
+

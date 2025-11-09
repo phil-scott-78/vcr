@@ -1,0 +1,35 @@
+name: .NET
+
+on:
+  push:
+    paths-ignore:
+    - 'doc/**'
+    - 'img/**'
+    - 'changelog.md'
+    - 'license.txt'
+    - 'readme.md'
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install .NET 9
+      uses: actions/setup-dotnet@v4
+      with:
+        global-json-file: global.json
+
+    - name: Build and Test (Debug)
+      run: dotnet test -c Debug
+
+    - name: Build, Tests, Cover, Pack and Publish (on push tag)
+      if: startsWith(github.event.ref, 'refs/tags/')
+      run: |
+        dotnet tool install --global dotnet-releaser
+        dotnet-releaser run --nuget-token ${{secrets.NUGET_TOKEN}} --github-token ${{secrets.GITHUB_TOKEN}} src/VcrSharp.Cli/dotnet-releaser.toml

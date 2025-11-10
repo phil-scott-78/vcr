@@ -7,6 +7,8 @@ A .NET terminal recorder that turns `.tape` files into GIFs and videos. Write yo
 
 Inspired by [VHS](https://github.com/charmbracelet/vhs) by Charm Bracelet. VcrSharp adds better Windows support and the `Exec` command for capturing real command output instead of just simulating typing.
 
+![VCR Install Demo](assets/vcr-install.gif)
+
 ## Features
 
 - Generate GIFs, MP4s, and WebM videos from tape files

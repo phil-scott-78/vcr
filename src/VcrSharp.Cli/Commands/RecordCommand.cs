@@ -176,7 +176,10 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         table.AddColumn(new TableColumn("[dim]Value[/]"));
 
         // Dimensions
-        table.AddRow("Dimensions", $"{options.Width}x{options.Height}");
+        var dimensionDisplay = options.Cols > 0 && options.Rows > 0
+            ? $"{options.Cols}x{options.Rows} (cols × rows)"
+            : $"{options.Width}x{options.Height} (pixels)";
+        table.AddRow("Dimensions", dimensionDisplay);
 
         // Font
         table.AddRow("Font", $"{options.FontFamily} {options.FontSize}px");

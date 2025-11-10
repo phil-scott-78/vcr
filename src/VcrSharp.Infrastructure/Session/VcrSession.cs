@@ -219,7 +219,7 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
         // Set theme colors
         var themeColors = new Dictionary<string, string>
         {
-            ["background"] = _options.Theme.Background,
+            ["background"] = _options.TransparentBackground ? "rgba(0,0,0,0)" : _options.Theme.Background,
             ["foreground"] = _options.Theme.Foreground,
             ["cursor"] = _options.Theme.Cursor,
             ["selectionBackground"] = _options.Theme.SelectionBackground,
@@ -252,6 +252,12 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
             ["lineHeight"] = _options.LineHeight,
             ["cursorBlink"] = _options.CursorBlink
         };
+
+        // Enable transparency if requested
+        if (_options.TransparentBackground)
+        {
+            terminalOptions["allowTransparency"] = true;
+        }
 
         await _terminalPage.ConfigureTerminalAsync(terminalOptions);
     }

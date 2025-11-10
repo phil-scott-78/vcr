@@ -122,6 +122,12 @@ public class SessionOptions
     /// </summary>
     public bool CursorBlink { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets whether the terminal background should be transparent.
+    /// When true, sets allowTransparency on xTerm.js and uses a transparent background color.
+    /// </summary>
+    public bool TransparentBackground { get; set; } = false;
+
     // Behavior
 
     /// <summary>
@@ -353,6 +359,9 @@ public class SessionOptions
                 break;
             case "cursorblink":
                 options.CursorBlink = Convert.ToBoolean(value);
+                break;
+            case "transparentbackground":
+                options.TransparentBackground = Convert.ToBoolean(value);
                 break;
 
             // Behavior

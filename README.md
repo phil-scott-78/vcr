@@ -203,13 +203,14 @@ Set Framerate 50            # Frames per second, 1-120 (default: 50)
 Set PlaybackSpeed 1.0       # Playback speed multiplier (default: 1.0)
 Set LoopOffset 0            # GIF loop offset percentage (default: 0)
 
-Set Theme "Dracula"         # Color theme (default: "Default")
-Set Padding 60              # Padding around terminal in pixels (default: 60)
-Set Margin 0                # Margin around recording in pixels (default: 0)
-Set MarginFill "#000000"    # Margin fill color or image path (default: null)
-Set WindowBarSize 30        # Window bar height in pixels (default: 30)
-Set BorderRadius 0          # Border radius in pixels (default: 0)
-Set CursorBlink true        # Enable cursor blinking (default: true)
+Set Theme "Dracula"                # Color theme (default: "Default")
+Set Padding 60                     # Padding around terminal in pixels (default: 60)
+Set Margin 0                       # Margin around recording in pixels (default: 0)
+Set MarginFill "#000000"           # Margin fill color or image path (default: null)
+Set WindowBarSize 30               # Window bar height in pixels (default: 30)
+Set BorderRadius 0                 # Border radius in pixels (default: 0)
+Set CursorBlink true               # Enable cursor blinking (default: true)
+Set TransparentBackground true     # Enable transparent terminal background (default: false)
 
 Set Shell "pwsh"            # Shell to use (default: platform-specific)
 Set TypingSpeed 150ms       # Default typing speed (default: 150ms)
@@ -423,6 +424,7 @@ Set Theme "Tokyo Night"
 | `WindowBarSize` | 30 | Window bar height (px) |
 | `BorderRadius` | 0 | Border radius (px) |
 | `CursorBlink` | true | Enable cursor blinking |
+| `TransparentBackground` | false | Enable transparent terminal background |
 
 ### Behavior & Timing
 

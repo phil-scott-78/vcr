@@ -78,6 +78,23 @@ public class SettingCommandTests
     }
 
     [Fact]
+    public void ParseTape_SetTransparentBackground_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new TapeParser();
+        var source = "Set TransparentBackground true";
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        var cmd = commands[0].ShouldBeOfType<SetCommand>();
+        cmd.SettingName.ShouldBe("TransparentBackground");
+        cmd.Value.ShouldBe("True");
+    }
+
+    [Fact]
     public void ParseTape_OutputCommand_ParsesCorrectly()
     {
         // Arrange

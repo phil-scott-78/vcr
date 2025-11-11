@@ -45,6 +45,38 @@ public class ActionCommandTests
     }
 
     [Fact]
+    public void ParseTape_TypeCommandWithEscapedQuotes_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new TapeParser();
+        var source = "Type \"This is \\\"quoted\\\"\"";
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        var cmd = commands[0].ShouldBeOfType<TypeCommand>();
+        cmd.Text.ShouldBe("This is \"quoted\"");
+    }
+
+    [Fact]
+    public void ParseTape_TypeCommandWithNewlineEscape_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new TapeParser();
+        var source = "Type \"Line 1\\nLine 2\"";
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        var cmd = commands[0].ShouldBeOfType<TypeCommand>();
+        cmd.Text.ShouldBe("Line 1\nLine 2");
+    }
+
+    [Fact]
     public void ParseTape_SleepCommand_ParsesCorrectly()
     {
         // Arrange

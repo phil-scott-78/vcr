@@ -186,7 +186,7 @@ public class SessionOptions
     /// Gets or sets the amount of time to include after the last detected activity.
     /// Recording will continue for this duration after the last buffer change.
     /// </summary>
-    public TimeSpan EndBuffer { get; set; } = TimeSpan.FromSeconds(1);
+    public TimeSpan EndBuffer { get; set; } = TimeSpan.FromSeconds(0);
 
     // Output
 

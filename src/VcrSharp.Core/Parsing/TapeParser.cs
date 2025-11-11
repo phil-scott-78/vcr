@@ -17,18 +17,42 @@ public class TapeParser
     private static readonly Parser<string> Spaces1 = SpaceChar.AtLeastOnce().Text();
 
     // String parsers with escape handling
+    // Escape sequence parser for double-quoted strings - returns string to preserve unknown escapes
+    private static readonly Parser<string> EscapeSequence =
+        from backslash in Parse.Char('\\')
+        from escaped in Parse.AnyChar
+        select escaped switch
+        {
+            'n' => "\n",     // Newline
+            't' => "\t",     // Tab
+            'r' => "\r",     // Carriage return
+            '\\' => "\\",    // Backslash
+            '"' => "\"",     // Double quote
+            _ => $"\\{escaped}"  // Unknown escape: preserve backslash for backward compatibility
+        };
+
+    // Regular character in double-quoted string (not quote, not backslash)
+    private static readonly Parser<char> DoubleQuotedRegularChar =
+        Parse.AnyChar.Except(Parse.Chars('"', '\\'));
+
+    // Content parser for double-quoted strings (with escape support)
+    private static readonly Parser<string> DoubleQuotedStringContent =
+        EscapeSequence.Or(DoubleQuotedRegularChar.Select(c => c.ToString()));
+
     private static readonly Parser<string> DoubleQuotedString =
         from open in Parse.Char('"')
-        from content in Parse.CharExcept('"').Many().Text()
+        from parts in DoubleQuotedStringContent.Many()
         from close in Parse.Char('"')
-        select content;
+        select string.Concat(parts);
 
+    // Single-quoted strings remain completely literal (no escape processing)
     private static readonly Parser<string> SingleQuotedString =
         from open in Parse.Char('\'')
         from content in Parse.CharExcept('\'').Many().Text()
         from close in Parse.Char('\'')
         select content;
 
+    // Backtick-quoted strings remain completely literal (no escape processing)
     private static readonly Parser<string> BacktickQuotedString =
         from open in Parse.Char('`')
         from content in Parse.CharExcept('`').Many().Text()

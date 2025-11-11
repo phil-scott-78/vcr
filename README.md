@@ -326,6 +326,60 @@ Delete                      # Press Delete
 Insert                      # Press Insert
 ```
 
+#### String Quoting and Escape Sequences
+
+VcrSharp supports three quote styles for string values:
+
+```tape
+Type "double quotes"        # Supports escape sequences
+Type 'single quotes'        # Completely literal (no escapes)
+Type `backticks`            # Completely literal (no escapes)
+```
+
+**Escape Sequences in Double-Quoted Strings:**
+
+Only double-quoted strings process escape sequences. Single quotes and backticks treat all characters literally.
+
+| Escape | Result | Example |
+|--------|--------|---------|
+| `\n` | Newline | `Type "Line 1\nLine 2"` |
+| `\t` | Tab | `Type "Name\tValue"` |
+| `\r` | Carriage return | `Type "Before\rAfter"` |
+| `\\` | Backslash | `Type "C:\\\\Users\\\\Name"` |
+| `\"` | Double quote | `Type "Say \"Hello\""` |
+
+**Handling Mixed Quotes:**
+
+```tape
+# Use backticks for text with both quotes and apostrophes (recommended)
+Type `This is "my story's end"`
+
+# Use double quotes with escapes
+Type "This is \"my story's end\""
+
+# Use single quotes when text contains mostly double quotes
+Type 'echo "Hello, World!"'
+
+# Use double quotes when text contains mostly apostrophes
+Type "It's a beautiful day"
+```
+
+**Unknown Escape Sequences:**
+
+Unknown escape sequences are preserved for backward compatibility. For example, `\U` in `"C:\Users"` remains as-is, making Windows paths work without modification.
+
+```tape
+# Windows paths work without escaping (unknown \U and \N preserved)
+Type "cd C:\Users\Name"
+
+# If you need literal backslashes, use single quotes or backticks
+Type 'C:\Users\Name'
+Type `C:\Users\Name`
+
+# Or use double backslashes in double quotes
+Type "C:\\\\Users\\\\Name"
+```
+
 ### Modifier Key Combinations
 
 Press key combinations with Ctrl, Alt, and Shift:

@@ -32,6 +32,22 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         /// </summary>
         [CommandOption("-v|--verbose")]
         public bool Verbose { get; set; }
+
+        /// <summary>
+        /// Gets or sets SET command overrides from command-line.
+        /// These override any SET commands in the tape file.
+        /// Format: Key=Value (e.g., --set FontSize=24 --set Theme=Dracula)
+        /// </summary>
+        [CommandOption("--set <KEY=VALUE>")]
+        [PairDeconstructor(typeof(SetCommandDeconstructor))]
+        public ILookup<string, string>? SetOverrides { get; set; }
+
+        /// <summary>
+        /// Gets or sets additional output files from command-line.
+        /// These are appended to any Output commands in the tape file.
+        /// </summary>
+        [CommandOption("-o|--output <FILE>")]
+        public string[]? OutputFiles { get; set; }
     }
 
 
@@ -72,6 +88,9 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                 AnsiConsole.MarkupLineInterpolated($"[dim]Parsing tape file:[/] {settings.TapeFile}");
                 var parser = new TapeParser();
                 var commands = await parser.ParseFileAsync(settings.TapeFile);
+
+                // Apply CLI overrides (--set and --output parameters)
+                commands = ApplyCliOverrides(commands, settings);
 
                 // Extract session options from Set commands
                 var options = SessionOptions.FromCommands(commands);
@@ -151,6 +170,74 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         {
             VcrLogger.Close();
         }
+    }
+
+    /// <summary>
+    /// Applies command-line overrides to the parsed tape file commands.
+    /// CLI SET commands override tape file SET commands.
+    /// CLI Output commands are appended to tape file Output commands.
+    /// </summary>
+    private static List<VcrSharp.Core.Parsing.Ast.ICommand> ApplyCliOverrides(List<VcrSharp.Core.Parsing.Ast.ICommand> tapeCommands, Settings settings)
+    {
+        var result = new List<VcrSharp.Core.Parsing.Ast.ICommand>(tapeCommands);
+
+        // Apply SET overrides: remove tape file SET commands that match CLI keys
+        if (settings.SetOverrides != null && settings.SetOverrides.Any())
+        {
+            var cliSetKeys = settings.SetOverrides.Select(g => g.Key.ToLowerInvariant()).ToHashSet();
+
+            // Remove SET commands from tape that are overridden by CLI
+            result.RemoveAll(cmd =>
+                cmd is SetCommand setCmd &&
+                cliSetKeys.Contains(setCmd.SettingName.ToLowerInvariant()));
+
+            // Add CLI SET commands at the beginning (before any action commands)
+            var cliSetCommands = settings.SetOverrides
+                .Select(group => new SetCommand(group.Key, group.First(), lineNumber: 0))
+                .ToList<VcrSharp.Core.Parsing.Ast.ICommand>();
+
+            // Find the insertion point (after existing SET/Output commands, before action commands)
+            var insertIndex = 0;
+            for (var i = 0; i < result.Count; i++)
+            {
+                if (result[i] is SetCommand or OutputCommand)
+                {
+                    insertIndex = i + 1;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            result.InsertRange(insertIndex, cliSetCommands);
+        }
+
+        // Append CLI Output commands
+        if (settings.OutputFiles is { Length: > 0 })
+        {
+            var cliOutputCommands = settings.OutputFiles
+                .Select(file => new OutputCommand(file))
+                .ToList<VcrSharp.Core.Parsing.Ast.ICommand>();
+
+            // Find the insertion point (after all SET/Output commands, before action commands)
+            var insertIndex = 0;
+            for (var i = 0; i < result.Count; i++)
+            {
+                if (result[i] is SetCommand or OutputCommand)
+                {
+                    insertIndex = i + 1;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            result.InsertRange(insertIndex, cliOutputCommands);
+        }
+
+        return result;
     }
 
     private static void WriteLogo()

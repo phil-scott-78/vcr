@@ -21,39 +21,31 @@ public class FrameTrimmer
     }
 
     /// <summary>
-    /// Calculates the frame range to keep based on activity timing.
+    /// Calculates the frame range to keep based on activity frame numbers.
     /// Returns the range of frame numbers to keep.
     /// </summary>
-    /// <param name="actualStopTime">The actual time when frame capture stopped (optional ceiling).</param>
     /// <returns>A tuple of (firstFrameToKeep, lastFrameToKeep), or null if no trimming needed.</returns>
-    public (int firstFrame, int lastFrame)? CalculateFrameRange(TimeSpan? actualStopTime = null)
+    public (int firstFrame, int lastFrame)? CalculateFrameRange()
     {
         // If no activity was detected, keep all frames
-        if (!_state.FirstActivityTimestamp.HasValue)
+        if (!_state.FirstActivityFrameNumber.HasValue || !_state.LastActivityFrameNumber.HasValue)
         {
             return null;
         }
 
-        // Calculate the recording window
-        var recordingStart = _state.FirstActivityTimestamp.Value - _options.StartBuffer;
-        var recordingEnd = _state.LastActivityTimestamp + _options.EndBuffer;
+        // Convert buffer durations to frame counts
+        var startBufferFrames = (int)(_options.StartBuffer.TotalSeconds * _framerate);
+        var endBufferFrames = (int)(_options.EndBuffer.TotalSeconds * _framerate);
 
-        // Ensure start is not negative
-        if (recordingStart < TimeSpan.Zero)
+        // Calculate frame range directly from activity frame numbers
+        var firstFrame = _state.FirstActivityFrameNumber.Value - startBufferFrames;
+        var lastFrame = _state.LastActivityFrameNumber.Value + endBufferFrames;
+
+        // Ensure first frame is at least 1 (frames are 1-based)
+        if (firstFrame < 1)
         {
-            recordingStart = TimeSpan.Zero;
+            firstFrame = 1;
         }
-
-        // If actualStopTime is provided, use it as a ceiling for recordingEnd
-        // This prevents keeping frames that were captured during the shutdown sequence
-        if (actualStopTime.HasValue && recordingEnd > actualStopTime.Value)
-        {
-            recordingEnd = actualStopTime.Value;
-        }
-
-        // Convert timestamps to frame numbers (1-based, since frames start at 1)
-        var firstFrame = TimeSpanToFrameNumber(recordingStart);
-        var lastFrame = TimeSpanToFrameNumber(recordingEnd);
 
         return (firstFrame, lastFrame);
     }
@@ -138,18 +130,6 @@ public class FrameTrimmer
             var finalName = Path.Combine(frameDirectory, $"frame-cursor-{i:D5}.png");
             File.Move(tempCursorFiles[i], finalName);
         }
-    }
-
-    /// <summary>
-    /// Converts a TimeSpan to a frame number based on framerate.
-    /// Frames are 1-based, so frame 1 is at time 0, frame 2 at 1/fps, etc.
-    /// </summary>
-    private int TimeSpanToFrameNumber(TimeSpan time)
-    {
-        // Calculate which frame index this timestamp corresponds to (0-based)
-        // Then add 1 since frames are numbered starting at 1
-        var frameIndex = (int)(time.TotalSeconds * _framerate);
-        return frameIndex + 1;
     }
 
     /// <summary>

@@ -6,6 +6,8 @@ Set Rows 30
 
 Set TypingSpeed 250ms
 
+Set EndBuffer 2s
+
 Type@60ms "gum file --height 28"
 Enter
 Wait /select/

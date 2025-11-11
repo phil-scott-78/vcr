@@ -17,6 +17,7 @@ public class ActivityMonitor : IDisposable
     private readonly CancellationTokenSource _cts;
     private Task? _monitorTask;
     private string _lastBufferContent = string.Empty;
+    private int _currentFrameNumber = 0;
 
     /// <summary>
     /// Creates a new activity monitor.
@@ -70,11 +71,22 @@ public class ActivityMonitor : IDisposable
     }
 
     /// <summary>
+    /// Called by FrameCapture when a frame is captured.
+    /// Updates the current frame number for activity tracking.
+    /// </summary>
+    /// <param name="frameNumber">The frame number that was just captured.</param>
+    public void NotifyFrameCaptured(int frameNumber)
+    {
+        _currentFrameNumber = frameNumber;
+    }
+
+    /// <summary>
     /// Main monitoring loop that polls the terminal buffer for changes.
     /// </summary>
     private async Task MonitorLoopAsync()
     {
-        var pollInterval = TimeSpan.FromMilliseconds(50);
+        // Poll at 20ms to match typical frame rate (50fps), reducing timing lag
+        var pollInterval = TimeSpan.FromMilliseconds(20);
 
         while (!_cts.Token.IsCancellationRequested)
         {
@@ -92,10 +104,12 @@ public class ActivityMonitor : IDisposable
                     if (!_sessionState.FirstActivityTimestamp.HasValue)
                     {
                         _sessionState.FirstActivityTimestamp = currentTimestamp;
+                        _sessionState.FirstActivityFrameNumber = _currentFrameNumber;
                     }
 
-                    // Always update last activity timestamp
+                    // Always update last activity timestamp and frame number
                     _sessionState.LastActivityTimestamp = currentTimestamp;
+                    _sessionState.LastActivityFrameNumber = _currentFrameNumber;
 
                     _lastBufferContent = currentContent;
                 }

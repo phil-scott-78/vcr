@@ -42,6 +42,17 @@ public class SessionState
     public TimeSpan LastActivityTimestamp { get; set; }
 
     /// <summary>
+    /// Frame number where first terminal buffer activity was detected.
+    /// Null if no activity has been detected yet.
+    /// </summary>
+    public int? FirstActivityFrameNumber { get; set; }
+
+    /// <summary>
+    /// Frame number where most recent terminal buffer activity was detected.
+    /// </summary>
+    public int? LastActivityFrameNumber { get; set; }
+
+    /// <summary>
     /// Persistent buffer for Wait+Buffer scope.
     /// Accumulates terminal content across Wait commands to prevent missing fast-scrolling text.
     /// When a pattern is found, the buffer is trimmed from the start up to (and including) the match.

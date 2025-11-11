@@ -118,16 +118,21 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
             // 7. Initialize CDP session for optimized frame capture
             await _terminalPage.InitializeCdpSessionAsync();
 
-            // 8. Initialize frame storage and capture
+            // 8. Initialize frame storage and frame capture
             _frameStorage = new FrameStorage();
-            _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage);
+            _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage, null);
 
-            // 9. Start activity monitor BEFORE frame capture to minimize race condition
-            // This ensures we can start detecting activity as soon as capture begins
+            // 9. Start activity monitor BEFORE frame capture starts
+            // Pass FrameCapture's stopwatch so they share the same timing reference
             _activityMonitor = new ActivityMonitor(_terminalPage, _state, _options, _frameCapture.Stopwatch);
+
+            // Now wire up the activity monitor to frame capture
+            _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage, _activityMonitor);
+
+            // 10. Start activity monitor first, then frame capture
             _activityMonitor.Start();
 
-            // 10. Start frame capture loop (stopwatch starts here)
+            // 11. Start frame capture loop (stopwatch starts here)
             await _frameCapture.StartAsync(cancellationToken);
 
             progress?.Report("Recording tape...");
@@ -151,9 +156,9 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
             // 14. Stop frame capture
             await _frameCapture.StopAsync();
 
-            // 15. Trim frames based on activity timing
+            // 15. Trim frames based on activity frame numbers
             var frameTrimmer = new FrameTrimmer(_options, _state);
-            var frameRange = frameTrimmer.CalculateFrameRange(_frameCapture.ActualStopTime);
+            var frameRange = frameTrimmer.CalculateFrameRange();
             if (frameRange.HasValue)
             {
                 progress?.Report("Trimming frames based on activity...");
@@ -378,7 +383,7 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
         string? lastContent = null;
         DateTime? lastChangeTime = null;
         var startTime = DateTime.UtcNow;
-        const int pollIntervalMs = 200; // Check every 200ms
+        const int pollIntervalMs = 50; // Check every 50ms (reduced from 200ms to minimize timing lag)
 
         VcrLogger.Logger.Debug("Waiting for terminal inactivity (timeout: {InactivityTimeout}s, max wait: {MaxWait}s)",
             inactivityTimeout.TotalSeconds, maxWaitTime.TotalSeconds);

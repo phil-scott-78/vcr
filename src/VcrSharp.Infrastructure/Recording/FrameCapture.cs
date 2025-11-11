@@ -20,6 +20,7 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
     private readonly SessionState _state;
     private readonly FrameStorage _storage;
     private readonly FrameWriteQueue _writeQueue;
+    private readonly ActivityMonitor? _activityMonitor;
     private Task? _captureTask;
     private CancellationTokenSource? _cancellationTokenSource;
 
@@ -46,16 +47,19 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
     /// <param name="options">Session options containing framerate settings</param>
     /// <param name="state">Session state for tracking capture status</param>
     /// <param name="storage">Frame storage manager</param>
+    /// <param name="activityMonitor">Activity monitor to notify of frame captures (optional)</param>
     public FrameCapture(
         TerminalPage terminalPage,
         SessionOptions options,
         SessionState state,
-        FrameStorage storage)
+        FrameStorage storage,
+        ActivityMonitor? activityMonitor = null)
     {
         _terminalPage = terminalPage ?? throw new ArgumentNullException(nameof(terminalPage));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+        _activityMonitor = activityMonitor;
         Stopwatch = new Stopwatch();
         _writeQueue = new FrameWriteQueue();
     }
@@ -145,6 +149,10 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         _storage.RecordFrameMetadata(metadata);
 
         _state.FramesCaptured = frameNumber;
+
+        // Notify activity monitor of the captured frame
+        _activityMonitor?.NotifyFrameCaptured(frameNumber);
+
         return frameNumber;
     }
 

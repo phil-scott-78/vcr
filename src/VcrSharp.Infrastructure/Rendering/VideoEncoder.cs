@@ -103,16 +103,29 @@ public class VideoEncoder
         var termWidth = _options.Width - (2 * _options.Padding);
         var termHeight = _options.Height - (2 * _options.Padding);
 
+        // Log dimensions for debugging
+        VcrSharp.Core.Logging.VcrLogger.Logger.Debug(
+            "VideoEncoder dimensions - Width: {Width}, Height: {Height}, Padding: {Padding}, termWidth: {termWidth}, termHeight: {termHeight}",
+            _options.Width, _options.Height, _options.Padding, termWidth, termHeight);
+
         var backgroundColor = _options.Theme.Background;
 
-        // Build complete filter chain matching VHS:
-        // 1. Overlay text and cursor layers
-        // 2. Scale to terminal dimensions
-        // 3. Apply FPS and playback speed control (CRITICAL for file size!)
-        // 4. Pad to final dimensions
-        // 5. Fill borders with background color
-        // 6. Generate palette and apply
-        var filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
+        // Build filter chain: handle padding=0 case differently to avoid scale+pad issues
+        string filterComplex;
+        if (_options.Padding == 0)
+        {
+            // No padding: simplified filter chain without scale/pad operations
+            // This avoids issues with force_original_aspect_ratio and unnecessary padding
+            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
+                           $"[merged]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[final];" +
+                           $"[final]split[s0][s1];" +
+                           $"[s0]palettegen=max_colors={_options.MaxColors}[p];" +
+                           $"[s1][p]paletteuse";
+        }
+        else
+        {
+            // With padding: full filter chain with scale, pad, and fillborders
+            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
                            $"[merged]scale={termWidth}:{termHeight}:force_original_aspect_ratio=1[scaled];" +
                            $"[scaled]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
                            $"[speed]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:{backgroundColor}[padded];" +
@@ -120,6 +133,7 @@ public class VideoEncoder
                            $"[final]split[s0][s1];" +
                            $"[s0]palettegen=max_colors={_options.MaxColors}[p];" +
                            $"[s1][p]paletteuse";
+        }
 
         await FFMpegArguments
             .FromFileInput(textManifest, verifyExists: true, options => options
@@ -155,19 +169,26 @@ public class VideoEncoder
 
         var backgroundColor = _options.Theme.Background;
 
-        // Build complete filter chain matching VHS:
-        // 1. Overlay text and cursor layers
-        // 2. Scale to terminal dimensions
-        // 3. Apply FPS and playback speed control
-        // 4. Ensure even dimensions for H.264 (yuv420p requires even width/height)
-        // 5. Pad to final dimensions
-        // 6. Fill borders with background color
-        var filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
+        // Build filter chain: handle padding=0 case differently to avoid scale+pad issues
+        string filterComplex;
+        if (_options.Padding == 0)
+        {
+            // No padding: simplified filter chain
+            // Ensure even dimensions for H.264 (yuv420p requires even width/height)
+            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
+                           $"[merged]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
+                           $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'";
+        }
+        else
+        {
+            // With padding: full filter chain with scale, pad, and fillborders
+            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
                            $"[merged]scale={termWidth}:{termHeight}:force_original_aspect_ratio=1[scaled];" +
                            $"[scaled]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
                            $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'[even];" +
                            $"[even]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:{backgroundColor}[padded];" +
                            $"[padded]fillborders=left={_options.Padding}:right={_options.Padding}:top={_options.Padding}:bottom={_options.Padding}:mode=fixed:color={backgroundColor}";
+        }
 
         await FFMpegArguments
             .FromFileInput(textManifest, verifyExists: true, options => options
@@ -206,19 +227,26 @@ public class VideoEncoder
 
         var backgroundColor = _options.Theme.Background;
 
-        // Build complete filter chain matching VHS:
-        // 1. Overlay text and cursor layers
-        // 2. Scale to terminal dimensions
-        // 3. Apply FPS and playback speed control
-        // 4. Ensure even dimensions for VP9
-        // 5. Pad to final dimensions
-        // 6. Fill borders with background color
-        var filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
+        // Build filter chain: handle padding=0 case differently to avoid scale+pad issues
+        string filterComplex;
+        if (_options.Padding == 0)
+        {
+            // No padding: simplified filter chain
+            // Ensure even dimensions for VP9
+            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
+                           $"[merged]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
+                           $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'";
+        }
+        else
+        {
+            // With padding: full filter chain with scale, pad, and fillborders
+            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
                            $"[merged]scale={termWidth}:{termHeight}:force_original_aspect_ratio=1[scaled];" +
                            $"[scaled]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
                            $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'[even];" +
                            $"[even]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:{backgroundColor}[padded];" +
                            $"[padded]fillborders=left={_options.Padding}:right={_options.Padding}:top={_options.Padding}:bottom={_options.Padding}:mode=fixed:color={backgroundColor}";
+        }
 
         await FFMpegArguments
             .FromFileInput(textManifest, verifyExists: true, options => options

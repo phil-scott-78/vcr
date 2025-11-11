@@ -149,101 +149,121 @@ dotnet run --project src/VcrSharp.Cli -- tutorial.tape --set FontSize=22 -o desk
 
 ## Examples
 
-### Example 1: Simple Demo
+All examples below can be found in the `samples/` directory.
+
+### Example 1: Basic Typing and Navigation (`samples/welcome.tape`)
+
+Demonstrates typing, backspace, cursor navigation, and basic editing operations:
 
 ```tape
-Output hello.gif
+Output welcome.webm
+Output welcome.gif
 
-Set FontSize 28
-Set Width 800
-Set Height 400
-
-Type "echo 'Welcome to VcrSharp!'"
-Enter
-Sleep 2s
-```
-
-### Example 2: Real Command Execution with Exec
-
-The `Exec` command executes actual commands and captures real output:
-
-```tape
-Output npm-demo.mp4
-
-Set Theme "Nord"
 Set Width 1200
-Set Height 700
+Set Height 600
+Set TypingSpeed 40ms
 
-# Show the directory contents
-Exec "ls -la"
+Type "Welcome to VCR#!"
+Sleep 0.5s
+Backspace 16
+Sleep 0.5s
+
+Type "A tool for writing GIFs as code."
+Sleep 0.5s
+Left 14
+Sleep 0.5s
+Type " terminal"
 Sleep 1s
+End
+Sleep 0.5s
+Backspace 41
+Sleep 0.5s
 
-# Install dependencies (captures real npm output)
-Exec "npm install"
-Sleep 2s
+Type 'echo "Demo your CLIs and TUIs."'
+Sleep 0.5s
+Enter
+Sleep 0.5s
 
-# Run tests
-Exec "npm test"
-Sleep 2s
-```
+Type "Let's take it for a spin"
 
-### Example 3: Advanced Timing and Wait Patterns
-
-```tape
-Output build-demo.gif
-
-Set Theme "Tokyo Night"
-
-# Type a build command
-Type "dotnet build"
+Sleep 0.5s
+Left 5
+Sleep 0.5s
+Type "gum"
+Sleep 0.5s
+Left 3
+Backspace 20
+Sleep 0.5s
+End
+Type " -s line ping google.com"
+Sleep 0.5s
 Enter
 
-# Wait for specific output pattern
-Wait /Build succeeded/
-Sleep 500ms
+Wait
+Type "clear"
 
-# Run the application
-Exec "dotnet run"
+Enter
+```
 
-# Wait for the app to be ready
-Wait+Screen /Application started/
+### Example 2: Exec Command (`samples/exec-readme.tape`)
+
+Uses the `Exec` command to run a real application and navigate with arrow keys:
+
+```tape
+Output exec-readme.webm
+
+Set FontSize 18
+Set Cols 80
+Set Rows 30
+
+Exec "glow --tui readme.md"
+Sleep 1000ms
+Down@100ms 30
 Sleep 1s
-
-# Stop with Ctrl+C
 Ctrl+C
-Sleep 1s
 ```
 
-### Example 4: Styled Demo with Modifiers
+### Example 3: Wait Patterns and Screenshots (`samples/input.tape`)
+
+Demonstrates Wait commands, arrow key navigation, and screenshot capture:
 
 ```tape
-Output styled.mp4
+Output input.webm
 
-Set Width 1400
-Set Height 800
-Set FontSize 24
-Set Theme "Gruvbox Dark"
-Set Padding 80
-Set BorderRadius 10
-Set WindowBarSize 40
+Set FontSize 12
+Set Cols 80
+Set Rows 30
 
-# Navigate and explore
-Type "cd my-project"
+Set TypingSpeed 250ms
+
+Type@60ms "gum file --height 28"
 Enter
+Wait /select/
+
+Down 9
+Sleep 250ms
+Up 3
+Down 5
 Sleep 500ms
-
-Exec "git log --oneline -5"
-Sleep 2s
-
-# Use keyboard shortcuts
-Type "vim README.md"
+Screenshot "file-picker.gif"
 Enter
-Sleep 1s
+Sleep 2000ms
+```
 
-# Exit vim
-Escape
-Type ":q"
+### Example 4: PowerShell Scripting (`samples/numbers.tape`)
+
+Shows PowerShell commands with Wait patterns:
+
+```tape
+Output numbers.gif
+
+Set Cols 80
+Set Rows 20
+
+Set TypingSpeed 10
+Type "1..100 | ForEach-Object { $_; Start-Sleep -Milliseconds 100 }"
 Enter
+Wait /50/
 ```
 
 ## Command Reference

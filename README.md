@@ -84,6 +84,69 @@ dotnet run --project src/VcrSharp.Cli -- demo.tape
 
 This will generate both `demo.gif` and `demo.mp4` showing your terminal session.
 
+## Command-Line Overrides
+
+You can override tape file settings and add output formats directly from the command line without modifying your `.tape` files. This is useful for:
+
+- **Testing different themes** without editing your tape
+- **Generating multiple resolutions** from the same tape file
+- **Adding output formats** on demand
+- **Quick iterations** during development
+
+### Override Settings with `--set`
+
+Override any setting using `--set Key=Value`:
+
+```bash
+# Try different themes
+dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme=Dracula
+dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme=Nord
+
+# Generate high-resolution output
+dotnet run --project src/VcrSharp.Cli -- demo.tape --set Width=1920 --set Height=1080
+
+# Adjust video settings
+dotnet run --project src/VcrSharp.Cli -- demo.tape --set Framerate=60 --set PlaybackSpeed=1.5
+
+# Change terminal appearance
+dotnet run --project src/VcrSharp.Cli -- demo.tape --set FontSize=28 --set Padding=100 --set BorderRadius=10
+```
+
+CLI `--set` parameters **override** matching SET commands in the tape file. All 31 settings can be overridden (see [Configuration Reference](#configuration-reference)).
+
+### Add Output Formats with `--output`
+
+Add additional output files using `-o` or `--output`:
+
+```bash
+# Add MP4 output to a tape that only specifies GIF
+dotnet run --project src/VcrSharp.Cli -- demo.tape --output demo.mp4
+
+# Generate multiple formats
+dotnet run --project src/VcrSharp.Cli -- demo.tape -o video.mp4 -o video.webm -o video.gif
+```
+
+CLI `--output` parameters **append** to Output commands in the tape file. If your tape specifies `Output demo.gif` and you add `--output demo.mp4`, both files will be generated.
+
+
+**Generate the same demo with different themes:**
+
+```bash
+# Create variants for light and dark mode
+dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme=Dracula -o dark-demo.gif
+dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme="Solarized Light" -o light-demo.gif
+```
+
+**Reuse tape files for different screen sizes:**
+
+```bash
+# Mobile-sized demo
+dotnet run --project src/VcrSharp.Cli -- tutorial.tape --set FontSize=12 -o mobile.gif
+
+# Desktop-sized demo
+dotnet run --project src/VcrSharp.Cli -- tutorial.tape --set FontSize=22 -o desktop.gif
+```
+
 ## Examples
 
 ### Example 1: Simple Demo
@@ -468,11 +531,35 @@ I kept typing VCR when using VHS, no one called is VHS back in the day.
 ### Record (Default Command)
 
 ```bash
-vcr <tape-file>
+vcr <tape-file> [OPTIONS]
 dotnet run --project src/VcrSharp.Cli -- demo.tape
 ```
 
 Records the tape file and generates output videos/GIFs.
+
+**Options:**
+
+- `--set <KEY=VALUE>` - Override a setting from the tape file. Can be specified multiple times. CLI settings override tape file SET commands.
+- `-o, --output <FILE>` - Add an additional output file. Can be specified multiple times. CLI outputs are appended to tape file Output commands.
+- `-v, --verbose` - Enable verbose logging for debugging.
+
+**Examples:**
+
+```bash
+# Override theme and dimensions
+dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme=Dracula --set Width=1920 --set Height=1080
+
+# Add multiple output formats
+dotnet run --project src/VcrSharp.Cli -- demo.tape -o demo.mp4 -o demo.webm
+
+# Combine settings and outputs
+dotnet run --project src/VcrSharp.Cli -- demo.tape \
+  --set Theme=Nord \
+  --output hires.gif \
+  --output hires.mp4
+```
+
+All 31 settings can be overridden via `--set`. See the [Configuration Reference](#configuration-reference) for available settings.
 
 ### Validate
 

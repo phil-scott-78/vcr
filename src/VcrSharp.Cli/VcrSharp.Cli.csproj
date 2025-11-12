@@ -38,7 +38,7 @@
     <PackageReference Include="Serilog" Version="4.3.0" />
     <PackageReference Include="Spectre.Console" Version="0.53.0" />
     <PackageReference Include="Spectre.Console.Cli" Version="0.53.0" />
-    <PackageReference Include="Errata" Version="0.14.0" />
+    <PackageReference Include="Errata" Version="0.14.1-preview.0.1" />
     <PackageReference Include="minver" Version="6.0.0">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>

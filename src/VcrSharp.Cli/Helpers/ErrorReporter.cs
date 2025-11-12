@@ -53,6 +53,7 @@ public static class ErrorReporter
                     new Location(exception.Line, exception.Column),
                     exception.Message)
                     .WithLength(errorLength)
+                    .WithContextLines(3)
                     .WithColor(Color.Red));
 
             report.AddDiagnostic(diagnostic);

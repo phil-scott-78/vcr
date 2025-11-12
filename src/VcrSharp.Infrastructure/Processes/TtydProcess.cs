@@ -121,7 +121,7 @@ public class TtydProcess : IDisposable
         // Then, copy all system environment variables (custom vars take precedence due to dictionary behavior)
         foreach (System.Collections.DictionaryEntry envVar in Environment.GetEnvironmentVariables())
         {
-            var key = envVar.Key?.ToString();
+            var key = envVar.Key.ToString();
             var value = envVar.Value?.ToString();
             if (key != null && value != null && !startInfo.EnvironmentVariables.ContainsKey(key))
             {
@@ -196,10 +196,10 @@ public class TtydProcess : IDisposable
     /// </summary>
     private async Task WaitForReadyAsync()
     {
-        const int MaxAttempts = 50; // 5 seconds total (50 * 100ms)
-        const int DelayMs = 100;
+        const int maxAttempts = 50; // 5 seconds total (50 * 100ms)
+        const int delayMs = 100;
 
-        for (var i = 0; i < MaxAttempts; i++)
+        for (var i = 0; i < maxAttempts; i++)
         {
             // Check if process has exited (indicates startup failure)
             if (_process?.HasExited == true)
@@ -221,7 +221,7 @@ public class TtydProcess : IDisposable
                 // Port not ready yet, continue waiting
             }
 
-            await Task.Delay(DelayMs);
+            await Task.Delay(delayMs);
         }
 
         throw new TimeoutException($"ttyd did not become ready on port {Port} within the timeout period.");

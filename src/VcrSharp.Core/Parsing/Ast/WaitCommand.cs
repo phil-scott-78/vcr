@@ -60,7 +60,6 @@ public class WaitCommand(WaitScope scope = WaitScope.Buffer, TimeSpan? timeout =
         {
             WaitScope.Screen => "screen",
             WaitScope.Line => "line",
-            WaitScope.Buffer => "buffer",
             _ => "buffer"
         };
 
@@ -111,12 +110,13 @@ public class WaitCommand(WaitScope scope = WaitScope.Buffer, TimeSpan? timeout =
     {
         var parts = new List<string> { "Wait" };
 
-        if (Scope == WaitScope.Screen)
-            parts[0] += "+Screen";
-        else if (Scope == WaitScope.Line)
-            parts[0] += "+Line";
-        else if (Scope == WaitScope.Buffer)
-            parts[0] += "+Buffer";
+        parts[0] += Scope switch
+        {
+            WaitScope.Screen => "+Screen",
+            WaitScope.Line => "+Line",
+            WaitScope.Buffer => "+Buffer",
+            _ => throw new ArgumentOutOfRangeException()
+        };
 
         if (Timeout.HasValue)
             parts[0] += $"@{Timeout.Value.TotalMilliseconds}ms";

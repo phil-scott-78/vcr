@@ -120,11 +120,11 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
 
             // 8. Initialize frame storage and frame capture
             _frameStorage = new FrameStorage();
-            _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage, null);
+            _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage);
 
             // 9. Start activity monitor BEFORE frame capture starts
             // Pass FrameCapture's stopwatch so they share the same timing reference
-            _activityMonitor = new ActivityMonitor(_terminalPage, _state, _options, _frameCapture.Stopwatch);
+            _activityMonitor = new ActivityMonitor(_terminalPage, _state, _frameCapture.Stopwatch);
 
             // Now wire up the activity monitor to frame capture
             _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage, _activityMonitor);
@@ -181,15 +181,12 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
             stopwatch.Stop();
 
             // Calculate actual achieved framerate from recording
-            var actualFramerate = _state.ElapsedTime.TotalSeconds > 0
-                ? _state.FramesCaptured / _state.ElapsedTime.TotalSeconds
-                : _options.Framerate;
 
             // 16. Render videos using frames manifest (only if output files were specified)
-            List<string> outputFiles = new List<string>();
+            var outputFiles = new List<string>();
             if (_options.OutputFiles.Count > 0)
             {
-                var videoEncoder = new VideoEncoder(_options, _frameStorage, actualFramerate);
+                var videoEncoder = new VideoEncoder(_options, _frameStorage);
                 outputFiles = await videoEncoder.RenderAsync(progress);
             }
 

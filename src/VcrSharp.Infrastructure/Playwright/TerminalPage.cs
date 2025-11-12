@@ -264,8 +264,8 @@ public class TerminalPage : ITerminalPage
             }
         """);
 
-        double cellWidth = cellDimensions.CellWidth;
-        double cellHeight = cellDimensions.CellHeight;
+        var cellWidth = cellDimensions.CellWidth;
+        var cellHeight = cellDimensions.CellHeight;
 
         VcrLogger.Logger.Debug("Measured cell dimensions: {CellWidth}px × {CellHeight}px", cellWidth, cellHeight);
 
@@ -290,8 +290,8 @@ public class TerminalPage : ITerminalPage
         """);
 
         // Calculate extra space between viewport and canvas (HTML padding/margins)
-        int extraWidth = viewportInfo.ViewportWidth - viewportInfo.CanvasWidth;
-        int extraHeight = viewportInfo.ViewportHeight - viewportInfo.CanvasHeight;
+        var extraWidth = viewportInfo.ViewportWidth - viewportInfo.CanvasWidth;
+        var extraHeight = viewportInfo.ViewportHeight - viewportInfo.CanvasHeight;
 
         // Required viewport = required canvas + extra space
         var requiredViewportWidth = requiredCanvasWidth + extraWidth;
@@ -317,14 +317,14 @@ public class TerminalPage : ITerminalPage
         var optionsJson = JsonSerializer.Serialize(options, TerminalPageJsonContext.Default.DictionaryStringObject);
 
         // Get initial dimensions to detect when re-render completes
-        var beforeDims = await _page.EvaluateAsync<TerminalDimensions>("""
+        await _page.EvaluateAsync<TerminalDimensions>("""
 
-                                                            () => ({
-                                                                cols: window.term.cols,
-                                                                rows: window.term.rows
-                                                            })
+                                                      () => ({
+                                                          cols: window.term.cols,
+                                                          rows: window.term.rows
+                                                      })
 
-                                                            """);
+                                                      """);
 
         // Set options without calling FitAddon (dimensions are always explicit)
         await _page.EvaluateAsync($$"""
@@ -449,7 +449,7 @@ public class TerminalPage : ITerminalPage
 
                                                         """);
 
-        return content ?? string.Empty;
+        return content;
     }
 
     /// <summary>
@@ -470,7 +470,7 @@ public class TerminalPage : ITerminalPage
 
                                                          """);
 
-        return lastLine ?? string.Empty;
+        return lastLine;
     }
 
     /// <summary>
@@ -756,10 +756,11 @@ public class TerminalPage : ITerminalPage
             var cursorBytes = await CaptureCanvasLayerAsync("canvas.xterm-cursor-layer");
 
             // Composite the two layers (text + cursor)
-            using var textImage = SixLabors.ImageSharp.Image.Load<Rgba32>(textBytes);
-            using var cursorImage = SixLabors.ImageSharp.Image.Load<Rgba32>(cursorBytes);
+            using var textImage = Image.Load<Rgba32>(textBytes);
+            using var cursorImage = Image.Load<Rgba32>(cursorBytes);
 
             // Draw cursor layer on top of text layer
+            // ReSharper disable once AccessToDisposedClosure, it is used immediately
             textImage.Mutate(ctx => ctx.DrawImage(cursorImage, new Point(0, 0), 1.0f));
 
             // Save composited image
@@ -768,7 +769,7 @@ public class TerminalPage : ITerminalPage
         catch
         {
             // Fall back to CDP screenshot if canvas capture fails
-            byte[] imageBytes;
+            byte[]? imageBytes = null;
 
             if (_cdpSession != null)
             {
@@ -780,17 +781,20 @@ public class TerminalPage : ITerminalPage
                         ["optimizeForSpeed"] = true
                     });
 
-                    var base64Data = response.Value.GetProperty("data").GetString();
-                    imageBytes = Convert.FromBase64String(base64Data!);
+                    var base64Data = response?.GetProperty("data").GetString();
+                    if (base64Data != null)
+                    {
+                        imageBytes = Convert.FromBase64String(base64Data);
+                    }
                 }
                 catch
                 {
-                    // Final fallback to Playwright's built-in method
-                    var terminal = _page.Locator(".terminal");
-                    imageBytes = await terminal.ScreenshotAsync();
+                    // we'll fall back to using Playwright's built-in method
                 }
             }
-            else
+
+
+            if (imageBytes == null)
             {
                 // Fallback to Playwright's built-in method
                 var terminal = _page.Locator(".terminal");
@@ -856,7 +860,7 @@ public class TerminalPage : ITerminalPage
     {
         // Check if the key is a character that requires Shift to produce
         // For example: Alt+# should become Alt+Shift+Digit3
-        var (physicalKey, requiresShift) = VcrSharp.Core.Helpers.KeyMapper.MapCharacterToPhysicalKey(key);
+        var (physicalKey, requiresShift) = Core.Helpers.KeyMapper.MapCharacterToPhysicalKey(key);
 
         // Only add implicit Shift for special characters when NOT using Control modifier
         // Control+E should remain Control+KeyE, not Control+Shift+KeyE
@@ -897,7 +901,7 @@ public class TerminalPage : ITerminalPage
         // The cursor layer sits on top, so we click the screen container instead
         var screenSelector = ".xterm .xterm-screen";
         await _page.ClickAsync(screenSelector);
-        VcrSharp.Core.Logging.VcrLogger.Logger.Debug("Clicked terminal screen to give it focus");
+        VcrLogger.Logger.Debug("Clicked terminal screen to give it focus");
 
         // Small delay to ensure focus is established
         await Task.Delay(100);
@@ -936,6 +940,6 @@ public class TerminalPage : ITerminalPage
     public async Task<string> ReadClipboardAsync()
     {
         var text = await _page.EvaluateAsync<string>("navigator.clipboard.readText()");
-        return text ?? string.Empty;
+        return text;
     }
 }

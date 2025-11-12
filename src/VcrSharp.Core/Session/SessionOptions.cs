@@ -13,7 +13,7 @@ public class SessionOptions
     /// <summary>
     /// Gets the default shell for the current platform.
     /// </summary>
-    private static readonly string _defaultShellValue = GetPlatformDefaultShell();
+    private static readonly string DefaultShellValue = GetPlatformDefaultShell();
 
     // Terminal Dimensions
 
@@ -78,7 +78,7 @@ public class SessionOptions
     /// <summary>
     /// Gets or sets the loop offset in seconds (for GIFs).
     /// </summary>
-    public float LoopOffset { get; set; } = 0.0f;
+    public float LoopOffset { get; set; }
 
     /// <summary>
     /// Gets or sets the maximum colors for GIF palette generation (1-256).
@@ -95,12 +95,12 @@ public class SessionOptions
     /// <summary>
     /// Gets or sets the padding in pixels around the terminal.
     /// </summary>
-    public int Padding { get; set; } = 0;
+    public int Padding { get; set; }
 
     /// <summary>
     /// Gets or sets the margin in pixels around the recording.
     /// </summary>
-    public int Margin { get; set; } = 0;
+    public int Margin { get; set; }
 
     /// <summary>
     /// Gets or sets the margin fill color or image path.
@@ -115,7 +115,7 @@ public class SessionOptions
     /// <summary>
     /// Gets or sets the border radius in pixels.
     /// </summary>
-    public int BorderRadius { get; set; } = 0;
+    public int BorderRadius { get; set; }
 
     /// <summary>
     /// Gets or sets whether the cursor should blink.
@@ -126,7 +126,7 @@ public class SessionOptions
     /// Gets or sets whether the terminal background should be transparent.
     /// When true, sets allowTransparency on xTerm.js and uses a transparent background color.
     /// </summary>
-    public bool TransparentBackground { get; set; } = false;
+    public bool TransparentBackground { get; set; }
 
     // Behavior
 
@@ -134,7 +134,7 @@ public class SessionOptions
     /// Gets or sets the shell to use for the session.
     /// Defaults to platform-appropriate shell: pwsh/powershell/cmd on Windows, bash on Unix.
     /// </summary>
-    public string Shell { get; set; } = _defaultShellValue;
+    public string Shell { get; set; } = DefaultShellValue;
 
     /// <summary>
     /// Gets or sets the working directory for the terminal session.
@@ -419,10 +419,6 @@ public class SessionOptions
                     options.EndBuffer = eb;
                 else
                     options.EndBuffer = TimeSpan.Parse(value.ToString() ?? "1s");
-                break;
-
-            default:
-                // Ignore unknown settings
                 break;
         }
     }

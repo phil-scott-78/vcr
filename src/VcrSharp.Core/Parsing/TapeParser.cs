@@ -355,7 +355,7 @@ public class TapeParser
             }
 
             // Validate SET commands
-            if (command is Ast.SetCommand setCommand)
+            if (command is SetCommand setCommand)
             {
                 // Check for duplicate SET commands
                 if (seenSettings.Contains(setCommand.SettingName))

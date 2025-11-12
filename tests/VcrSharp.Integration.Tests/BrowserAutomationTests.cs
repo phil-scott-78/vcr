@@ -1,6 +1,5 @@
 using Shouldly;
 using VcrSharp.Infrastructure.Playwright;
-using Xunit;
 
 namespace VcrSharp.Integration.Tests;
 

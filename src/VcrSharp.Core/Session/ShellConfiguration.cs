@@ -74,7 +74,7 @@ public class ShellConfiguration
     /// <summary>
     /// Registry of known shell configurations.
     /// </summary>
-    private static readonly Dictionary<string, ShellConfiguration> _registry = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, ShellConfiguration> Registry = new(StringComparer.OrdinalIgnoreCase)
     {
         // PowerShell Core (pwsh)
         ["pwsh"] = new ShellConfiguration(
@@ -164,7 +164,7 @@ public class ShellConfiguration
     /// Uses standardized ">" prompt pattern.
     /// Uses bash-style command-line arguments.
     /// </summary>
-    private static readonly ShellConfiguration _defaultConfiguration = new ShellConfiguration(
+    private static readonly ShellConfiguration DefaultConfiguration = new ShellConfiguration(
         name: "bash",  // Default to bash
         displayName: "Default Shell",
         promptPattern: @">\s*$",
@@ -182,23 +182,23 @@ public class ShellConfiguration
     {
         if (string.IsNullOrWhiteSpace(shellName))
         {
-            return _defaultConfiguration;
+            return DefaultConfiguration;
         }
 
         // Try to find exact match
-        if (_registry.TryGetValue(shellName, out var config))
+        if (Registry.TryGetValue(shellName, out var config))
         {
             return config;
         }
 
         // Try to extract shell name from path (e.g., "/bin/bash" -> "bash")
         var shellFileName = Path.GetFileNameWithoutExtension(shellName);
-        if (!string.IsNullOrEmpty(shellFileName) && _registry.TryGetValue(shellFileName, out config))
+        if (!string.IsNullOrEmpty(shellFileName) && Registry.TryGetValue(shellFileName, out config))
         {
             return config;
         }
 
         // Return default configuration for unknown shells
-        return _defaultConfiguration;
+        return DefaultConfiguration;
     }
 }

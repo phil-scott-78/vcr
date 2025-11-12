@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using FFMpegCore;
 using FFMpegCore.Enums;
 using VcrSharp.Core.Session;
@@ -18,19 +13,16 @@ public class VideoEncoder
 {
     private readonly SessionOptions _options;
     private readonly FrameStorage _storage;
-    private readonly double? _actualFramerate;
 
     /// <summary>
     /// Initializes a new instance of VideoEncoder.
     /// </summary>
     /// <param name="options">Session options containing output and visual settings</param>
     /// <param name="storage">Frame storage containing captured frames</param>
-    /// <param name="actualFramerate">Actual achieved framerate during recording (optional, defaults to target framerate)</param>
-    public VideoEncoder(SessionOptions options, FrameStorage storage, double? actualFramerate = null)
+    public VideoEncoder(SessionOptions options, FrameStorage storage)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _storage = storage ?? throw new ArgumentNullException(nameof(storage));
-        _actualFramerate = actualFramerate;
     }
 
     /// <summary>
@@ -104,7 +96,7 @@ public class VideoEncoder
         var termHeight = _options.Height - (2 * _options.Padding);
 
         // Log dimensions for debugging
-        VcrSharp.Core.Logging.VcrLogger.Logger.Debug(
+        Core.Logging.VcrLogger.Logger.Debug(
             "VideoEncoder dimensions - Width: {Width}, Height: {Height}, Padding: {Padding}, termWidth: {termWidth}, termHeight: {termHeight}",
             _options.Width, _options.Height, _options.Padding, termWidth, termHeight);
 
@@ -278,7 +270,7 @@ public class VideoEncoder
     private async Task RenderPngAsync(string textManifest, string cursorManifest, string outputFile)
     {
         // Build filter chain with padding if needed
-        var filterComplex = BuildFilterChain("[0:v][1:v]overlay=0:0", "0:v");
+        var filterComplex = BuildFilterChain("[0:v][1:v]overlay=0:0");
 
         await FFMpegArguments
             .FromFileInput(textManifest, verifyExists: true, options => options
@@ -306,9 +298,8 @@ public class VideoEncoder
     /// Matches VHS behavior: pad filter to expand canvas, fillborders to fill with background color.
     /// </summary>
     /// <param name="baseFilter">The base filter chain (e.g., overlay, palette, etc.)</param>
-    /// <param name="inputLabel">The input label for the base filter (e.g., "0:v" or "overlaid")</param>
     /// <returns>Complete filter chain with padding applied if needed</returns>
-    private string BuildFilterChain(string baseFilter, string inputLabel)
+    private string BuildFilterChain(string baseFilter)
     {
         if (_options.Padding <= 0)
         {

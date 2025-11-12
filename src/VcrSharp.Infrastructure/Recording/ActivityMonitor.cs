@@ -12,29 +12,25 @@ public class ActivityMonitor : IDisposable
 {
     private readonly TerminalPage _terminalPage;
     private readonly SessionState _sessionState;
-    private readonly SessionOptions _options;
     private readonly Stopwatch _stopwatch;
     private readonly CancellationTokenSource _cts;
     private Task? _monitorTask;
     private string _lastBufferContent = string.Empty;
-    private int _currentFrameNumber = 0;
+    private int _currentFrameNumber;
 
     /// <summary>
     /// Creates a new activity monitor.
     /// </summary>
     /// <param name="terminalPage">The terminal page to monitor.</param>
     /// <param name="sessionState">The session state to update with activity timestamps.</param>
-    /// <param name="options">Session options for timeout configuration.</param>
     /// <param name="stopwatch">Shared stopwatch for timing (same as frame capture).</param>
     public ActivityMonitor(
         TerminalPage terminalPage,
         SessionState sessionState,
-        SessionOptions options,
         Stopwatch stopwatch)
     {
         _terminalPage = terminalPage;
         _sessionState = sessionState;
-        _options = options;
         _stopwatch = stopwatch;
         _cts = new CancellationTokenSource();
     }

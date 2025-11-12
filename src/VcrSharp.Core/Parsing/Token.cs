@@ -5,6 +5,8 @@ namespace VcrSharp.Core.Parsing;
 /// </summary>
 public enum TokenType
 {
+    // ReSharper disable InconsistentNaming
+
     // End of file
     EOF,
 
@@ -102,6 +104,9 @@ public enum TokenType
 
     // Generic identifier (for unknown keywords or file paths)
     IDENTIFIER,
+
+    // ReSharper restore InconsistentNaming
+
 }
 
 /// <summary>

@@ -177,9 +177,9 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
     /// CLI SET commands override tape file SET commands.
     /// CLI Output commands are appended to tape file Output commands.
     /// </summary>
-    private static List<VcrSharp.Core.Parsing.Ast.ICommand> ApplyCliOverrides(List<VcrSharp.Core.Parsing.Ast.ICommand> tapeCommands, Settings settings)
+    private static List<Core.Parsing.Ast.ICommand> ApplyCliOverrides(List<Core.Parsing.Ast.ICommand> tapeCommands, Settings settings)
     {
-        var result = new List<VcrSharp.Core.Parsing.Ast.ICommand>(tapeCommands);
+        var result = new List<Core.Parsing.Ast.ICommand>(tapeCommands);
 
         // Apply SET overrides: remove tape file SET commands that match CLI keys
         if (settings.SetOverrides != null && settings.SetOverrides.Any())
@@ -194,7 +194,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
             // Add CLI SET commands at the beginning (before any action commands)
             var cliSetCommands = settings.SetOverrides
                 .Select(group => new SetCommand(group.Key, group.First(), lineNumber: 0))
-                .ToList<VcrSharp.Core.Parsing.Ast.ICommand>();
+                .ToList<Core.Parsing.Ast.ICommand>();
 
             // Find the insertion point (after existing SET/Output commands, before action commands)
             var insertIndex = 0;
@@ -218,7 +218,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         {
             var cliOutputCommands = settings.OutputFiles
                 .Select(file => new OutputCommand(file))
-                .ToList<VcrSharp.Core.Parsing.Ast.ICommand>();
+                .ToList<Core.Parsing.Ast.ICommand>();
 
             // Find the insertion point (after all SET/Output commands, before action commands)
             var insertIndex = 0;

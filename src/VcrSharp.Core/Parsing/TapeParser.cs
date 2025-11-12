@@ -1,293 +1,342 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
-using Sprache;
+using Superpower;
+using Superpower.Model;
+using Superpower.Parsers;
 using VcrSharp.Core.Parsing.Ast;
 // ReSharper disable InconsistentNaming
 
 namespace VcrSharp.Core.Parsing;
 
 /// <summary>
-/// Parser for tape files using Sprache parser combinators.
+/// Parser for tape files using Superpower parser combinators.
 /// </summary>
 public class TapeParser
 {
-    // Basic parsers
-    private static readonly Parser<char> SpaceChar = Parse.Char(' ').Or(Parse.Char('\t'));
-    private static readonly Parser<string> Spaces = SpaceChar.Many().Text();
-    private static readonly Parser<string> Spaces1 = SpaceChar.AtLeastOnce().Text();
+    private static readonly Tokenizer<TapeToken> Tokenizer = TapeTokenizer.Create();
 
-    // String parsers with escape handling
-    // Escape sequence parser for double-quoted strings - returns string to preserve unknown escapes
-    private static readonly Parser<string> EscapeSequence =
-        from backslash in Parse.Char('\\')
-        from escaped in Parse.AnyChar
-        select escaped switch
+    // Helper to strip quotes from string tokens
+    private static string StripQuotes(string value)
+    {
+        if (value.Length >= 2 &&
+            ((value[0] == '"' && value[^1] == '"') ||
+             (value[0] == '\'' && value[^1] == '\'') ||
+             (value[0] == '`' && value[^1] == '`')))
         {
-            'n' => "\n",     // Newline
-            't' => "\t",     // Tab
-            'r' => "\r",     // Carriage return
-            '\\' => "\\",    // Backslash
-            '"' => "\"",     // Double quote
-            _ => $"\\{escaped}"  // Unknown escape: preserve backslash for backward compatibility
-        };
+            return value.Substring(1, value.Length - 2);
+        }
+        return value;
+    }
 
-    // Regular character in double-quoted string (not quote, not backslash)
-    private static readonly Parser<char> DoubleQuotedRegularChar =
-        Parse.AnyChar.Except(Parse.Chars('"', '\\'));
-
-    // Content parser for double-quoted strings (with escape support)
-    private static readonly Parser<string> DoubleQuotedStringContent =
-        EscapeSequence.Or(DoubleQuotedRegularChar.Select(c => c.ToString()));
-
-    private static readonly Parser<string> DoubleQuotedString =
-        from open in Parse.Char('"')
-        from parts in DoubleQuotedStringContent.Many()
-        from close in Parse.Char('"')
-        select string.Concat(parts);
-
-    // Single-quoted strings remain completely literal (no escape processing)
-    private static readonly Parser<string> SingleQuotedString =
-        from open in Parse.Char('\'')
-        from content in Parse.CharExcept('\'').Many().Text()
-        from close in Parse.Char('\'')
-        select content;
-
-    // Backtick-quoted strings remain completely literal (no escape processing)
-    private static readonly Parser<string> BacktickQuotedString =
-        from open in Parse.Char('`')
-        from content in Parse.CharExcept('`').Many().Text()
-        from close in Parse.Char('`')
-        select content;
-
-    private static readonly Parser<string> QuotedString =
-        DoubleQuotedString.Or(SingleQuotedString).Or(BacktickQuotedString);
-
-    // Number parsers
-    private static readonly Parser<double> DecimalNumber =
-        from negative in Parse.Char('-').Optional()
-        from intPart in Parse.Digit.AtLeastOnce().Text().Or(Parse.Return(""))
-        from dot in Parse.Char('.').Optional()
-        from fracPart in Parse.Digit.Many().Text()
-        select double.Parse(
-            (negative.IsDefined ? "-" : "") +
-            (string.IsNullOrEmpty(intPart) ? "0" : intPart) +
-            (dot.IsDefined ? "." + fracPart : ""),
-            CultureInfo.InvariantCulture);
-
-    // Duration parsers
-    private static readonly Parser<TimeSpan> Duration =
-        from value in DecimalNumber
-        from unit in Parse.String("ms").Return("ms")
-            .Or(Parse.String("m").Return("m"))
-            .Or(Parse.String("s").Return("s"))
-        select unit switch
+    // Helper to process escape sequences in double-quoted strings
+    private static string ProcessEscapes(string value)
+    {
+        // Only process escapes for double-quoted strings
+        if (value.Length >= 2 && value[0] == '"' && value[^1] == '"')
         {
-            "ms" => TimeSpan.FromMilliseconds(value),
-            "m" => TimeSpan.FromMinutes(value),
-            _ => TimeSpan.FromSeconds(value)
-        };
+            var content = value.Substring(1, value.Length - 2);
+            // Process escape sequences
+            var result = new System.Text.StringBuilder();
+            for (int i = 0; i < content.Length; i++)
+            {
+                if (content[i] == '\\' && i + 1 < content.Length)
+                {
+                    var next = content[i + 1];
+                    switch (next)
+                    {
+                        case 'n':
+                            result.Append('\n');
+                            i++;
+                            break;
+                        case 't':
+                            result.Append('\t');
+                            i++;
+                            break;
+                        case 'r':
+                            result.Append('\r');
+                            i++;
+                            break;
+                        case '\\':
+                            result.Append('\\');
+                            i++;
+                            break;
+                        case '"':
+                            result.Append('"');
+                            i++;
+                            break;
+                        default:
+                            // Unknown escape: preserve backslash for backward compatibility
+                            result.Append('\\');
+                            result.Append(next);
+                            i++;
+                            break;
+                    }
+                }
+                else
+                {
+                    result.Append(content[i]);
+                }
+            }
+            return result.ToString();
+        }
+        return StripQuotes(value);
+    }
 
-    private static readonly Parser<TimeSpan> DurationOrBareNumber =
-        Duration.Or(DecimalNumber.Select(d => TimeSpan.FromSeconds(d)));
+    // Helper parsers for common patterns
+    private static readonly TokenListParser<TapeToken, string> String =
+        Token.EqualTo(TapeToken.String).Select(t => ProcessEscapes(t.ToStringValue()))
+        .Or(Token.EqualTo(TapeToken.StringLiteral).Select(t => StripQuotes(t.ToStringValue())));
 
-    // Regex parser
-    private static readonly Parser<Regex> RegexPattern =
-        from open in Parse.Char('/')
-        from pattern in Parse.CharExcept('/').Many().Text()
-        from close in Parse.Char('/')
-        select new Regex(pattern, RegexOptions.Compiled);
+    private static readonly TokenListParser<TapeToken, string> QuotedString =
+        Token.EqualTo(TapeToken.String).Select(t => ProcessEscapes(t.ToStringValue()))
+        .Or(Token.EqualTo(TapeToken.StringLiteral).Select(t => StripQuotes(t.ToStringValue())));
 
-    // Boolean parser
-    private static readonly Parser<bool> Boolean =
-        Parse.String("true").Return(true)
-        .Or(Parse.String("false").Return(false))
-        .Or(Parse.String("True").Return(true))
-        .Or(Parse.String("False").Return(false));
+    private static readonly TokenListParser<TapeToken, string> Identifier =
+        Token.EqualTo(TapeToken.Identifier).Select(t => t.ToStringValue());
 
-    // Identifier parser
-    private static readonly Parser<string> Identifier =
-        from first in Parse.Letter
-        from rest in Parse.LetterOrDigit.Or(Parse.Char('_')).Many().Text()
-        select first + rest;
+    private static readonly TokenListParser<TapeToken, string> FilePath =
+        QuotedString.Or(Identifier);
 
-    // File path parser (allows dots, slashes, etc.)
-    private static readonly Parser<string> FilePath =
-        Parse.CharExcept(c => char.IsWhiteSpace(c) || c == '\n' || c == '\r' || c == '#', "file path character")
-            .AtLeastOnce().Text();
+    private static readonly TokenListParser<TapeToken, double> Number =
+        Token.EqualTo(TapeToken.Number).Apply(Numerics.DecimalDouble);
+
+    private static readonly TokenListParser<TapeToken, bool> Boolean =
+        Token.EqualTo(TapeToken.True).Value(true)
+        .Or(Token.EqualTo(TapeToken.False).Value(false));
+
+    private static readonly TokenListParser<TapeToken, Regex?> RegexPattern =
+        Token.EqualTo(TapeToken.Regex).Select(t =>
+        {
+            var pattern = t.ToStringValue();
+            // Remove the surrounding slashes
+            if (pattern.StartsWith('/') && pattern.EndsWith('/') && pattern.Length >= 2)
+                pattern = pattern.Substring(1, pattern.Length - 2);
+            return (Regex?)new Regex(pattern, RegexOptions.Compiled);
+        });
+
+    // Duration parser - handles both Duration tokens (500ms) and bare numbers (interpreted as seconds)
+    private static readonly TokenListParser<TapeToken, TimeSpan> Duration =
+        Token.EqualTo(TapeToken.Duration).Select(t =>
+        {
+            var value = t.ToStringValue();
+            // Parse the duration string (e.g., "500ms", "2s", "1.5m")
+            if (value.EndsWith("ms"))
+            {
+                var num = double.Parse(value.Substring(0, value.Length - 2), CultureInfo.InvariantCulture);
+                return TimeSpan.FromMilliseconds(num);
+            }
+            else if (value.EndsWith("m") && !value.EndsWith("ms"))
+            {
+                var num = double.Parse(value.Substring(0, value.Length - 1), CultureInfo.InvariantCulture);
+                return TimeSpan.FromMinutes(num);
+            }
+            else if (value.EndsWith("s"))
+            {
+                var num = double.Parse(value.Substring(0, value.Length - 1), CultureInfo.InvariantCulture);
+                return TimeSpan.FromSeconds(num);
+            }
+            throw new InvalidOperationException($"Invalid duration format: {value}");
+        });
+
+    // Parser for duration that handles both Duration tokens and Number tokens (with optional unit)
+    private static readonly TokenListParser<TapeToken, TimeSpan> DurationOrBareNumber =
+        Duration.Or(
+            from num in Number
+            from unit in Identifier.OptionalOrDefault()
+            select unit != null
+                ? unit.ToLower() switch
+                {
+                    "ms" => TimeSpan.FromMilliseconds(num),
+                    "m" => TimeSpan.FromMinutes(num),
+                    "s" => TimeSpan.FromSeconds(num),
+                    _ => throw new InvalidOperationException($"Invalid duration unit: {unit}")
+                }
+                : TimeSpan.FromSeconds(num)  // Bare number defaults to seconds
+        );
 
     // Speed modifier parser (@100ms, @.5, @1s)
-    private static readonly Parser<TimeSpan> SpeedModifier =
-        from at in Parse.Char('@')
+    private static readonly TokenListParser<TapeToken, TimeSpan> SpeedModifier =
+        from at in Token.EqualTo(TapeToken.At)
         from duration in DurationOrBareNumber
         select duration;
 
-    // Repeat count parser
-    private static readonly Parser<int> RepeatCount =
-        from spaces in Spaces1
-        from count in Parse.Digit.AtLeastOnce().Text()
-        select int.Parse(count);
+    // Repeat count parser (space-separated number for key commands)
+    private static readonly TokenListParser<TapeToken, int> RepeatCount =
+        Number.Select(n => (int)n);
 
     // Command parsers
 
-    // Set command
-    private static readonly Parser<ICommand> SetCommand =
-        from keyword in Parse.String("Set")
-        from spaces1 in Spaces1
+    // Set command: Set FontSize 32
+    private static readonly TokenListParser<TapeToken, ICommand> SetCommand =
+        from keyword in Token.EqualTo(TapeToken.Set)
         from settingName in Identifier
-        from spaces2 in Spaces1
         from value in QuotedString
             .Or(Duration.Select(d => d.ToString()))
-            .Or(DecimalNumber.Select(n => n.ToString(CultureInfo.InvariantCulture)))
+            .Or(Number.Select(n => n.ToString(CultureInfo.InvariantCulture)))
             .Or(Boolean.Select(b => b.ToString()))
-        select new SetCommand(settingName, value);
+        select (ICommand)new SetCommand(settingName, value);
 
-    // Output command
-    private static readonly Parser<ICommand> OutputCommand =
-        from keyword in Parse.String("Output")
-        from spaces in Spaces1
-        from path in QuotedString.Or(FilePath)
-        select new OutputCommand(path);
+    // Output command: Output demo.gif
+    private static readonly TokenListParser<TapeToken, ICommand> OutputCommand =
+        from keyword in Token.EqualTo(TapeToken.Output)
+        from path in FilePath
+        select (ICommand)new OutputCommand(path);
 
-    // Require command
-    private static readonly Parser<ICommand> RequireCommand =
-        from keyword in Parse.String("Require")
-        from spaces in Spaces1
+    // Require command: Require npm
+    private static readonly TokenListParser<TapeToken, ICommand> RequireCommand =
+        from keyword in Token.EqualTo(TapeToken.Require)
         from program in Identifier
-        select new RequireCommand(program);
+        select (ICommand)new RequireCommand(program);
 
-    // Source command
-    private static readonly Parser<ICommand> SourceCommand =
-        from keyword in Parse.String("Source")
-        from spaces in Spaces1
-        from path in QuotedString.Or(FilePath)
-        select new SourceCommand(path);
+    // Source command: Source other.tape
+    private static readonly TokenListParser<TapeToken, ICommand> SourceCommand =
+        from keyword in Token.EqualTo(TapeToken.Source)
+        from path in FilePath
+        select (ICommand)new SourceCommand(path);
 
-    // Type command
-    private static readonly Parser<ICommand> TypeCommand =
-        from keyword in Parse.String("Type")
-        from speed in SpeedModifier.Optional()
-        from spaces in Spaces1
+    // Type command: Type "hello" or Type@500ms "hello"
+    private static readonly TokenListParser<TapeToken, ICommand> TypeCommand =
+        from keyword in Token.EqualTo(TapeToken.Type)
+        from speed in SpeedModifier.OptionalOrDefault()
         from text in QuotedString
-        select new TypeCommand(text, speed.IsDefined ? speed.Get() : null);
+        select (ICommand)new TypeCommand(text, speed == default(TimeSpan) ? null : speed);
 
-    // Sleep command
-    private static readonly Parser<ICommand> SleepCommand =
-        from keyword in Parse.String("Sleep")
-        from spaces in Spaces1
+    // Sleep command: Sleep 1s
+    private static readonly TokenListParser<TapeToken, ICommand> SleepCommand =
+        from keyword in Token.EqualTo(TapeToken.Sleep)
         from duration in DurationOrBareNumber
-        select new SleepCommand(duration);
+        select (ICommand)new SleepCommand(duration);
 
-    // Key command (Enter, Tab, arrows, etc.)
-    private static Parser<ICommand> KeyCommandFor(string keyName) =>
-        from keyword in Parse.String(keyName)
-        from speed in SpeedModifier.Optional()
-        from count in RepeatCount.Optional()
-        select new KeyCommand(keyName, count.IsDefined ? count.Get() : 1, speed.IsDefined ? speed.Get() : null);
+    // Key command helper for specific keys
+    private static TokenListParser<TapeToken, ICommand> KeyCommandFor(TapeToken keyToken, string keyName) =>
+        from keyword in Token.EqualTo(keyToken)
+        from speed in SpeedModifier.OptionalOrDefault()
+        from count in RepeatCount.OptionalOrDefault((int)0)
+        select (ICommand)new KeyCommand(keyName, count == 0 ? 1 : count, speed == default(TimeSpan) ? null : speed);
 
-    private static readonly Parser<ICommand> KeyCommand =
-        KeyCommandFor("Enter")
-        .Or(KeyCommandFor("Space"))
-        .Or(KeyCommandFor("Tab"))
-        .Or(KeyCommandFor("Backspace"))
-        .Or(KeyCommandFor("Delete"))
-        .Or(KeyCommandFor("Insert"))
-        .Or(KeyCommandFor("Escape"))
-        .Or(KeyCommandFor("Up"))
-        .Or(KeyCommandFor("Down"))
-        .Or(KeyCommandFor("Left"))
-        .Or(KeyCommandFor("Right"))
-        .Or(KeyCommandFor("PageUp"))
-        .Or(KeyCommandFor("PageDown"))
-        .Or(KeyCommandFor("Home"))
-        .Or(KeyCommandFor("End"));
+    // Key command: Enter, Tab, etc.
+    private static readonly TokenListParser<TapeToken, ICommand> KeyCommand =
+        KeyCommandFor(TapeToken.Enter, "Enter")
+        .Or(KeyCommandFor(TapeToken.Space, "Space"))
+        .Or(KeyCommandFor(TapeToken.Tab, "Tab"))
+        .Or(KeyCommandFor(TapeToken.Backspace, "Backspace"))
+        .Or(KeyCommandFor(TapeToken.Delete, "Delete"))
+        .Or(KeyCommandFor(TapeToken.Insert, "Insert"))
+        .Or(KeyCommandFor(TapeToken.Escape, "Escape"))
+        .Or(KeyCommandFor(TapeToken.Up, "Up"))
+        .Or(KeyCommandFor(TapeToken.Down, "Down"))
+        .Or(KeyCommandFor(TapeToken.Left, "Left"))
+        .Or(KeyCommandFor(TapeToken.Right, "Right"))
+        .Or(KeyCommandFor(TapeToken.PageUp, "PageUp"))
+        .Or(KeyCommandFor(TapeToken.PageDown, "PageDown"))
+        .Or(KeyCommandFor(TapeToken.Home, "Home"))
+        .Or(KeyCommandFor(TapeToken.End, "End"));
 
-    // Modifier command (Ctrl+C, Alt+Enter, etc.)
-    private static readonly Parser<string> ModifierKey =
-        Parse.String("Enter").Text()
-        .Or(Parse.String("Tab").Text())
-        .Or(Parse.String("Space").Text())
-        .Or(Parse.String("Escape").Text())
-        .Or(Parse.String("Backspace").Text())
-        .Or(Parse.String("Delete").Text())
-        .Or(Parse.AnyChar.Select(c => c.ToString()));
+    // Modifier command: Ctrl+C, Alt+Enter, etc.
+    private static readonly TokenListParser<TapeToken, string> ModifierKey =
+        Token.EqualTo(TapeToken.Enter).Value("Enter")
+        .Or(Token.EqualTo(TapeToken.Tab).Value("Tab"))
+        .Or(Token.EqualTo(TapeToken.Space).Value("Space"))
+        .Or(Token.EqualTo(TapeToken.Escape).Value("Escape"))
+        .Or(Token.EqualTo(TapeToken.Backspace).Value("Backspace"))
+        .Or(Token.EqualTo(TapeToken.Delete).Value("Delete"))
+        .Or(Identifier);
 
-    private static readonly Parser<ICommand> ModifierCommand =
-        from ctrl in Parse.String("Ctrl").Optional()
-        from plus1 in Parse.Char('+').Optional()
-        from shift in Parse.String("Shift").Optional()
-        from plus2 in Parse.Char('+').Optional()
-        from alt in Parse.String("Alt").Optional()
-        from plus3 in Parse.Char('+').Optional()
-        from key in ModifierKey
-        where ctrl.IsDefined || alt.IsDefined || shift.IsDefined
-        select new ModifierCommand(
-            ctrl.IsDefined,
-            alt.IsDefined,
-            shift.IsDefined,
-            key);
+    // Helper to parse modifier combinations - accepts ANY order of Ctrl/Alt/Shift
+    private static readonly TokenListParser<TapeToken, ICommand> ModifierCommand =
+        Parse.Ref(() =>
+        {
+            // Parser that accepts modifiers in any order
+            // Examples: Ctrl+C, Alt+Enter, Ctrl+Alt+Shift+Tab, Shift+Ctrl+C
 
-    // Wait command (complex: Wait[+Scope][@timeout] [/pattern/])
-    private static readonly Parser<ICommand> WaitCommand =
-        from keyword in Parse.String("Wait")
-        from scope in Parse.String("+Screen").Return(WaitScope.Screen)
-            .Or(Parse.String("+Buffer").Return(WaitScope.Buffer))
-            .Or(Parse.String("+Line").Return(WaitScope.Line))
-            .Optional()
-        from timeout in SpeedModifier.Optional()
-        from spaces in Spaces.Optional()
-        from pattern in RegexPattern.Optional()
-        select new WaitCommand(
-            scope.IsDefined ? scope.Get() : WaitScope.Buffer,
-            timeout.IsDefined ? timeout.Get() : null,
-            pattern.IsDefined ? pattern.Get() : null);
+            var plus = Token.EqualTo(TapeToken.Plus);
 
-    // Hide command
-    private static readonly Parser<ICommand> HideCommand =
-        from keyword in Parse.String("Hide")
-        select new HideCommand();
+            // Parse a single modifier and return which one it is
+            var singleModifier =
+                Token.EqualTo(TapeToken.Ctrl).Value("Ctrl")
+                .Or(Token.EqualTo(TapeToken.Alt).Value("Alt"))
+                .Or(Token.EqualTo(TapeToken.Shift).Value("Shift"));
 
-    // Show command
-    private static readonly Parser<ICommand> ShowCommand =
-        from keyword in Parse.String("Show")
-        select new ShowCommand();
+            // Parse modifier followed by +
+            var modifierWithPlus =
+                from mod in singleModifier
+                from p in plus
+                select mod;
 
-    // Screenshot command
-    private static readonly Parser<ICommand> ScreenshotCommand =
-        from keyword in Parse.String("Screenshot")
-        from spaces in Spaces1
-        from path in QuotedString.Or(FilePath)
-        select new ScreenshotCommand(path);
+            // Collect all modifiers (one or more)
+            var modifiers =
+                from mods in modifierWithPlus.AtLeastOnce()
+                from key in ModifierKey
+                select (mods.ToList(), key);
 
-    // Copy command
-    private static readonly Parser<ICommand> CopyCommand =
-        from keyword in Parse.String("Copy")
-        from spaces in Spaces1
+            // Convert modifier list to flags and create command
+            return modifiers.Select(tuple =>
+            {
+                var (modList, key) = tuple;
+                var hasCtrl = modList.Contains("Ctrl");
+                var hasAlt = modList.Contains("Alt");
+                var hasShift = modList.Contains("Shift");
+                return (ICommand)new ModifierCommand(hasCtrl, hasAlt, hasShift, key);
+            });
+        });
+
+
+    // Wait command: Wait, Wait+Screen, Wait+Buffer@10ms /pattern/
+    private static readonly TokenListParser<TapeToken, ICommand> WaitCommand =
+        from keyword in Token.EqualTo(TapeToken.Wait)
+        from scope in Token.EqualTo(TapeToken.PlusScreen).Value(WaitScope.Screen)
+            .Or(Token.EqualTo(TapeToken.PlusBuffer).Value(WaitScope.Buffer))
+            .Or(Token.EqualTo(TapeToken.PlusLine).Value(WaitScope.Line))
+            .OptionalOrDefault(WaitScope.Buffer)
+        from timeout in SpeedModifier.OptionalOrDefault()
+        from pattern in RegexPattern.OptionalOrDefault()
+        select (ICommand)new WaitCommand(
+            scope,
+            timeout == default(TimeSpan) ? null : timeout,
+            pattern);
+
+    // Hide command: Hide
+    private static readonly TokenListParser<TapeToken, ICommand> HideCommand =
+        from keyword in Token.EqualTo(TapeToken.Hide)
+        select (ICommand)new HideCommand();
+
+    // Show command: Show
+    private static readonly TokenListParser<TapeToken, ICommand> ShowCommand =
+        from keyword in Token.EqualTo(TapeToken.Show)
+        select (ICommand)new ShowCommand();
+
+    // Screenshot command: Screenshot test.png
+    private static readonly TokenListParser<TapeToken, ICommand> ScreenshotCommand =
+        from keyword in Token.EqualTo(TapeToken.Screenshot)
+        from path in FilePath
+        select (ICommand)new ScreenshotCommand(path);
+
+    // Copy command: Copy "text"
+    private static readonly TokenListParser<TapeToken, ICommand> CopyCommand =
+        from keyword in Token.EqualTo(TapeToken.Copy)
         from text in QuotedString
-        select new CopyCommand(text);
+        select (ICommand)new CopyCommand(text);
 
-    // Paste command
-    private static readonly Parser<ICommand> PasteCommand =
-        from keyword in Parse.String("Paste")
-        select new PasteCommand();
+    // Paste command: Paste
+    private static readonly TokenListParser<TapeToken, ICommand> PasteCommand =
+        from keyword in Token.EqualTo(TapeToken.Paste)
+        select (ICommand)new PasteCommand();
 
-    // Env command
-    private static readonly Parser<ICommand> EnvCommand =
-        from keyword in Parse.String("Env")
-        from spaces1 in Spaces1
+    // Env command: Env KEY "value"
+    private static readonly TokenListParser<TapeToken, ICommand> EnvCommand =
+        from keyword in Token.EqualTo(TapeToken.Env)
         from key in Identifier
-        from spaces2 in Spaces1
         from value in QuotedString
-        select new EnvCommand(key, value);
+        select (ICommand)new EnvCommand(key, value);
 
-    // Exec command
-    private static readonly Parser<ICommand> ExecCommand =
-        from keyword in Parse.String("Exec")
-        from spaces in Spaces1
+    // Exec command: Exec "ls -la"
+    private static readonly TokenListParser<TapeToken, ICommand> ExecCommand =
+        from keyword in Token.EqualTo(TapeToken.Exec)
         from command in QuotedString
-        select new ExecCommand(command);
+        select (ICommand)new ExecCommand(command);
 
     // Combined command parser - order matters!
-    private static readonly Parser<ICommand> Command =
+    private static readonly TokenListParser<TapeToken, ICommand> Command =
         SetCommand
         .Or(OutputCommand)
         .Or(RequireCommand)
@@ -306,30 +355,13 @@ public class TapeParser
         .Or(KeyCommand);
 
     // Line parser (handles inline commands - multiple commands per line)
-    private static readonly Parser<IEnumerable<ICommand>> CommandLine =
-        Command.DelimitedBy(Spaces1);
-
-    // Comment parser
-    private static readonly Parser<string> Comment =
-        from hash in Parse.Char('#')
-        from content in Parse.AnyChar.Except(Parse.Char('\n').Or(Parse.Char('\r'))).Many().Text()
-        select content;
-
-    // Empty line or comment line
-    private static readonly Parser<IEnumerable<ICommand>> EmptyOrCommentLine =
-        from spaces in Spaces
-        from comment in Comment.Optional()
-        select Enumerable.Empty<ICommand>();
+    private static readonly TokenListParser<TapeToken, ICommand[]> CommandLine =
+        Command.Many();
 
     // Full tape file parser
-    private static readonly Parser<IEnumerable<ICommand>> TapeFile =
-        from lines in EmptyOrCommentLine.Or(from spaces in Spaces
-                                            from commands in CommandLine
-                                            from trailing in Spaces
-                                            select commands)
-            .DelimitedBy(Parse.LineEnd)
-        from trailingLines in Parse.LineEnd.Many()
-        select lines.SelectMany(x => x);
+    private static readonly TokenListParser<TapeToken, ICommand[]> TapeFile =
+        from commands in CommandLine
+        select commands;
 
     /// <summary>
     /// Validates SET command usage rules:
@@ -393,7 +425,8 @@ public class TapeParser
     {
         try
         {
-            var result = TapeFile.End().Parse(source);
+            var tokenList = Tokenizer.Tokenize(source);
+            var result = TapeFile.AtEnd().Parse(tokenList);
             var commandList = result.ToList();
 
             // Validate SET command rules
@@ -403,12 +436,24 @@ public class TapeParser
         }
         catch (ParseException ex)
         {
-            var messages = ex.Message.Split(';');
+            // Extract position information from ParseException
+            var line = 1;
+            var column = 1;
+
+            if (ex.ErrorPosition.HasValue)
+            {
+                line = ex.ErrorPosition.Line;
+                column = ex.ErrorPosition.Column;
+            }
+
+            // Use Superpower's error message as-is for better context
+            var errorMessage = $"Syntax error: {ex.Message}";
+
             throw new TapeParseException(
-                messages[0],
+                errorMessage,
                 ex,
-                ex.Position.Line,
-                ex.Position.Column,
+                line,
+                column,
                 filePath);
         }
     }

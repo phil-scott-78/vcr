@@ -174,7 +174,7 @@ public class TapeParser
             .Or(Duration.Select(d => d.ToString()))
             .Or(Number.Select(n => n.ToString(CultureInfo.InvariantCulture)))
             .Or(Boolean.Select(b => b.ToString()))
-        select (ICommand)new SetCommand(settingName, value);
+        select (ICommand)new Ast.SetCommand(settingName, value, keyword.Position.Line);
 
     // Output command: Output demo.gif
     private static readonly TokenListParser<TapeToken, ICommand> OutputCommand =
@@ -364,15 +364,98 @@ public class TapeParser
         select commands;
 
     /// <summary>
+    /// All valid setting names for SET commands (case-insensitive).
+    /// </summary>
+    private static readonly HashSet<string> ValidSettingNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        // Terminal dimensions
+        "Width", "Height", "Cols", "Rows",
+
+        // Font settings
+        "FontSize", "FontFamily", "LetterSpacing", "LineHeight",
+
+        // Video settings
+        "Framerate", "PlaybackSpeed", "LoopOffset", "MaxColors",
+
+        // Styling
+        "Theme", "Padding", "Margin", "MarginFill", "WindowBarSize",
+        "BorderRadius", "CursorBlink", "TransparentBackground",
+
+        // Behavior
+        "Shell", "WorkingDirectory", "TypingSpeed", "WaitTimeout",
+        "WaitPattern", "InactivityTimeout", "StartWaitTimeout",
+        "StartBuffer", "EndBuffer"
+    };
+
+    /// <summary>
+    /// Calculates Levenshtein distance between two strings for fuzzy matching.
+    /// </summary>
+    private static int LevenshteinDistance(string s1, string s2)
+    {
+        var len1 = s1.Length;
+        var len2 = s2.Length;
+        var d = new int[len1 + 1, len2 + 1];
+
+        for (var i = 0; i <= len1; i++) d[i, 0] = i;
+        for (var j = 0; j <= len2; j++) d[0, j] = j;
+
+        for (var i = 1; i <= len1; i++)
+        {
+            for (var j = 1; j <= len2; j++)
+            {
+                var cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
+                d[i, j] = Math.Min(
+                    Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
+                    d[i - 1, j - 1] + cost);
+            }
+        }
+
+        return d[len1, len2];
+    }
+
+    /// <summary>
+    /// Finds the closest matching valid setting name for fuzzy matching suggestions.
+    /// </summary>
+    private static string? FindClosestSettingName(string invalidName)
+    {
+        var invalidLower = invalidName.ToLower();
+
+        // First, check for prefix matches (e.g., "Font" -> "FontFamily" or "FontSize")
+        var prefixMatches = ValidSettingNames
+            .Where(validName => validName.ToLower().StartsWith(invalidLower))
+            .ToList();
+
+        if (prefixMatches.Count > 0)
+        {
+            // Return shortest prefix match (most likely intended)
+            return prefixMatches.OrderBy(x => x.Length).First();
+        }
+
+        // If no prefix match, use Levenshtein distance
+        var bestMatch = ValidSettingNames
+            .Select(validName => new
+            {
+                Name = validName,
+                Distance = LevenshteinDistance(invalidLower, validName.ToLower())
+            })
+            .OrderBy(x => x.Distance)
+            .ThenBy(x => Math.Abs(x.Name.Length - invalidName.Length)) // Prefer similar length
+            .FirstOrDefault();
+
+        // Only suggest if distance is reasonably small (within 3 edits)
+        return bestMatch?.Distance <= 3 ? bestMatch.Name : null;
+    }
+
+    /// <summary>
     /// Validates SET command usage rules:
     /// 1. SET commands can only appear once per setting name
     /// 2. SET commands must appear before action commands
+    /// 3. SET commands must use valid setting names
     /// </summary>
     private static void ValidateSetCommands(List<ICommand> commands, string? filePath = null)
     {
         var seenSettings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var actionCommandEncountered = false;
-        var lineNumber = 1;
 
         foreach (var command in commands)
         {
@@ -389,6 +472,26 @@ public class TapeParser
             // Validate SET commands
             if (command is SetCommand setCommand)
             {
+                var lineNumber = setCommand.LineNumber;
+
+                // Check for invalid setting names
+                if (!ValidSettingNames.Contains(setCommand.SettingName))
+                {
+                    var errorMessage = $"Unknown setting name '{setCommand.SettingName}'";
+                    var suggestion = FindClosestSettingName(setCommand.SettingName);
+                    if (suggestion != null)
+                    {
+                        errorMessage += $". Did you mean '{suggestion}'?";
+                    }
+
+                    throw new TapeParseException(
+                        errorMessage,
+                        null,
+                        lineNumber,
+                        1,
+                        filePath);
+                }
+
                 // Check for duplicate SET commands
                 if (seenSettings.Contains(setCommand.SettingName))
                 {
@@ -413,8 +516,6 @@ public class TapeParser
 
                 seenSettings.Add(setCommand.SettingName);
             }
-
-            lineNumber++;
         }
     }
 
@@ -447,7 +548,7 @@ public class TapeParser
             }
 
             // Use Superpower's error message as-is for better context
-            var errorMessage = $"Syntax error: {ex.Message}";
+            var errorMessage = ex.Message;
 
             throw new TapeParseException(
                 errorMessage,

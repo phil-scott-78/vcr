@@ -15,10 +15,7 @@ public sealed class SetCommandDeconstructor : PairDeconstructor<string, string>
     /// <exception cref="ArgumentException">Thrown when the value is not in Key=Value format</exception>
     protected override (string, string) Deconstruct(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException("SET parameter cannot be empty", nameof(value));
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(value);
 
         var parts = value.Split('=', 2);
         if (parts.Length != 2)
@@ -31,15 +28,8 @@ public sealed class SetCommandDeconstructor : PairDeconstructor<string, string>
         var key = parts[0].Trim();
         var val = parts[1].Trim();
 
-        if (string.IsNullOrWhiteSpace(key))
-        {
-            throw new ArgumentException($"SET parameter key cannot be empty in: '{value}'", nameof(value));
-        }
-
-        if (string.IsNullOrWhiteSpace(val))
-        {
-            throw new ArgumentException($"SET parameter value cannot be empty in: '{value}'", nameof(value));
-        }
+        ArgumentException.ThrowIfNullOrWhiteSpace(key, nameof(value));
+        ArgumentException.ThrowIfNullOrWhiteSpace(val, nameof(value));
 
         return (key, val);
     }

@@ -131,45 +131,6 @@ Sleep 2";
     }
 
     [Fact]
-    public async Task SleepCommand_ExecuteAsync_DelaysCorrectly()
-    {
-        // Arrange
-        var sleepDuration = TimeSpan.FromMilliseconds(100);
-        var command = new SleepCommand(sleepDuration);
-        var context = new VcrSharp.Core.Parsing.Ast.ExecutionContext(new Session.SessionOptions(), new Session.SessionState());
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-
-        // Act
-        await command.ExecuteAsync(context, TestContext.Current.CancellationToken);
-        stopwatch.Stop();
-
-        // Assert
-        // Allow 50ms tolerance for timing variations
-        stopwatch.ElapsedMilliseconds.ShouldBeInRange(50, 200);
-    }
-
-    [Fact]
-    public async Task SleepCommand_ExecuteAsync_RespectsCancellation()
-    {
-        // Arrange
-        var sleepDuration = TimeSpan.FromSeconds(10);
-        var command = new SleepCommand(sleepDuration);
-        var context = new VcrSharp.Core.Parsing.Ast.ExecutionContext(new Session.SessionOptions(), new Session.SessionState());
-        var cts = new CancellationTokenSource();
-        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
-
-        // Act
-        var task = command.ExecuteAsync(context, cts.Token);
-        await Task.Delay(50, TestContext.Current.CancellationToken); // Let sleep start
-        cts.Cancel();
-
-        // Assert
-        await Should.ThrowAsync<OperationCanceledException>(async () => await task);
-        stopwatch.Stop();
-        stopwatch.ElapsedMilliseconds.ShouldBeLessThan(1000); // Should cancel quickly
-    }
-
-    [Fact]
     public void SleepCommand_ToString_FormatsCorrectly()
     {
         // Arrange

@@ -14,7 +14,7 @@ public class ModifierCommand(bool hasCtrl, bool hasAlt, bool hasShift, string ke
 
     public async Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var page = context.GetTerminalPage();
+        var page = context.Page;
 
         // Build modifiers list
         var modifiers = new List<string>();

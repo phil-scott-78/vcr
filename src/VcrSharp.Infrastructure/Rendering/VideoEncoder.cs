@@ -21,8 +21,10 @@ public class VideoEncoder
     /// <param name="storage">Frame storage containing captured frames</param>
     public VideoEncoder(SessionOptions options, FrameStorage storage)
     {
-        _options = options ?? throw new ArgumentNullException(nameof(options));
-        _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(storage);
+        _options = options;
+        _storage = storage;
     }
 
     /// <summary>
@@ -92,8 +94,8 @@ public class VideoEncoder
     private async Task RenderGifAsync(string textManifest, string cursorManifest, string outputFile)
     {
         // Calculate terminal dimensions (content area without padding)
-        var termWidth = _options.Width - (2 * _options.Padding);
-        var termHeight = _options.Height - (2 * _options.Padding);
+        var termWidth = _options.Width - 2 * _options.Padding;
+        var termHeight = _options.Height - 2 * _options.Padding;
 
         // Log dimensions for debugging
         Core.Logging.VcrLogger.Logger.Debug(
@@ -156,8 +158,8 @@ public class VideoEncoder
     private async Task RenderMp4Async(string textManifest, string cursorManifest, string outputFile)
     {
         // Calculate terminal dimensions (content area without padding)
-        var termWidth = _options.Width - (2 * _options.Padding);
-        var termHeight = _options.Height - (2 * _options.Padding);
+        var termWidth = _options.Width - 2 * _options.Padding;
+        var termHeight = _options.Height - 2 * _options.Padding;
 
         var backgroundColor = _options.Theme.Background;
 
@@ -214,8 +216,8 @@ public class VideoEncoder
     private async Task RenderWebMAsync(string textManifest, string cursorManifest, string outputFile)
     {
         // Calculate terminal dimensions (content area without padding)
-        var termWidth = _options.Width - (2 * _options.Padding);
-        var termHeight = _options.Height - (2 * _options.Padding);
+        var termWidth = _options.Width - 2 * _options.Padding;
+        var termHeight = _options.Height - 2 * _options.Padding;
 
         var backgroundColor = _options.Theme.Background;
 

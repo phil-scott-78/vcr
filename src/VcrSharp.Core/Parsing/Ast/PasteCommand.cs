@@ -7,7 +7,7 @@ public class PasteCommand : ICommand
 {
     public async Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var page = context.GetTerminalPage();
+        var page = context.Page;
         await page.PasteFromClipboardAsync(cancellationToken);
     }
 

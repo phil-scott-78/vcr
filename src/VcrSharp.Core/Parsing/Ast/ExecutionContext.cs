@@ -6,7 +6,7 @@ namespace VcrSharp.Core.Parsing.Ast;
 /// Context passed to commands during execution.
 /// Contains references to browser, session options, and runtime state.
 /// </summary>
-public class ExecutionContext(SessionOptions options, SessionState state)
+public class ExecutionContext(SessionOptions options, SessionState state, ITerminalPage page, IFrameCapture frameCapture)
 {
     /// <summary>
     /// Session options containing all configuration settings.
@@ -17,40 +17,16 @@ public class ExecutionContext(SessionOptions options, SessionState state)
     /// Terminal page instance for browser interaction.
     /// Set at runtime to an implementation from Infrastructure layer.
     /// </summary>
-    public ITerminalPage? Page { get; set; }
+    public ITerminalPage Page { get;  } = page;
 
     /// <summary>
     /// Frame capture controller for recording.
     /// Set at runtime to an implementation from Infrastructure layer.
     /// </summary>
-    public IFrameCapture? FrameCapture { get; set; }
+    public IFrameCapture FrameCapture { get;  } = frameCapture;
 
     /// <summary>
     /// Runtime state for command execution.
     /// </summary>
     public SessionState State { get; } = state;
-
-    /// <summary>
-    /// Gets the terminal page for command execution.
-    /// </summary>
-    /// <returns>The terminal page instance.</returns>
-    /// <exception cref="InvalidOperationException">Thrown if Page is not initialized.</exception>
-    public ITerminalPage GetTerminalPage()
-    {
-        if (Page == null)
-            throw new InvalidOperationException("TerminalPage not initialized");
-        return Page;
-    }
-
-    /// <summary>
-    /// Gets the frame capture for screenshot operations.
-    /// </summary>
-    /// <returns>The frame capture instance.</returns>
-    /// <exception cref="InvalidOperationException">Thrown if FrameCapture is not initialized.</exception>
-    public IFrameCapture GetFrameCapture()
-    {
-        if (FrameCapture == null)
-            throw new InvalidOperationException("FrameCapture not initialized");
-        return FrameCapture;
-    }
 }

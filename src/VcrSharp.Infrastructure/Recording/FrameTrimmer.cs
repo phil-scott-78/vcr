@@ -7,18 +7,9 @@ namespace VcrSharp.Infrastructure.Recording;
 /// Removes frames that fall outside the desired recording window
 /// (FirstActivity - StartBuffer) to (LastActivity + EndBuffer).
 /// </summary>
-public class FrameTrimmer
+public class FrameTrimmer(SessionOptions options, SessionState state)
 {
-    private readonly SessionOptions _options;
-    private readonly SessionState _state;
-    private readonly int _framerate;
-
-    public FrameTrimmer(SessionOptions options, SessionState state)
-    {
-        _options = options;
-        _state = state;
-        _framerate = options.Framerate;
-    }
+    private readonly int _framerate = options.Framerate;
 
     /// <summary>
     /// Calculates the frame range to keep based on activity frame numbers.
@@ -28,18 +19,18 @@ public class FrameTrimmer
     public (int firstFrame, int lastFrame)? CalculateFrameRange()
     {
         // If no activity was detected, keep all frames
-        if (!_state.FirstActivityFrameNumber.HasValue || !_state.LastActivityFrameNumber.HasValue)
+        if (!state.FirstActivityFrameNumber.HasValue || !state.LastActivityFrameNumber.HasValue)
         {
             return null;
         }
 
         // Convert buffer durations to frame counts
-        var startBufferFrames = (int)(_options.StartBuffer.TotalSeconds * _framerate);
-        var endBufferFrames = (int)(_options.EndBuffer.TotalSeconds * _framerate);
+        var startBufferFrames = (int)(options.StartBuffer.TotalSeconds * _framerate);
+        var endBufferFrames = (int)(options.EndBuffer.TotalSeconds * _framerate);
 
         // Calculate frame range directly from activity frame numbers
-        var firstFrame = _state.FirstActivityFrameNumber.Value - startBufferFrames;
-        var lastFrame = _state.LastActivityFrameNumber.Value + endBufferFrames;
+        var firstFrame = state.FirstActivityFrameNumber.Value - startBufferFrames;
+        var lastFrame = state.LastActivityFrameNumber.Value + endBufferFrames;
 
         // Ensure first frame is at least 1 (frames are 1-based)
         if (firstFrame < 1)

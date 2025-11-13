@@ -11,7 +11,7 @@ public class TypeCommand(string text, TimeSpan? speed = null) : ICommand
 
     public async Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var page = context.GetTerminalPage();
+        var page = context.Page;
 
         // Determine typing speed (use override if specified, otherwise use session default)
         var typingSpeed = Speed ?? context.Options.TypingSpeed;

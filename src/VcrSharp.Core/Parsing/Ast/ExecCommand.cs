@@ -4,9 +4,15 @@ namespace VcrSharp.Core.Parsing.Ast;
 /// Represents an Exec command that executes a real shell command (VcrSharp-specific).
 /// Example: Exec "npm install", Exec "git status"
 /// </summary>
-public class ExecCommand(string command) : ICommand
+public class ExecCommand : ICommand
 {
-    public string Command { get; } = command ?? throw new ArgumentNullException(nameof(command));
+    public string Command { get; }
+
+    public ExecCommand(string command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        Command = command;
+    }
 
     public Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {

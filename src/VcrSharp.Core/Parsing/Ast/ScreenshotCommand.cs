@@ -10,7 +10,7 @@ public class ScreenshotCommand(string filePath) : ICommand
 
     public async Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var frameCapture = context.GetFrameCapture();
+        var frameCapture = context.FrameCapture;
         await frameCapture.CaptureScreenshotAsync(FilePath);
     }
 

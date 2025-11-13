@@ -47,7 +47,7 @@ public class WaitCommand(WaitScope scope = WaitScope.Buffer, TimeSpan? timeout =
 
     public async Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var page = context.GetTerminalPage();
+        var page = context.Page;
 
         // Determine timeout (use override if specified, otherwise use session default)
         var timeout = Timeout ?? context.Options.WaitTimeout;

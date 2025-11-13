@@ -25,13 +25,13 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         /// Gets or sets the tape file path.
         /// </summary>
         [CommandArgument(0, "<tape-file>")]
-        public string TapeFile { get; set; } = string.Empty;
+        public required string TapeFile { get; init; } = string.Empty;
 
         /// <summary>
         /// Gets or sets whether to enable verbose logging.
         /// </summary>
         [CommandOption("-v|--verbose")]
-        public bool Verbose { get; set; }
+        public required bool Verbose { get; init; }
 
         /// <summary>
         /// Gets or sets SET command overrides from command-line.
@@ -40,14 +40,14 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         /// </summary>
         [CommandOption("--set <KEY=VALUE>")]
         [PairDeconstructor(typeof(SetCommandDeconstructor))]
-        public ILookup<string, string>? SetOverrides { get; set; }
+        public required ILookup<string, string>? SetOverrides { get; init; }
 
         /// <summary>
         /// Gets or sets additional output files from command-line.
         /// These are appended to any Output commands in the tape file.
         /// </summary>
         [CommandOption("-o|--output <FILE>")]
-        public string[]? OutputFiles { get; set; }
+        public required string[]? OutputFiles { get; init; }
     }
 
 
@@ -129,7 +129,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                         var progress = new Progress<string>(status => ctx.Status(status));
 
                         await using var session = new VcrSession(options);
-                        result = await session.RecordAsync(commands, cancellationToken, progress);
+                        result = await session.RecordAsync(commands, progress, cancellationToken);
                     });
 
                 // Display results

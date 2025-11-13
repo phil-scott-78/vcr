@@ -4,10 +4,18 @@ namespace VcrSharp.Core.Parsing.Ast;
 /// Represents an Env command that sets an environment variable.
 /// Example: Env USER "alice"
 /// </summary>
-public class EnvCommand(string key, string value) : ICommand
+public class EnvCommand : ICommand
 {
-    public string Key { get; } = key ?? throw new ArgumentNullException(nameof(key));
-    public string Value { get; } = value ?? throw new ArgumentNullException(nameof(value));
+    public string Key { get; }
+    public string Value { get; }
+
+    public EnvCommand(string key, string value)
+    {
+        ArgumentNullException.ThrowIfNull(key);
+        ArgumentNullException.ThrowIfNull(value);
+        Key = key;
+        Value = value;
+    }
 
     public Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {

@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Superpower;
-using Superpower.Model;
 using Superpower.Parsers;
 using VcrSharp.Core.Parsing.Ast;
 // ReSharper disable InconsistentNaming
@@ -83,9 +82,6 @@ public class TapeParser
     }
 
     // Helper parsers for common patterns
-    private static readonly TokenListParser<TapeToken, string> String =
-        Token.EqualTo(TapeToken.String).Select(t => ProcessEscapes(t.ToStringValue()))
-        .Or(Token.EqualTo(TapeToken.StringLiteral).Select(t => StripQuotes(t.ToStringValue())));
 
     private static readonly TokenListParser<TapeToken, string> QuotedString =
         Token.EqualTo(TapeToken.String).Select(t => ProcessEscapes(t.ToStringValue()))
@@ -122,17 +118,17 @@ public class TapeParser
             // Parse the duration string (e.g., "500ms", "2s", "1.5m")
             if (value.EndsWith("ms"))
             {
-                var num = double.Parse(value.Substring(0, value.Length - 2), CultureInfo.InvariantCulture);
+                var num = double.Parse(value[..^2], CultureInfo.InvariantCulture);
                 return TimeSpan.FromMilliseconds(num);
             }
             else if (value.EndsWith("m") && !value.EndsWith("ms"))
             {
-                var num = double.Parse(value.Substring(0, value.Length - 1), CultureInfo.InvariantCulture);
+                var num = double.Parse(value[..^1], CultureInfo.InvariantCulture);
                 return TimeSpan.FromMinutes(num);
             }
             else if (value.EndsWith("s"))
             {
-                var num = double.Parse(value.Substring(0, value.Length - 1), CultureInfo.InvariantCulture);
+                var num = double.Parse(value[..^1], CultureInfo.InvariantCulture);
                 return TimeSpan.FromSeconds(num);
             }
             throw new InvalidOperationException($"Invalid duration format: {value}");
@@ -142,7 +138,7 @@ public class TapeParser
     private static readonly TokenListParser<TapeToken, TimeSpan> DurationOrBareNumber =
         Duration.Or(
             from num in Number
-            from unit in Identifier.OptionalOrDefault()
+            from unit in Identifier!.OptionalOrDefault()
             select unit != null
                 ? unit.ToLower() switch
                 {
@@ -174,7 +170,7 @@ public class TapeParser
             .Or(Duration.Select(d => d.ToString()))
             .Or(Number.Select(n => n.ToString(CultureInfo.InvariantCulture)))
             .Or(Boolean.Select(b => b.ToString()))
-        select (ICommand)new Ast.SetCommand(settingName, value, keyword.Position.Line);
+        select (ICommand)new SetCommand(settingName, value, keyword.Position.Line);
 
     // Output command: Output demo.gif
     private static readonly TokenListParser<TapeToken, ICommand> OutputCommand =
@@ -199,7 +195,7 @@ public class TapeParser
         from keyword in Token.EqualTo(TapeToken.Type)
         from speed in SpeedModifier.OptionalOrDefault()
         from text in QuotedString
-        select (ICommand)new TypeCommand(text, speed == default(TimeSpan) ? null : speed);
+        select (ICommand)new TypeCommand(text, speed == TimeSpan.Zero ? null : speed);
 
     // Sleep command: Sleep 1s
     private static readonly TokenListParser<TapeToken, ICommand> SleepCommand =
@@ -211,8 +207,8 @@ public class TapeParser
     private static TokenListParser<TapeToken, ICommand> KeyCommandFor(TapeToken keyToken, string keyName) =>
         from keyword in Token.EqualTo(keyToken)
         from speed in SpeedModifier.OptionalOrDefault()
-        from count in RepeatCount.OptionalOrDefault((int)0)
-        select (ICommand)new KeyCommand(keyName, count == 0 ? 1 : count, speed == default(TimeSpan) ? null : speed);
+        from count in RepeatCount.OptionalOrDefault()
+        select (ICommand)new KeyCommand(keyName, count == 0 ? 1 : count, speed == TimeSpan.Zero ? null : speed);
 
     // Key command: Enter, Tab, etc.
     private static readonly TokenListParser<TapeToken, ICommand> KeyCommand =
@@ -292,7 +288,7 @@ public class TapeParser
         from pattern in RegexPattern.OptionalOrDefault()
         select (ICommand)new WaitCommand(
             scope,
-            timeout == default(TimeSpan) ? null : timeout,
+            timeout == TimeSpan.Zero ? null : timeout,
             pattern);
 
     // Hide command: Hide
@@ -452,7 +448,7 @@ public class TapeParser
     /// 2. SET commands must appear before action commands
     /// 3. SET commands must use valid setting names
     /// </summary>
-    private static void ValidateSetCommands(List<ICommand> commands, string? filePath = null)
+    private static void ValidateSetCommands(List<ICommand> commands)
     {
         var seenSettings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var actionCommandEncountered = false;
@@ -488,8 +484,7 @@ public class TapeParser
                         errorMessage,
                         null,
                         lineNumber,
-                        1,
-                        filePath);
+                        1);
                 }
 
                 // Check for duplicate SET commands
@@ -499,8 +494,7 @@ public class TapeParser
                         $"Duplicate SET command: '{setCommand.SettingName}' has already been set",
                         null,
                         lineNumber,
-                        1,
-                        filePath);
+                        1);
                 }
 
                 // Check if SET appears after action commands
@@ -510,8 +504,7 @@ public class TapeParser
                         $"SET command for '{setCommand.SettingName}' appears after action commands. All SET commands must appear before Type, Exec, Sleep, Wait, and other action commands",
                         null,
                         lineNumber,
-                        1,
-                        filePath);
+                        1);
                 }
 
                 seenSettings.Add(setCommand.SettingName);
@@ -531,7 +524,7 @@ public class TapeParser
             var commandList = result.ToList();
 
             // Validate SET command rules
-            ValidateSetCommands(commandList, filePath);
+            ValidateSetCommands(commandList);
 
             return commandList;
         }
@@ -554,8 +547,7 @@ public class TapeParser
                 errorMessage,
                 ex,
                 line,
-                column,
-                filePath);
+                column);
         }
     }
 
@@ -572,23 +564,9 @@ public class TapeParser
 /// <summary>
 /// Exception thrown when tape parsing fails.
 /// </summary>
-public class TapeParseException : Exception
+public class TapeParseException(string message, Exception? innerException, int line = 0, int column = 0)
+    : Exception(message, innerException)
 {
-    public int Line { get; }
-    public int Column { get; }
-    public string? FilePath { get; }
-
-    public TapeParseException(string message, int line = 0, int column = 0, string? filePath = null) : base(message)
-    {
-        Line = line;
-        Column = column;
-        FilePath = filePath;
-    }
-
-    public TapeParseException(string message, Exception? innerException, int line = 0, int column = 0, string? filePath = null) : base(message, innerException)
-    {
-        Line = line;
-        Column = column;
-        FilePath = filePath;
-    }
+    public int Line { get; } = line;
+    public int Column { get; } = column;
 }

@@ -24,18 +24,12 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
     /// <summary>
     /// Gets whether the capture loop is currently running.
     /// </summary>
-    public bool IsRunning => _captureTask is { IsCompleted: false };
+    private bool IsRunning => _captureTask is { IsCompleted: false };
 
     /// <summary>
     /// Gets the stopwatch used for frame timing.
     /// </summary>
     public Stopwatch Stopwatch { get; }
-
-    /// <summary>
-    /// Gets the timestamp when frame capture actually stopped.
-    /// This represents the time of the last captured frame.
-    /// </summary>
-    public TimeSpan ActualStopTime { get; private set; }
 
     /// <summary>
     /// Initializes a new instance of FrameCapture.
@@ -52,10 +46,14 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         FrameStorage storage,
         ActivityMonitor? activityMonitor = null)
     {
-        _terminalPage = terminalPage ?? throw new ArgumentNullException(nameof(terminalPage));
-        _options = options ?? throw new ArgumentNullException(nameof(options));
-        _state = state ?? throw new ArgumentNullException(nameof(state));
-        _storage = storage ?? throw new ArgumentNullException(nameof(storage));
+        ArgumentNullException.ThrowIfNull(terminalPage);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(state);
+        ArgumentNullException.ThrowIfNull(storage);
+        _terminalPage = terminalPage;
+        _options = options;
+        _state = state;
+        _storage = storage;
         _activityMonitor = activityMonitor;
         Stopwatch = new Stopwatch();
         _writeQueue = new FrameWriteQueue();
@@ -106,7 +104,6 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         }
 
         // Record the actual time when capture stopped (before stopping the stopwatch)
-        ActualStopTime = Stopwatch.Elapsed;
 
         Stopwatch.Stop();
         _state.ElapsedTime = Stopwatch.Elapsed;
@@ -120,7 +117,7 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
     /// Captures text and cursor layers separately and queues them for background writing.
     /// </summary>
     /// <returns>The frame number that was captured</returns>
-    public async Task<int> CaptureFrameAsync()
+    private async Task<int> CaptureFrameAsync()
     {
         var frameNumber = _state.FramesCaptured + 1;
         var timestamp = Stopwatch.Elapsed;
@@ -213,8 +210,7 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
     /// <returns>Task that completes when screenshot is saved</returns>
     public async Task CaptureScreenshotAsync(string path)
     {
-        if (string.IsNullOrWhiteSpace(path))
-            throw new ArgumentException("Path cannot be empty", nameof(path));
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
         await _terminalPage.ScreenshotAsync(path);
     }

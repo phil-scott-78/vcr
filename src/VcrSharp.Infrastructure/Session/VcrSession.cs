@@ -13,10 +13,16 @@ namespace VcrSharp.Infrastructure.Session;
 /// Main orchestrator for VcrSharp recording sessions.
 /// Manages ttyd, browser, terminal, frame capture, and command execution.
 /// </summary>
-public class VcrSession(SessionOptions options) : IAsyncDisposable
+public class VcrSession : IAsyncDisposable
 {
-    private readonly SessionOptions _options = options ?? throw new ArgumentNullException(nameof(options));
+    private readonly SessionOptions _options;
     private readonly SessionState _state = new();
+
+    public VcrSession(SessionOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        _options = options;
+    }
     private bool _disposed;
 
     // Resources managed by this session
@@ -31,13 +37,12 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
     /// Records a tape file and produces output videos.
     /// </summary>
     /// <param name="commands">List of parsed commands to execute</param>
-    /// <param name="cancellationToken">Cancellation token</param>
     /// <param name="progress">Optional progress reporter for status updates</param>
+    /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>Recording result with output file paths</returns>
-    public async Task<RecordingResult> RecordAsync(
-        List<ICommand> commands,
-        CancellationToken cancellationToken = default,
-        IProgress<string>? progress = null)
+    public async Task<RecordingResult> RecordAsync(List<ICommand> commands,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         var stopwatch = Stopwatch.StartNew();
 
@@ -95,12 +100,12 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
             // (this ensures cell dimensions are measured with the correct font)
             if (_options.Cols.HasValue || _options.Rows.HasValue)
             {
-                var (viewportWidth, viewportHeight) = await _terminalPage.ResizeTerminalToColsRowsAsync(_options.Cols, _options.Rows, _options.FontSize, _options.FontFamily, _options.LetterSpacing, _options.LineHeight);
+                var (viewportWidth, viewportHeight) = await _terminalPage.ResizeTerminalToColsRowsAsync(_options.Cols, _options.Rows);
 
                 // Update Width/Height in options so VideoEncoder uses the correct dimensions
                 // Add padding back since VideoEncoder expects Width/Height to include padding
-                _options.Width = viewportWidth + (2 * _options.Padding);
-                _options.Height = viewportHeight + (2 * _options.Padding);
+                _options.Width = viewportWidth + 2 * _options.Padding;
+                _options.Height = viewportHeight + 2 * _options.Padding;
 
                 VcrLogger.Logger.Information("Terminal resized to {Cols}x{Rows} (viewport: {ViewportWidth}x{ViewportHeight}, total with padding: {Width}x{Height})",
                     _options.Cols, _options.Rows, viewportWidth, viewportHeight, _options.Width, _options.Height);
@@ -283,11 +288,7 @@ public class VcrSession(SessionOptions options) : IAsyncDisposable
         if (_terminalPage == null || _frameCapture == null)
             throw new InvalidOperationException("Session components not initialized");
 
-        var context = new Core.Parsing.Ast.ExecutionContext(_options, _state)
-        {
-            Page = _terminalPage,
-            FrameCapture = _frameCapture
-        };
+        var context = new Core.Parsing.Ast.ExecutionContext(_options, _state, _terminalPage, _frameCapture);
 
         ICommand? previousCommand = null;
 

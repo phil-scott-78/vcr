@@ -32,16 +32,6 @@ public class FrameStorage : IDisposable
     }
 
     /// <summary>
-    /// Initializes a new instance of FrameStorage with a specified directory.
-    /// </summary>
-    /// <param name="directory">The directory to use for frame storage</param>
-    public FrameStorage(string directory)
-    {
-        FrameDirectory = directory;
-        Directory.CreateDirectory(FrameDirectory);
-    }
-
-    /// <summary>
     /// Gets the file path for a specific frame layer (text or cursor).
     /// Uses VHS-style naming: frame-text-00001.png, frame-cursor-00001.png
     /// </summary>
@@ -53,8 +43,7 @@ public class FrameStorage : IDisposable
         if (frameNumber < 0)
             throw new ArgumentException("Frame number must be non-negative", nameof(frameNumber));
 
-        if (string.IsNullOrWhiteSpace(layer))
-            throw new ArgumentException("Layer name cannot be empty", nameof(layer));
+        ArgumentException.ThrowIfNullOrWhiteSpace(layer);
 
         var filename = $"frame-{layer}-{frameNumber:D5}.png";
         return Path.Combine(FrameDirectory, filename);
@@ -163,7 +152,7 @@ public class FrameStorage : IDisposable
     /// <summary>
     /// Deletes all frames and the temporary directory.
     /// </summary>
-    public void Cleanup()
+    private void Cleanup()
     {
         if (_disposed || !Directory.Exists(FrameDirectory))
             return;

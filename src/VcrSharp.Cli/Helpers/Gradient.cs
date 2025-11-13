@@ -13,12 +13,12 @@ public sealed class Gradient : Renderable
     /// <summary>
     /// Gets the colors used in the gradient.
     /// </summary>
-    public IReadOnlyList<Color> Colors { get; }
+    private IReadOnlyList<Color> Colors { get; }
 
     /// <summary>
     /// Gets the direction of the gradient.
     /// </summary>
-    public GradientDirection Direction { get; }
+    private GradientDirection Direction { get; }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="Gradient"/> class.
@@ -29,12 +29,11 @@ public sealed class Gradient : Renderable
     public Gradient(IRenderable child, IEnumerable<Color> colors,
         GradientDirection direction = GradientDirection.LeftToRight)
     {
-        _child = child ?? throw new ArgumentNullException(nameof(child));
+        ArgumentNullException.ThrowIfNull(child);
+        ArgumentNullException.ThrowIfNull(colors);
 
-        if (colors == null)
-        {
-            throw new ArgumentNullException(nameof(colors));
-        }
+        _child = child;
+
 
         var colorArray = colors.ToArray();
         if (colorArray.Length < 2)
@@ -130,8 +129,8 @@ public sealed class Gradient : Renderable
             GradientDirection.BottomToTop => 1.0 - normalizedRow,
             GradientDirection.TopLeftToBottomRight => (normalizedRow + normalizedColumn) / 2.0,
             GradientDirection.TopRightToBottomLeft => (normalizedRow + (1.0 - normalizedColumn)) / 2.0,
-            GradientDirection.BottomLeftToTopRight => ((1.0 - normalizedRow) + normalizedColumn) / 2.0,
-            GradientDirection.BottomRightToTopLeft => ((1.0 - normalizedRow) + (1.0 - normalizedColumn)) / 2.0,
+            GradientDirection.BottomLeftToTopRight => (1.0 - normalizedRow + normalizedColumn) / 2.0,
+            GradientDirection.BottomRightToTopLeft => (1.0 - normalizedRow + (1.0 - normalizedColumn)) / 2.0,
             _ => normalizedColumn,
         };
     }

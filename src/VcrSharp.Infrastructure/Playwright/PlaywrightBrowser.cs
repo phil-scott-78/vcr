@@ -137,8 +137,8 @@ public class PlaywrightBrowser : IDisposable
             {
                 // Subtract padding from viewport dimensions (padding will be added back during FFmpeg rendering)
                 // This matches VHS behavior: smaller terminal is captured, then padding is added in post-processing
-                viewportWidth = width - (2 * padding);
-                viewportHeight = height - (2 * padding);
+                viewportWidth = width - 2 * padding;
+                viewportHeight = height - 2 * padding;
             }
 
             _context = await _browser.NewContextAsync(new BrowserNewContextOptions

@@ -79,17 +79,13 @@ public class TerminalPage : ITerminalPage
     private ICDPSession? _cdpSession;
 
     /// <summary>
-    /// Gets the underlying Playwright page.
-    /// </summary>
-    public IPage Page => _page;
-
-    /// <summary>
     /// Initializes a new instance of the TerminalPage class.
     /// </summary>
     /// <param name="page">The Playwright page to wrap.</param>
     public TerminalPage(IPage page)
     {
-        _page = page ?? throw new ArgumentNullException(nameof(page));
+        ArgumentNullException.ThrowIfNull(page);
+        _page = page;
     }
 
     /// <summary>
@@ -205,12 +201,8 @@ public class TerminalPage : ITerminalPage
     /// </summary>
     /// <param name="cols">Terminal columns (character width).</param>
     /// <param name="rows">Terminal rows (character height).</param>
-    /// <param name="fontSize">Font size in pixels.</param>
-    /// <param name="fontFamily">Font family name.</param>
-    /// <param name="letterSpacing">Letter spacing multiplier.</param>
-    /// <param name="lineHeight">Line height multiplier.</param>
     /// <returns>Tuple of (width, height) representing the final viewport dimensions.</returns>
-    public async Task<(int Width, int Height)> ResizeTerminalToColsRowsAsync(int? cols, int? rows, int fontSize, string fontFamily, float letterSpacing, float lineHeight)
+    public async Task<(int Width, int Height)> ResizeTerminalToColsRowsAsync(int? cols, int? rows)
     {
         // Get current dimensions
         var currentDims = await _page.EvaluateAsync<TerminalDimensions>("""
@@ -617,7 +609,7 @@ public class TerminalPage : ITerminalPage
                 else if (currentBuffer.StartsWith(lastSnapshot))
                 {
                     // Content was appended
-                    newContent = currentBuffer.Substring(lastSnapshot.Length);
+                    newContent = currentBuffer[lastSnapshot.Length..];
                 }
                 else
                 {
@@ -640,7 +632,7 @@ public class TerminalPage : ITerminalPage
             {
                 // Trim buffer up to end of first match
                 var trimPosition = match.Index + match.Length;
-                persistentBuffer = persistentBuffer.Substring(trimPosition);
+                persistentBuffer = persistentBuffer[trimPosition..];
 
                 VcrLogger.Logger.Debug("Wait pattern matched after {AttemptCount} attempts. Trimmed buffer to {RemainingLength} chars",
                     attemptCount, persistentBuffer.Length);
@@ -688,16 +680,16 @@ public class TerminalPage : ITerminalPage
         // Use canvas.toBlob() for maximum performance (MDN recommended, more efficient than toDataURL)
         var base64Data = await canvas.EvaluateAsync<string>("""
 
-                                                                        canvas => new Promise(resolve => {
-                                                                            canvas.toBlob(blob => {
-                                                                                const reader = new FileReader();
-                                                                                reader.onloadend = () => {
-                                                                                    // Extract base64 data without 'data:image/png;base64,' prefix
-                                                                                    resolve(reader.result.split(',')[1]);
-                                                                                };
-                                                                                reader.readAsDataURL(blob);
-                                                                            }, 'image/png');
-                                                                        })
+                                                            canvas => new Promise(resolve => {
+                                                                canvas.toBlob(blob => {
+                                                                    const reader = new FileReader();
+                                                                    reader.onloadend = () => {
+                                                                        // Extract base64 data without 'data:image/png;base64,' prefix
+                                                                        resolve(reader.result.split(',')[1]);
+                                                                    };
+                                                                    reader.readAsDataURL(blob);
+                                                                }, 'image/png');
+                                                            })
 
                                                             """);
 
@@ -872,7 +864,7 @@ public class TerminalPage : ITerminalPage
         // 1. The character requires shift AND
         // 2. Control is NOT in the modifiers (Control doesn't care about case) AND
         // 3. Shift isn't already present
-        var isUppercaseLetter = key.Length == 1 && key[0] >= 'A' && key[0] <= 'Z';
+        var isUppercaseLetter = key is [>= 'A' and <= 'Z'];
         if (requiresShift && !hasControl && !finalModifiers.Contains("Shift"))
         {
             // Only add Shift for non-letter special characters or when Control is not present

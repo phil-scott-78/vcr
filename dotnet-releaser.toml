@@ -19,6 +19,9 @@ publish_draft = true # publish draft NuGet package per commit
 user = "phil-scott-78"
 repo = "vcr"
 
+[brew]
+publish = false
+
 # Only build for platforms that Playwright supports
 # Playwright .NET does not support Windows ARM
 

@@ -469,9 +469,10 @@ public class VcrSession : IAsyncDisposable
             // Clean up frame storage
             _frameStorage?.Dispose();
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore cleanup errors
+            // Log cleanup errors but don't throw during disposal
+            VcrLogger.Logger.Warning(ex, "Error during session disposal/cleanup. Error: {ErrorMessage}", ex.Message);
         }
 
         _disposed = true;

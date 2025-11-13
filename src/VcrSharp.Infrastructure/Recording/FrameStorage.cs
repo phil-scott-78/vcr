@@ -1,4 +1,5 @@
 using System.Text;
+using VcrSharp.Core.Logging;
 using VcrSharp.Core.Recording;
 
 namespace VcrSharp.Infrastructure.Recording;
@@ -161,13 +162,17 @@ public class FrameStorage : IDisposable
         {
             Directory.Delete(FrameDirectory, recursive: true);
         }
-        catch (IOException)
+        catch (IOException ex)
         {
-            // Directory might be in use, ignore
+            // Directory might be in use, log but continue
+            VcrLogger.Logger.Warning(ex, "Failed to delete frame directory '{Directory}' (may be in use). Error: {ErrorMessage}",
+                FrameDirectory, ex.Message);
         }
-        catch (UnauthorizedAccessException)
+        catch (UnauthorizedAccessException ex)
         {
-            // Insufficient permissions, ignore
+            // Insufficient permissions, log but continue
+            VcrLogger.Logger.Warning(ex, "Insufficient permissions to delete frame directory '{Directory}'. Error: {ErrorMessage}",
+                FrameDirectory, ex.Message);
         }
     }
 

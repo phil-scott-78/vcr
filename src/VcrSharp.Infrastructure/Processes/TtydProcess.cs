@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using VcrSharp.Core.Logging;
 
 namespace VcrSharp.Infrastructure.Processes;
 
@@ -154,9 +155,10 @@ public class TtydProcess : IDisposable
                 // Silently consume output to prevent blocking
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore errors from output reading
+            // Log errors from output reading (may indicate ttyd startup or runtime issues)
+            VcrLogger.Logger.Warning(ex, "Error reading ttyd process output stream. Error: {ErrorMessage}", ex.Message);
         }
     }
 

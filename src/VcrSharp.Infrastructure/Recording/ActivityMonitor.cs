@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using VcrSharp.Core.Logging;
 using VcrSharp.Core.Session;
 using VcrSharp.Infrastructure.Playwright;
 
@@ -118,10 +119,11 @@ public class ActivityMonitor : IDisposable
                 // Exit gracefully
                 break;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Log errors but continue monitoring
-                // In production, would use proper logging
+                // Log errors but continue monitoring to avoid stopping activity tracking
+                VcrLogger.Logger.Error(ex, "Failed to read terminal buffer for activity monitoring. Frame: {FrameNumber}. Error: {ErrorMessage}",
+                    _currentFrameNumber, ex.Message);
                 await Task.Delay(pollInterval, _cts.Token);
             }
         }

@@ -1,4 +1,5 @@
 using Microsoft.Playwright;
+using VcrSharp.Core.Logging;
 
 namespace VcrSharp.Infrastructure.Playwright;
 
@@ -205,18 +206,20 @@ public class PlaywrightBrowser : IDisposable
         {
             _context?.CloseAsync().GetAwaiter().GetResult();
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore errors during disposal
+            // Log errors during browser context disposal
+            VcrLogger.Logger.Debug(ex, "Error closing Playwright browser context during disposal. Error: {ErrorMessage}", ex.Message);
         }
 
         try
         {
             _browser?.CloseAsync().GetAwaiter().GetResult();
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore errors during disposal
+            // Log errors during browser disposal
+            VcrLogger.Logger.Debug(ex, "Error closing Playwright browser during disposal. Error: {ErrorMessage}", ex.Message);
         }
 
         _playwright?.Dispose();

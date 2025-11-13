@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using VcrSharp.Core.Logging;
 
 namespace VcrSharp.Infrastructure.Recording;
 
@@ -55,12 +56,21 @@ public class FrameWriteQueue : IAsyncDisposable
         {
             try
             {
+                // Ensure parent directory exists before writing
+                var directory = Path.GetDirectoryName(frame.Path);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    VcrLogger.Logger.Warning("Parent directory '{Directory}' does not exist for frame '{Path}'",
+                        directory, frame.Path);
+                }
+
                 await File.WriteAllBytesAsync(frame.Path, frame.Data, cancellationToken);
             }
-            catch (Exception)
+            catch (Exception ex)
             {
                 // Log error but continue processing (don't crash writer thread)
-                // In production, use proper logging framework
+                VcrLogger.Logger.Error(ex, "Failed to write frame to '{Path}'. Size: {Size} bytes. Error: {ErrorMessage}",
+                    frame.Path, frame.Data.Length, ex.Message);
             }
         }
     }

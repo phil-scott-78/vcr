@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using VcrSharp.Core.Logging;
 using VcrSharp.Core.Recording;
 using VcrSharp.Core.Session;
 using VcrSharp.Infrastructure.Playwright;
@@ -195,10 +196,11 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
                 // Expected when cancelling
                 break;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Log error but continue capturing
-                // In production, this should use proper logging
+                // Log error but continue capturing to avoid stopping the entire recording
+                VcrLogger.Logger.Error(ex, "Frame capture failed at frame {FrameNumber}. IsCapturing: {IsCapturing}. Error: {ErrorMessage}",
+                    _state.FramesCaptured + 1, _state.IsCapturing, ex.Message);
             }
         }
     }

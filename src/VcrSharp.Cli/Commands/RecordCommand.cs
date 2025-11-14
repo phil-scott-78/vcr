@@ -85,7 +85,6 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
             try
             {
                 // Parse tape file
-                AnsiConsole.MarkupLineInterpolated($"[dim]Parsing tape file:[/] {settings.TapeFile}");
                 var parser = new TapeParser();
                 var commands = await parser.ParseFileAsync(settings.TapeFile);
 
@@ -94,13 +93,6 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
 
                 // Extract session options from Set commands
                 var options = SessionOptions.FromCommands(commands);
-
-                AnsiConsole.MarkupLineInterpolated($"[green]✓[/] Parsed {commands.Count} commands");
-                AnsiConsole.WriteLine();
-
-                // Display settings summary
-                DisplaySettingsSummary(options);
-                AnsiConsole.WriteLine();
 
                 // Validate Require commands from tape file
                 var requireCommands = commands.OfType<RequireCommand>().ToList();
@@ -182,11 +174,11 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         var result = new List<Core.Parsing.Ast.ICommand>(tapeCommands);
 
         // Apply SET overrides: remove tape file SET commands that match CLI keys
-        if (settings.SetOverrides != null && settings.SetOverrides.Any())
+        if (settings.SetOverrides != null && settings.SetOverrides.Count != 0)
         {
             var cliSetKeys = settings.SetOverrides.Select(g => g.Key.ToLowerInvariant()).ToHashSet();
 
-            // Remove SET commands from tape that are overridden by CLI
+            // Remove SET commands from tape that CLI overrides
             result.RemoveAll(cmd =>
                 cmd is SetCommand setCmd &&
                 cliSetKeys.Contains(setCmd.SettingName.ToLowerInvariant()));
@@ -249,41 +241,5 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         var padded = new Padder(figletWithGradient, new Padding(1));
         AnsiConsole.Write(padded);
         AnsiConsole.WriteLine();
-    }
-
-    /// <summary>
-    /// Displays a formatted summary of the recording settings.
-    /// </summary>
-    private static void DisplaySettingsSummary(SessionOptions options)
-    {
-        var table = new Table();
-        table.Border(TableBorder.Rounded);
-        table.BorderColor(Color.Grey);
-        table.AddColumn(new TableColumn("[dim]Setting[/]").NoWrap());
-        table.AddColumn(new TableColumn("[dim]Value[/]"));
-
-        // Dimensions
-        var dimensionDisplay = options.Cols > 0 && options.Rows > 0
-            ? $"{options.Cols}x{options.Rows} (cols × rows)"
-            : $"{options.Width}x{options.Height} (pixels)";
-        table.AddRow("Dimensions", dimensionDisplay);
-
-        // Font
-        table.AddRow("Font", $"{options.FontFamily} {options.FontSize}px");
-
-        // Video
-        table.AddRow("Framerate", $"{options.Framerate} fps");
-
-        // Theme
-        table.AddRow("Theme", options.Theme.Name);
-
-        // Shell
-        table.AddRow("Shell", options.Shell);
-
-        // Output files
-        var outputs = string.Join(", ", options.OutputFiles.Select(Path.GetFileName));
-        table.AddRow("Output", outputs);
-
-        AnsiConsole.Write(table);
     }
 }

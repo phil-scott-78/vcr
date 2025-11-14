@@ -24,6 +24,7 @@ public class VcrSession : IAsyncDisposable
         _options = options;
     }
     private bool _disposed;
+    private bool _framesCleanedUp;
 
     // Resources managed by this session
     private TtydProcess? _ttydProcess;
@@ -140,6 +141,12 @@ public class VcrSession : IAsyncDisposable
             // 11. Start frame capture loop (stopwatch starts here)
             await _frameCapture.StartAsync(cancellationToken);
 
+            // Apply StartBuffer delay for non-Exec commands (gives terminal time to settle)
+            if (execCommands.Count == 0 && _options.StartBuffer > TimeSpan.Zero)
+            {
+                await Task.Delay(_options.StartBuffer, cancellationToken);
+            }
+
             progress?.Report("Recording tape...");
 
             // 11. Execute commands sequentially
@@ -150,6 +157,11 @@ public class VcrSession : IAsyncDisposable
             {
                 progress?.Report("Waiting for commands to complete...");
                 await WaitForInactivityAsync(cancellationToken);
+            }
+            else if (_options.EndBuffer > TimeSpan.Zero)
+            {
+                // Apply EndBuffer delay for non-Exec commands (gives terminal time to finish rendering)
+                await Task.Delay(_options.EndBuffer, cancellationToken);
             }
 
             // 13. Stop activity monitor
@@ -193,6 +205,9 @@ public class VcrSession : IAsyncDisposable
             {
                 var videoEncoder = new VideoEncoder(_options, _frameStorage);
                 outputFiles = await videoEncoder.RenderAsync(progress);
+
+                // Cleanup frames immediately after encoding completes
+                CleanupFrames();
             }
 
             return new RecordingResult
@@ -205,6 +220,8 @@ public class VcrSession : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            // Cleanup frames even if recording fails
+            CleanupFrames();
             throw new VcrSessionException($"Recording failed: {ex.Message}", ex);
         }
     }
@@ -431,6 +448,20 @@ public class VcrSession : IAsyncDisposable
         VcrLogger.Logger.Debug("Terminal inactivity wait complete");
     }
 
+    /// <summary>
+    /// Explicitly cleans up frame storage after video encoding completes.
+    /// Should be called after VideoEncoder.RenderAsync() to ensure FFmpeg has finished reading frames.
+    /// </summary>
+    public void CleanupFrames()
+    {
+        if (_framesCleanedUp)
+            return;
+
+        _frameStorage?.Dispose();
+        _framesCleanedUp = true;
+        VcrLogger.Logger.Debug("Frame storage cleaned up explicitly");
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
@@ -466,8 +497,11 @@ public class VcrSession : IAsyncDisposable
             // Stop ttyd
             _ttydProcess?.Dispose();
 
-            // Clean up frame storage
-            _frameStorage?.Dispose();
+            // Clean up frame storage (only if not already cleaned up explicitly)
+            if (!_framesCleanedUp)
+            {
+                _frameStorage?.Dispose();
+            }
         }
         catch (Exception ex)
         {

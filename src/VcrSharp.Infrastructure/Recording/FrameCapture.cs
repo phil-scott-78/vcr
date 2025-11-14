@@ -105,6 +105,12 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         }
 
         // Record the actual time when capture stopped (before stopping the stopwatch)
+        // Update LastActivityFrameNumber to reflect the actual last captured frame
+        // This ensures FrameTrimmer doesn't aggressively trim frames captured during EndBuffer
+        if (_state.FramesCaptured > 0)
+        {
+            _state.LastActivityFrameNumber = _state.FramesCaptured;
+        }
 
         Stopwatch.Stop();
         _state.ElapsedTime = Stopwatch.Elapsed;

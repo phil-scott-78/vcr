@@ -5,8 +5,6 @@ uid: "docs.tutorials.typing-demo"
 order: 1150
 ---
 
-# Create a Typing Demo
-
 In this tutorial, you'll create an animated GIF showing realistic terminal typing. The recording will demonstrate navigating and editing a command before executing it—perfect for creating polished documentation and tutorials.
 
 Your finished recording will show:
@@ -114,7 +112,7 @@ Excellent work! You've learned how to:
 - Simulate cursor navigation and text editing
 - Control terminal appearance with themes
 
-Your typing demo technique works great for documentation, but what if you want to capture real command output? The [Exec Commands tutorial](./exec-commands.md) shows you how to record actual program execution.
+Your typing demo technique works great for documentation, but what if you want to capture real command output? The [Exec Commands tutorial](exec-commands) shows you how to record actual program execution.
 
 ## Complete Code
 

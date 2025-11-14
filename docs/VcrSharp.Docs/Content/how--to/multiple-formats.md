@@ -9,22 +9,13 @@ order: 2600
 
 Generate GIF, MP4, and WebM files from a single recording.
 
-## Format Comparison
+## Choosing a Format
 
-**GIF:**
-- Widely supported (GitHub READMEs, documentation, email)
-- Larger file sizes
-- 256 colors maximum
-
-**MP4:**
-- Smaller files with better quality
-- Best for social media and presentations
-- Requires video player
-
-**WebM:**
-- Smallest files
-- Good for web embedding
-- Limited support in some browsers/apps
+| Format | Best For | Trade-offs |
+|--------|----------|------------|
+| **GIF** | GitHub READMEs, documentation, email | Maximum compatibility, but larger files and 256 colors max |
+| **MP4** | Social media, presentations | Smaller files with better quality, requires video player |
+| **WebM** | Web embedding | Smallest files, but limited support in some browsers/apps |
 
 ## Generate Multiple Formats
 
@@ -78,30 +69,9 @@ Set Framerate 30        # Lower framerate = smaller file (default: 50)
 Set PlaybackSpeed 1.5   # Faster playback = shorter video = smaller file
 ```
 
-## Choose Your Format
+## Example: Multiple Distribution Channels
 
-**Use GIF for:**
-- GitHub READMEs and documentation
-- Email and chat where videos don't auto-play
-- Maximum compatibility
-
-**Use MP4 for:**
-- Social media (Twitter, LinkedIn, YouTube)
-- Presentations and slides
-- When quality matters more than file size
-
-**Use WebM for:**
-- Web embedding with HTML5 `<video>` tags
-- Smallest possible file sizes
-- Modern browser targets
-
-**Use all three for:**
-- Maximum flexibility—let viewers choose their preferred format
-- Different distribution channels (docs + social media + website)
-
-## Practical Examples
-
-### Generate all formats for documentation and social media:
+Generate all three formats for different uses:
 
 ```tape
 Output readme.gif           # For GitHub README
@@ -116,31 +86,6 @@ Type "npm install VCR#"
 Enter
 Wait
 ```
-
-### Create size-optimized variants:
-
-```tape
-# Full quality for presentations
-Output presentation.mp4
-
-# Reduced size for README
-Output readme.gif
-Set MaxColors 128           # Smaller GIF
-
-Set Cols 100
-Set Rows 30
-
-# ... commands ...
-```
-
-### Use CLI to add format variants:
-
-```tape
-# Tape file has GIF output
-vcr demo.tape -o demo.mp4 -o demo.webm
-```
-
-This generates all three formats without editing the tape file.
 
 ## Format-Specific Settings
 

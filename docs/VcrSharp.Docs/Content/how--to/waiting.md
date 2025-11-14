@@ -139,43 +139,21 @@ Wait+Line@5s />\s*$/
 Wait+Screen@10s /Status: OK/
 ```
 
-## Practical Examples
+## Examples
 
-### Wait for Build Completion
-
+**Wait for build completion:**
 ```tape
-Output "build.gif"
-
 Exec "cargo build --release"
 Wait@3m /Finished release/        # Rust builds can be slow
-
-Type "# Build complete!"
-Enter
-Wait
 ```
 
-### Wait for Server Startup
-
+**Wait for server startup:**
 ```tape
-Output "server.gif"
-
 Exec "python -m http.server 8000"
 Wait /Serving HTTP on/            # Wait for server ready message
-
-Sleep 1s
-Type "# Server is now running"
-Enter
 ```
 
-### Wait for Download Progress
-
-```tape
-Exec "wget https://example.com/large-file.zip"
-Wait@2m /saved/                   # Wait for download completion
-```
-
-### Chaining Multiple Waits
-
+**Chain multiple waits:**
 ```tape
 Exec "npm test"
 Wait /Tests started/              # Wait for tests to begin
@@ -234,49 +212,8 @@ Wait+Buffer /pattern/            # Use Buffer scope (default)
 
 ## Best Practices
 
-**Use specific patterns:**
-```tape
-# Vague
-Wait /done/                      # Might match unrelated output
-
-# Specific
-Wait /Build done in \d+ms/       # Matches only build completion
-```
-
-**Match actual output format:**
-```tape
-# Check your actual output first, then write pattern
-Exec "npm test"
-Wait /\d+ passing/               # Matches "5 passing"
-```
-
-**Combine with Exec for real output:**
-```tape
-# Good: Real output
-Exec "dotnet test"
-Wait /Test Run Successful/
-
-# Less reliable: Simulated typing
-Type "dotnet test"
-Enter
-Wait /Test Run Successful/       # Might not appear if command fails
-```
-
-**Set appropriate timeouts:**
-```tape
-# Fast operation
-Wait@5s /Installed/
-
-# Slow operation
-Wait@5m /Build complete/
-```
-
-**Use default Wait for prompts:**
-```tape
-Type "ls"
-Enter
-Wait                            # Simple - waits for shell prompt
-```
-
-**If Wait fails, verify your pattern matches the actual output:**
-Run your recording and check the terminal output format. Adjust your regex pattern if needed.
+- **Use specific patterns** - `Wait /Build done in \d+ms/` is better than `Wait /done/` which might match unrelated output
+- **Match actual output format** - Check your actual output first, then write the pattern
+- **Combine with Exec for real output** - More reliable than Type+Enter since Exec captures actual command output
+- **Set appropriate timeouts** - Use `@5s` for fast operations, `@5m` for slow builds
+- **Use default Wait for prompts** - Just `Wait` with no pattern waits for the shell prompt to return

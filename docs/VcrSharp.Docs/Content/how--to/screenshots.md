@@ -30,10 +30,7 @@ Screenshot "containers.png"    # Capture current state
 
 ## Timing Your Screenshots
 
-### Capture After Delay
-
-Use `Sleep` to ensure output has settled:
-
+**Capture after delay** using `Sleep`:
 ```tape
 Type "ls -la"
 Enter
@@ -42,19 +39,14 @@ Sleep 500ms                     # Let output stabilize
 Screenshot "files.png"
 ```
 
-### Capture When Output Appears
-
-Use `Wait` to sync with specific output:
-
+**Capture when output appears** using `Wait`:
 ```tape
 Exec "npm test"
 Wait /tests passed/             # Wait for completion
 Screenshot "test-results.png"
 ```
 
-## Choose Your Format
-
-For lossless quality, use `.png`. For smaller file sizes, use `.jpg`.
+**Tip:** For lossless quality, use `.png`. For smaller file sizes, use `.jpg`.
 
 ## Multiple Screenshots
 
@@ -103,54 +95,30 @@ Wait
 Screenshot "results.png"        # Captured but setup wasn't recorded
 ```
 
-## Best Practices
+## Example: Step-by-Step Guide
 
-**Always capture at stable moments:**
-- Place Screenshot after `Wait` or `Sleep` to ensure output has settled
-- Wait for the command prompt to reappear before capturing
+Capture each stage of a workflow:
 
-**Use descriptive filenames:**
 ```tape
-Screenshot "build-success.png"      # Good
-Screenshot "img1.png"               # Not helpful
-```
+Output "tutorial.gif"
 
-**Combine with Wait for accuracy:**
-```tape
-Exec "cargo build"
-Wait /Finished/
-Screenshot "build-complete.png"     # Guaranteed to show completion
-```
-
-## Common Use Cases
-
-**Documentation thumbnails:**
-```tape
-Output "demo.gif"
-
-# Perfect frame for thumbnail
-Type "vcr-sharp --help"
+# Step 1
+Type "npm install"
 Enter
 Wait
-Screenshot "thumbnail.png"
-```
-
-**Step-by-step guides:**
-```tape
-# Capture each step
 Screenshot "step-1-install.png"
-# ... commands ...
-Screenshot "step-2-configure.png"
-# ... commands ...
-Screenshot "step-3-run.png"
-```
 
-**Before/after comparisons:**
-```tape
-Screenshot "before-refactor.png"
-Exec "npm run format"
+# Step 2
+Type "npm test"
+Enter
 Wait
-Screenshot "after-refactor.png"
+Screenshot "step-2-test.png"
+
+# Step 3
+Type "npm start"
+Enter
+Wait /Server listening/
+Screenshot "step-3-running.png"
 ```
 
 ## Troubleshooting

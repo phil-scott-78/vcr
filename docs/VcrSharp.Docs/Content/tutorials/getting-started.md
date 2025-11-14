@@ -5,15 +5,15 @@ uid: "docs.tutorials.getting-started"
 order: 1000
 ---
 
-# Create Your First Terminal Recording
-
-In this tutorial, you'll create a simple terminal recording that outputs a GIF. You'll install VCR#, write a basic tape file, and run your first recording. This takes about 5 minutes.
+In this tutorial, you'll create a simple terminal recording that outputs a GIF. You'll install VCR#, write a basic tape
+file, and run your first recording. This takes about 5 minutes.
 
 By the end, you'll have a working animated GIF showing "Hello, VCR#!" appearing in a terminal.
 
 ## Prerequisites
 
 You'll need:
+
 - .NET 9 SDK installed
 - Windows, macOS, or Linux
 - A terminal/command prompt
@@ -47,6 +47,7 @@ Sleep 1s
 ```
 
 Let's look at what each line does:
+
 - `Output hello.gif` - Names your output file
 - `Set Cols/Rows` - Sets terminal size (80 columns × 20 rows)
 - `Set Theme` - Chooses the Dracula color scheme
@@ -76,10 +77,12 @@ Open `hello.gif` in your browser or image viewer. You should see:
 4. Output appears: `Hello, VCR#!`
 5. The terminal pauses briefly
 
-Notice how the typing appears character-by-character, just like a real terminal session. This creates the animated effect that makes your recordings look realistic.
+Notice how the typing appears character-by-character, just like a real terminal session. This creates the animated
+effect that makes your recordings look realistic.
 
 ## What's Next?
 
 Congratulations! You've created your first terminal recording.
 
-Ready to build something more interesting? Try the [Typing Demo tutorial](./typing-demo.md) to learn how to create realistic terminal interactions with navigation and editing.
+Ready to build something more interesting? Try the [Typing Demo tutorial](typing-demo) to learn how to create
+realistic terminal interactions with navigation and editing.

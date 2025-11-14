@@ -11,14 +11,12 @@ builder.Services.AddDocSite(_ => new DocSiteOptions()
     SocialImageUrl = "/social.png",
     ColorScheme = new AlgorithmicColorScheme
     {
-        PrimaryHue = 60,
+        PrimaryHue = 220,
         ColorSchemeGenerator = i => (i + 120, i - 60, i + 60),
-        BaseColorName = ColorNames.Zinc
+        BaseColorName = ColorNames.Slate
     },
     GitHubUrl = "https://github.com/phil-scott-78/vcr",
     CanonicalBaseUrl = Environment.GetEnvironmentVariable("CanonicalBaseUrl") ?? "https://phil-scott-78.github.io/vcr/",
-    DisplayFontFamily = "Lexend, sans-serif",
-    BodyFontFamily = "'Noto Sans', sans-serif",
     HeaderIcon = """
                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="transition-all h-5 w-5 text-primary-600 dark:text-primary-400" color="currentColor" fill="none">
                      <path d="M19 16V14C19 11.1716 19 9.75736 18.1213 8.87868C17.2426 8 15.8284 8 13 8H11C8.17157 8 6.75736 8 5.87868 8.87868C5 9.75736 5 11.1716 5 14V16C5 18.8284 5 20.2426 5.87868 21.1213C6.75736 22 8.17157 22 11 22H13C15.8284 22 17.2426 22 18.1213 21.1213C19 20.2426 19 18.8284 19 16Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path>
@@ -31,25 +29,6 @@ builder.Services.AddDocSite(_ => new DocSiteOptions()
                      <path d="M10 17.5C10 17.5 10.6667 18 12 18C13.3333 18 14 17.5 14 17.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
                  </svg>
                  """,
-    ExtraStyles = """
-                  @font-face {
-                    font-family: 'Lexend';
-                    font-style: normal;
-                    font-weight: 100 900;
-                    font-display: swap;
-                    src: url(fonts/lexend.woff2) format('woff2');
-                    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-                  }
-
-                  @font-face {
-                    font-family: 'Noto Sans';
-                    font-weight: 100 900;
-                    font-stretch: 100%;
-                    font-display: swap;
-                    src: url(fonts/noto-sans.woff2) format('woff2');
-                    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-                  }
-                  """,
 });
 
 var app = builder.Build();

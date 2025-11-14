@@ -14,9 +14,7 @@ When VCR# records a terminal session, it doesn't directly manipulate a terminal 
 3. **Browser** (Chromium) - The rendering engine
 4. **Shell** (bash/pwsh/cmd) - The actual command interpreter
 
-These components run independently, side-by-side, each handling a distinct responsibility. VCR# never directly reads from or writes to the shell—it operates by controlling a browser that displays a web-based terminal served by ttyd.
-
-This architecture might seem indirect, but it's what enables VCR# to work identically across platforms while maintaining pixel-perfect visual consistency.
+These components run independently, side-by-side, each handling a distinct responsibility.
 
 ## Why This Separation Exists
 
@@ -31,9 +29,7 @@ Rather than building a custom terminal emulator, VCR# orchestrates existing, bat
 - **xterm.js** (inside ttyd's web page) handles terminal emulation and rendering
 - **Playwright** provides browser automation and screenshot capabilities
 
-Each component has millions of users finding edge cases VCR# will never encounter. xterm.js powers VS Code's terminal—that level of refinement would take a decade to build from scratch.
-
-The trade-off: This architecture requires more dependencies and has ~2 seconds of startup overhead. But it provides cross-platform consistency and visual quality that would otherwise be impossible.
+Each component has millions of users finding edge cases VCR# will never encounter.
 
 ## The Communication Chain
 
@@ -77,8 +73,6 @@ This chain seems convoluted, but each step serves a purpose:
 - **PTY**: Provides the shell with a terminal interface it understands
 
 ### Reading Output: From Shell to VCR#
-
-Reading terminal output works differently—VCR# doesn't intercept shell output. Instead, it reads what's already been rendered in the browser:
 
 ```
 Shell Process Output
@@ -125,7 +119,7 @@ await page.ScreenshotAsync(options)
 
 This captures the pixels displayed in the browser—the visual representation of the terminal.
 
-Notice the key insight: **VCR# never directly reads from the shell's output stream**. It reads what the browser has already rendered. This indirection is what enables consistent visual output—we capture exactly what xterm.js displays, not what the shell emitted.
+**The key architectural insight**: VCR# operates entirely through the browser—it never directly interacts with the shell's input/output streams. All input goes through Playwright's keyboard automation, and all output is read from xterm.js's rendered display. This indirection is what enables consistent visual output across platforms—we capture exactly what xterm.js displays, not what the shell emitted.
 
 ## The Recording Lifecycle
 
@@ -170,14 +164,7 @@ For each command in the tape file, VCR# calls `ExecuteAsync()`, which interacts 
 Type "echo hello"
 ```
 
-1. VCR#: Calls `Playwright.Keyboard.TypeAsync("echo hello")`
-2. Browser: Generates keyboard events for each character
-3. xterm.js: Receives events, sends via WebSocket
-4. ttyd: Forwards to shell's PTY
-5. Shell: Receives input, displays it (echo mode)
-6. ttyd: Forwards display updates back to browser
-7. xterm.js: Renders updated terminal display
-8. Browser: Canvas shows "echo hello"
+This follows the input flow described above. VCR# calls `Playwright.Keyboard.TypeAsync("echo hello")`, which travels through the chain to the shell. The shell's echo mode displays each character as it's typed, creating the visual effect of someone typing in real-time.
 
 **Example: Wait command**
 ```tape
@@ -190,16 +177,6 @@ Wait /hello/
 4. Checks if pattern `/hello/` matches
 5. Repeats until match found or timeout
 
-**Example: Exec command**
-```tape
-Exec "npm test"
-```
-
-1. VCR#: Command was already sent to shell at startup (optimization)
-2. Shell: Executes the command, produces output
-3. Output flows: shell → ttyd → xterm.js → browser canvas
-4. VCR#: Monitors terminal buffer for inactivity (no changes for 2 seconds = command finished)
-
 ### Phase 3: Frame Capture
 
 **While commands execute, VCR# continuously captures screenshots:**
@@ -210,9 +187,7 @@ Exec "npm test"
 4. Returns PNG bytes
 5. VCR# writes PNG to disk: `frame0001.png`, `frame0002.png`, ...
 
-This happens **in parallel** with command execution. The capture loop doesn't care what commands are running—it just screenshots at regular intervals.
-
-**Key insight**: Frame capture and command execution are independent. This separation ensures consistent framerate regardless of command timing.
+This happens **in parallel** with command execution. The capture loop doesn't care what commands are running—it just screenshots at regular intervals. This separation ensures consistent framerate regardless of command timing.
 
 ### Phase 4: Cleanup
 
@@ -233,18 +208,13 @@ At first glance, this architecture looks wasteful:
 - Why use WebSockets when the shell is on the same machine?
 - Why capture screenshots instead of recording terminal escape codes?
 
-**The answers reveal VCR#'s priorities:**
+**The answers reveal VCR#'s design priorities:**
 
-**Browser overhead is deliberate**: We're not trying to be the lightest recorder—we're trying to produce pixel-perfect, cross-platform consistent output. xterm.js rendering quality justifies the browser overhead.
+- **Browser overhead is deliberate**: We prioritize pixel-perfect, cross-platform consistent output over being the lightest recorder. xterm.js's production-grade rendering (it powers VS Code's terminal) justifies the browser overhead.
+- **WebSocket indirection enables platform independence**: ttyd handles all platform-specific PTY complexity, so VCR# never directly manipulates PTY APIs that differ across Windows, macOS, and Linux.
+- **Screenshots enable universality**: Capturing pixels (not escape codes) means output works everywhere—GitHub READMEs, presentations, documentation sites—with no special player needed.
 
-**WebSocket indirection enables testing**: ttyd's web interface means VCR# never directly manipulates PTY APIs, which differ across platforms. ttyd handles platform-specific complexity.
-
-**Screenshots enable universality**: Capturing pixels (not escape codes) means output works everywhere—GitHub READMEs, presentations, documentation sites. No special player needed.
-
-The "inefficiency" is an investment in:
-- **Reliability**: Battle-tested components instead of custom solutions
-- **Consistency**: Identical rendering across platforms
-- **Compatibility**: Standard video formats that play anywhere
+The "inefficiency" is an investment in reliability, consistency, and compatibility.
 
 ## What This Means for Users
 
@@ -254,7 +224,7 @@ Understanding this architecture explains several VCR# characteristics:
 
 **Why VCR# requires dependencies**: ttyd, Chromium (via Playwright), and FFmpeg aren't optional—they're fundamental to how VCR# works.
 
-**Why recordings look identical everywhere**: Because we're capturing what xterm.js renders, not what the shell emits. xterm.js is consistent across platforms.
+**Why recordings look identical everywhere**: xterm.js provides consistent rendering across all platforms.
 
 **Why Wait commands are necessary**: VCR# can't know when commands finish (it doesn't monitor the shell directly). It must watch the browser's terminal display for expected output.
 
@@ -262,73 +232,10 @@ Understanding this architecture explains several VCR# characteristics:
 
 ## The Browser as Automation Target
 
-The crucial insight: **VCR# treats the browser as the terminal**, not the shell.
-
 To VCR#, the terminal *is* the browser tab showing ttyd's web interface. All interaction happens through browser automation—keyboard input via Playwright, output reading via JavaScript execution, visual capture via screenshots.
-
-The shell, ttyd, and WebSocket are implementation details. VCR# doesn't care how keystrokes reach the shell or how output reaches the browser. It only cares that typing in the browser causes characters to appear, and running commands causes output to display.
 
 This abstraction is what makes VCR# maintainable. Browser automation is well-understood and well-supported. Terminal emulation is complex and platform-specific. By operating at the browser level, VCR# avoids re-implementing terminal complexity.
 
-## Comparison to Other Architectures
-
-Understanding how other tools work differently clarifies VCR#'s approach:
-
-**asciinema** (direct terminal recording):
-- Records directly from PTY output
-- No browser, no web server
-- Much lighter weight
-- Requires custom player for playback
-
-**OBS / Screen recorders** (display capture):
-- Captures actual screen pixels
-- Records whatever is visible
-- No programmatic control
-- Can't script or reproduce
-
-**VHS** (VCR#'s inspiration):
-- Same ttyd + browser architecture
-- Identical communication patterns
-- Difference: VHS lacks real command execution (no Exec)
-
-**VCR#'s position**:
-- Heavier than asciinema (browser overhead)
-- More reproducible than screen recorders (fully scripted)
-- More flexible than VHS (Exec + Type)
-
-Each architecture optimizes for different priorities. VCR# prioritizes reproducible, visually consistent, universally compatible output—and the side-by-side architecture enables that.
-
-## The Design Philosophy
-
-This architecture embodies VCR#'s core philosophy: **compose battle-tested tools rather than build custom solutions**.
-
-Each component is industry-proven:
-- **ttyd**: Powers countless web-based terminals
-- **xterm.js**: Powers VS Code, GitHub Codespaces, AWS Cloud9
-- **Playwright**: Used by thousands of projects for browser testing
-- **Chromium**: Powers Chrome, Edge, Brave
-
-VCR# is the orchestrator, not the implementer. It coordinates these components to produce terminal recordings, but it doesn't reinvent terminal emulation, browser automation, or video encoding.
-
-The side-by-side architecture isn't accidental—it's essential to VCR#'s value proposition. By operating through established tools, VCR# achieves reliability and compatibility that would take years to build from scratch.
-
 ## Conclusion
 
-When you run `vcr demo.tape`, you're not just recording a terminal—you're orchestrating a pipeline:
-- VCR# launches ttyd
-- ttyd launches a shell
-- VCR# launches a browser
-- Browser connects to ttyd
-- VCR# automates the browser
-- Browser controls the terminal
-- Terminal controls the shell
-
-Each layer adds overhead, but each layer solves a real problem:
-- **ttyd**: Platform-independent terminal interface
-- **Browser**: Consistent rendering engine
-- **xterm.js**: Production-quality terminal emulation
-- **Playwright**: Reliable automation API
-
-The result: recordings that look identical everywhere, work in CI/CD, and require no special playback tools.
-
-The side-by-side architecture isn't the simplest approach—it's the most reliable one.
+When you run `vcr demo.tape`, you're orchestrating a multi-layered pipeline where each component handles a distinct concern. The result: recordings that look identical everywhere, work in CI/CD, and require no special playback tools.

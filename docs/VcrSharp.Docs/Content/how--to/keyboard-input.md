@@ -17,8 +17,9 @@ Simulate character-by-character typing:
 Type "echo 'Hello World'"
 ```
 
-## Common Keys
+## Special Keys
 
+**Common keys:**
 ```tape
 Enter           # Press Enter/Return
 Backspace       # Delete previous character
@@ -27,52 +28,16 @@ Escape          # Escape key
 Space           # Space bar
 ```
 
-**Example:**
-```tape
-Type "ls"
-Space
-Type "-la"
-Enter
-Wait
-```
-
-## Arrow Keys
-
-### To move the cursor:
-
+**Arrow keys (with optional repeat count):**
 ```tape
 Up              # Move up one line
-Down            # Move down one line
-Left            # Move left one character
-Right           # Move right one character
-```
-
-### To repeat arrow keys:
-
-```tape
 Down 5          # Press Down 5 times
 Left 10         # Move left 10 characters
-```
-
-### To control arrow key speed:
-
-```tape
+Right           # Move right one character
 Down@100ms 3    # Press Down 3 times with 100ms delay between presses
 ```
 
-**Example - Navigate and edit:**
-```tape
-Type "echo 'Helo, World!'"
-Sleep 300ms
-Left 9          # Move cursor back to the typo
-Backspace       # Delete 'o'
-Type "ll"       # Type 'll' to make 'Hello'
-Enter
-Wait
-```
-
-## Navigation Keys
-
+**Navigation keys:**
 ```tape
 PageUp          # Page up
 PageDown        # Page down
@@ -82,17 +47,11 @@ Delete          # Delete character at cursor
 Insert          # Toggle insert mode
 ```
 
-**To navigate to line start and delete:**
-```tape
-Type "wrong command here"
-Home            # Jump to start
-Delete 5        # Delete first 5 characters
-```
-
 ## Keyboard Shortcuts
 
-### To send Ctrl combinations:
+Combine modifier keys with other keys:
 
+**Common Ctrl combinations:**
 ```tape
 Ctrl+C          # Interrupt/cancel
 Ctrl+D          # EOF/exit
@@ -104,34 +63,11 @@ Ctrl+W          # Delete word
 Ctrl+U          # Delete to line start
 ```
 
-**Example - Cancel a command:**
+**Other modifiers:**
 ```tape
-Type "ping google.com"
-Enter
-Sleep 2s
-Ctrl+C          # Interrupt the ping
-Wait
-```
-
-### To send Alt combinations:
-
-```tape
-Alt+Enter       # Alt+Enter
-Alt+F           # Alt+F
 Alt+Backspace   # Delete previous word
-```
-
-### To send Shift combinations:
-
-```tape
 Shift+Tab       # Reverse tab
-```
-
-### To send multiple modifiers:
-
-```tape
-Ctrl+Alt+Delete
-Ctrl+Shift+T
+Ctrl+Alt+Delete # Multiple modifiers
 ```
 
 ## String Quoting
@@ -187,10 +123,9 @@ Enter
 Wait
 ```
 
-## Practical Examples
+## Examples
 
-### To navigate an interactive TUI:
-
+**Navigate an interactive TUI:**
 ```tape
 Exec "npm create vite@latest"
 Wait /Project name/
@@ -205,70 +140,23 @@ Enter
 Wait
 ```
 
-### To edit a command with cursor movement:
-
+**Edit a command with cursor movement:**
 ```tape
-Type "git commit -m 'Fix bug in prodction'"
-Sleep 500ms
-Left 1          # Position at the typo
-Left 1
-Left 1
-Backspace       # Delete 'c'
-Type "u"        # Type 'u' to make 'production'
-Home            # Jump to start
-Enter
-Wait
-```
-
-### To demonstrate shell shortcuts:
-
-```tape
-Type "long command here that we don't want"
-Sleep 500ms
-Ctrl+U          # Delete entire line
+Type "echo 'Helo, World!'"
 Sleep 300ms
-Type "echo 'Starting fresh'"
+Left 9          # Move cursor back to the typo
+Backspace       # Delete 'o'
+Type "ll"       # Type 'll' to make 'Hello'
 Enter
 Wait
 ```
 
-### To combine different input types:
-
+**Use keyboard shortcuts:**
 ```tape
-Type "vim example.txt"
+Type "ping google.com"
 Enter
-Wait
-Type "i"        # Insert mode
-Type "Hello from VCR#!"
-Escape          # Normal mode
-Type ":wq"      # Save and quit
-Enter
-Wait
-```
-
-## Best Practices
-
-**For realistic editing:** Add short sleeps between navigation and typing actions:
-```tape
-Type "comand"
-Sleep 300ms     # Pause (noticing the typo)
-Left 4          # Navigate
-Sleep 200ms     # Pause (positioning)
-Type "m"        # Fix
-Sleep 300ms     # Pause (reviewing)
-```
-
-**For TUI navigation:** Use repeating arrow keys instead of multiple individual commands:
-```tape
-Down 5          # Instead of: Down, Down, Down, Down, Down
-```
-
-**For keyboard shortcuts:** Add brief sleeps after interrupts to let output settle:
-```tape
-Exec "long-running-command"
-Sleep 3s
-Ctrl+C
-Sleep 500ms     # Let the interrupt message appear
+Sleep 2s
+Ctrl+C          # Interrupt the ping
 Wait
 ```
 

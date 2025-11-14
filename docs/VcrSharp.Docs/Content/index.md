@@ -37,4 +37,4 @@ dotnet tool install --global VCR#.Cli
 
 Ready to create your first terminal recording? Start here:
 
-- **[Getting Started Tutorial](./tutorials/getting-started.md)** - Create your first recording in 5 minutes
+- **[Getting Started Tutorial](./tutorials/getting-started)** - Create your first recording in 5 minutes

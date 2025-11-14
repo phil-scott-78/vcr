@@ -57,20 +57,16 @@ VCR# includes these themes:
 | **Social Media** | Tokyo Night, Catppuccin | Vibrant, eye-catching |
 | **Brand Colors** | Closest match | Override with CLI as needed |
 
-## Test Themes Quickly
+## Testing Themes with CLI Overrides
 
-Use CLI overrides to test different themes without editing files:
+Change the theme without editing the tape file:
 
 ```bash
 vcr demo.tape --set Theme=Dracula -o dracula.gif
 vcr demo.tape --set Theme=Monokai -o monokai.gif
-vcr demo.tape --set Theme=Nord -o nord.gif
 ```
 
-## Generate Theme Variants
-
-Create multiple themed versions in one command:
-
+**Generate multiple themed versions in a loop:**
 ```bash
 for theme in Dracula Monokai Nord Gruvbox
 do
@@ -78,7 +74,7 @@ do
 done
 ```
 
-This produces `demo-Dracula.gif`, `demo-Monokai.gif`, etc.
+CLI overrides take precedence over tape file settings.
 
 ## What Themes Control
 
@@ -103,9 +99,7 @@ Set Theme Dracula
 - Creating videos with custom backgrounds
 - Compositing multiple recordings together
 
-## Practical Examples
-
-### Match presentation background:
+## Example: Match Presentation Background
 
 ```tape
 # For light backgrounds (Google Slides, PowerPoint with light theme)
@@ -114,13 +108,3 @@ Set Theme "GitHub Light"
 # For dark backgrounds (Dark mode presentations)
 Set Theme Dracula
 ```
-
-## Override from CLI
-
-Change the theme without editing the tape file:
-
-```bash
-vcr demo.tape --set Theme=Nord
-```
-
-CLI overrides take precedence over tape file settings.

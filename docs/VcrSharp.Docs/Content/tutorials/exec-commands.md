@@ -5,23 +5,25 @@ uid: "docs.tutorials.exec-commands"
 order: 1250
 ---
 
-# Capture Real Command Output
-
-In this tutorial, you'll record a real git workflow showing actual command output. Unlike the typing demo tutorial where we simulated typing, here you'll execute actual commands and capture their real output.
+In this tutorial, you'll record a real git workflow showing actual command output. Unlike the typing demo tutorial where
+we simulated typing, here you'll execute actual commands and capture their real output.
 
 Your finished recording will show:
+
 1. Checking git status
 2. Creating a new file
 3. Staging and committing the changes
 4. Viewing the commit log
 
-This is perfect for creating accurate documentation, demos, and tutorials showing real tool behavior. This tutorial takes about 20 minutes.
+This is perfect for creating accurate documentation, demos, and tutorials showing real tool behavior. This tutorial
+takes about 20 minutes.
 
 ## Prerequisites
 
 You should complete the [Typing Demo tutorial](./typing-demo.md) first to understand basic VCR# concepts.
 
 You'll also need:
+
 - Git installed and configured
 - A test repository (we'll create one)
 - About 20 minutes
@@ -66,9 +68,11 @@ Run the recording:
 vcr git-workflow.tape
 ```
 
-Open the GIF. Notice something different from the typing demo: the output appeared instantly, and it shows the actual git status output from your repository.
+Open the GIF. Notice something different from the typing demo: the output appeared instantly, and it shows the actual
+git status output from your repository.
 
-The `Exec` command runs the actual program and captures its real output. VCR# waits for the command to finish before continuing to the next line.
+The `Exec` command runs the actual program and captures its real output. VCR# waits for the command to finish before
+continuing to the next line.
 
 ## Step 3: Chain Multiple Commands
 
@@ -104,9 +108,11 @@ Run the recording again:
 vcr git-workflow.tape
 ```
 
-Watch the GIF. You'll see each command execute in sequence with their real output: the file is created, staged, committed, and the commit appears in the log. Each `Sleep` command creates a pause so viewers can read the output.
+Watch the GIF. You'll see each command execute in sequence with their real output: the file is created, staged,
+committed, and the commit appears in the log. Each `Sleep` command creates a pause so viewers can read the output.
 
-Notice how VCR# waits for each command to complete before moving to the next one. You don't have to guess how long commands will take.
+Notice how VCR# waits for each command to complete before moving to the next one. You don't have to guess how long
+commands will take.
 
 ## Step 4: Wait for Specific Output
 
@@ -137,7 +143,8 @@ Exec "git log --oneline -n 1"
 Sleep 2s
 ```
 
-Notice the `Wait "Add README"` line. This tells VCR# to pause until it sees "Add README" in the terminal output before continuing. This is more reliable than using fixed delays when output timing varies.
+Notice the `Wait "Add README"` line. This tells VCR# to pause until it sees "Add README" in the terminal output before
+continuing. This is more reliable than using fixed delays when output timing varies.
 
 Run the recording:
 
@@ -145,17 +152,19 @@ Run the recording:
 vcr git-workflow.tape
 ```
 
-The recording works the same, but now it explicitly waits for the commit message to appear. This technique is useful when commands produce output gradually or when timing is unpredictable.
+The recording works the same, but now it explicitly waits for the commit message to appear. This technique is useful
+when commands produce output gradually or when timing is unpredictable.
 
 ## Next Steps
 
 Great work! You've learned to:
+
 - Execute real commands with `Exec`
 - Chain multiple commands in sequence
 - Wait for specific output with `Wait`
 - Create accurate recordings of real workflows
 
-You now know both simulated typing (from the typing demo) and real execution. For guidance on which technique to use when, see the [How-To Guides](../how-to/index.md).
+You now know both simulated typing (from the typing demo) and real execution.
 
 ## Complete Code
 

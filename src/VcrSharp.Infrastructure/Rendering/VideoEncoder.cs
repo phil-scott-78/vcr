@@ -211,7 +211,8 @@ public class VideoEncoder
     /// <summary>
     /// Renders WebM output using FFMpegCore with VP9 encoding and layer compositing.
     /// Uses concat demuxer to support variable frame durations.
-    /// Matches VHS implementation with fps, setpts, and scale filters.
+    /// Supports transparent backgrounds with yuva420p pixel format when TransparentBackground is enabled.
+    /// Uses optimized VP9 encoding settings for better quality.
     /// </summary>
     private async Task RenderWebMAsync(string textManifest, string cursorManifest, string outputFile)
     {
@@ -220,6 +221,7 @@ public class VideoEncoder
         var termHeight = _options.Height - 2 * _options.Padding;
 
         var backgroundColor = _options.Theme.Background;
+        var isTransparent = _options.TransparentBackground;
 
         // Build filter chain: handle padding=0 case differently to avoid scale+pad issues
         string filterComplex;
@@ -230,6 +232,12 @@ public class VideoEncoder
             filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
                            $"[merged]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
                            $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'";
+
+            // Add format conversion for alpha channel preservation
+            if (isTransparent)
+            {
+                filterComplex += "[scaled];[scaled]format=yuva420p";
+            }
         }
         else
         {
@@ -237,9 +245,29 @@ public class VideoEncoder
             filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
                            $"[merged]scale={termWidth}:{termHeight}:force_original_aspect_ratio=1[scaled];" +
                            $"[scaled]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
-                           $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'[even];" +
-                           $"[even]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:{backgroundColor}[padded];" +
-                           $"[padded]fillborders=left={_options.Padding}:right={_options.Padding}:top={_options.Padding}:bottom={_options.Padding}:mode=fixed:color={backgroundColor}";
+                           $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'[even];";
+
+            if (isTransparent)
+            {
+                // Use transparent padding - pad filter with alpha channel
+                filterComplex += $"[even]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[padded];" +
+                               $"[padded]format=yuva420p";
+            }
+            else
+            {
+                // Use opaque background color for padding
+                filterComplex += $"[even]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:{backgroundColor}[padded];" +
+                               $"[padded]fillborders=left={_options.Padding}:right={_options.Padding}:top={_options.Padding}:bottom={_options.Padding}:mode=fixed:color={backgroundColor}";
+            }
+        }
+
+        // Build custom arguments string with all VP9 encoding parameters
+        var customArgs = $"-filter_complex \"{filterComplex}\" -b:v 0 -deadline good -cpu-used 1 -auto-alt-ref 1";
+
+        // Add pixel format for alpha channel support
+        if (isTransparent)
+        {
+            customArgs += " -pix_fmt yuva420p";
         }
 
         await FFMpegArguments
@@ -252,8 +280,7 @@ public class VideoEncoder
             .OutputToFile(outputFile, overwrite: true, options => options
                 .WithVideoCodec("libvpx-vp9")
                 .WithConstantRateFactor(30)  // Match VHS quality (was 31)
-                .WithCustomArgument($"-filter_complex \"{filterComplex}\"")
-                .WithCustomArgument("-b:v 0"))
+                .WithCustomArgument(customArgs))
             .NotifyOnOutput(_ =>
             {
                 // Suppress verbose output

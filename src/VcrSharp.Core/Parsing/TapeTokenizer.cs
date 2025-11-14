@@ -102,7 +102,6 @@ public static class TapeTokenizer
             .Match(Span.EqualTo("Source"), TapeToken.Source, requireDelimiters: true)
             .Match(Span.EqualTo("Type"), TapeToken.Type, requireDelimiters: true)
             .Match(Span.EqualTo("Sleep"), TapeToken.Sleep, requireDelimiters: true)
-            .Match(Span.EqualTo("Wait"), TapeToken.Wait)
             .Match(Span.EqualTo("Hide"), TapeToken.Hide, requireDelimiters: true)
             .Match(Span.EqualTo("Show"), TapeToken.Show, requireDelimiters: true)
             .Match(Span.EqualTo("Screenshot"), TapeToken.Screenshot, requireDelimiters: true)
@@ -111,31 +110,40 @@ public static class TapeTokenizer
             .Match(Span.EqualTo("Env"), TapeToken.Env, requireDelimiters: true)
             .Match(Span.EqualTo("Exec"), TapeToken.Exec, requireDelimiters: true)
 
-            // Keywords - Special keys (require delimiters to avoid matching inside identifiers like "EndBuffer")
-            .Match(Span.EqualTo("Enter"), TapeToken.Enter, requireDelimiters: true)
-            .Match(Span.EqualTo("Space"), TapeToken.Space, requireDelimiters: true)
-            .Match(Span.EqualTo("Tab"), TapeToken.Tab, requireDelimiters: true)
-            .Match(Span.EqualTo("Backspace"), TapeToken.Backspace, requireDelimiters: true)
-            .Match(Span.EqualTo("Delete"), TapeToken.Delete, requireDelimiters: true)
-            .Match(Span.EqualTo("Insert"), TapeToken.Insert, requireDelimiters: true)
-            .Match(Span.EqualTo("Escape"), TapeToken.Escape, requireDelimiters: true)
-            .Match(Span.EqualTo("PageUp"), TapeToken.PageUp, requireDelimiters: true)
-            .Match(Span.EqualTo("PageDown"), TapeToken.PageDown, requireDelimiters: true)
-            .Match(Span.EqualTo("Home"), TapeToken.Home, requireDelimiters: true)
-            .Match(Span.EqualTo("End"), TapeToken.End, requireDelimiters: true)
-            .Match(Span.EqualTo("Up"), TapeToken.Up, requireDelimiters: true)
-            .Match(Span.EqualTo("Down"), TapeToken.Down, requireDelimiters: true)
-            .Match(Span.EqualTo("Left"), TapeToken.Left, requireDelimiters: true)
-            .Match(Span.EqualTo("Right"), TapeToken.Right, requireDelimiters: true)
-
-            // Keywords - Modifiers (no delimiters so "Ctrl+C" works)
+            // Keywords - Modifiers (before Identifier so "Ctrl+C" tokens work)
+            // Parser will accept these as identifiers when needed (e.g., "CtrlTimeout" as identifier)
             .Match(Span.EqualTo("Ctrl"), TapeToken.Ctrl)
             .Match(Span.EqualTo("Alt"), TapeToken.Alt)
             .Match(Span.EqualTo("Shift"), TapeToken.Shift)
 
-            // Keywords - Boolean (case-insensitive, no delimiters)
+            // Keywords - Boolean (case-insensitive, before Identifier so boolean values work)
             .Match(Span.EqualToIgnoreCase("true"), TapeToken.True)
             .Match(Span.EqualToIgnoreCase("false"), TapeToken.False)
+
+            // Identifier (after commands but before special keys so "EndBuffer", "WaitTimeout" etc. are matched as identifiers)
+            // Command keywords above still work because they have requireDelimiters: true
+            // Modifiers and booleans above get priority but parser will accept identifiers where needed
+            .Match(Identifier, TapeToken.Identifier)
+
+            // Wait command (no delimiters needed, and after Identifier so "WaitTimeout" is not split)
+            .Match(Span.EqualTo("Wait"), TapeToken.Wait)
+
+            // Keywords - Special keys (after Identifier so compound words like "EndBuffer" match as Identifier first)
+            .Match(Span.EqualTo("Enter"), TapeToken.Enter)
+            .Match(Span.EqualTo("Space"), TapeToken.Space)
+            .Match(Span.EqualTo("Tab"), TapeToken.Tab)
+            .Match(Span.EqualTo("Backspace"), TapeToken.Backspace)
+            .Match(Span.EqualTo("Delete"), TapeToken.Delete)
+            .Match(Span.EqualTo("Insert"), TapeToken.Insert)
+            .Match(Span.EqualTo("Escape"), TapeToken.Escape)
+            .Match(Span.EqualTo("PageUp"), TapeToken.PageUp)
+            .Match(Span.EqualTo("PageDown"), TapeToken.PageDown)
+            .Match(Span.EqualTo("Home"), TapeToken.Home)
+            .Match(Span.EqualTo("End"), TapeToken.End)
+            .Match(Span.EqualTo("Up"), TapeToken.Up)
+            .Match(Span.EqualTo("Down"), TapeToken.Down)
+            .Match(Span.EqualTo("Left"), TapeToken.Left)
+            .Match(Span.EqualTo("Right"), TapeToken.Right)
 
             // Operators
             .Match(Character.EqualTo('@'), TapeToken.At)
@@ -154,9 +162,6 @@ public static class TapeTokenizer
 
             // Number
             .Match(Number, TapeToken.Number)
-
-            // Identifier (after keywords to avoid matching keywords as identifiers)
-            .Match(Identifier, TapeToken.Identifier)
 
             // Ignore whitespace (spaces and tabs)
             .Ignore(Span.WhiteSpace)

@@ -204,8 +204,9 @@ public class TapeParser
         select (ICommand)new SleepCommand(duration);
 
     // Key command helper for specific keys
+    // Also accepts identifiers matching key names to handle tokenizer ambiguity (e.g., "End" vs "EndBuffer")
     private static TokenListParser<TapeToken, ICommand> KeyCommandFor(TapeToken keyToken, string keyName) =>
-        from keyword in Token.EqualTo(keyToken)
+        from keyword in Token.EqualTo(keyToken).Or(Token.EqualTo(TapeToken.Identifier).Where(t => t.ToStringValue().Equals(keyName, StringComparison.OrdinalIgnoreCase)))
         from speed in SpeedModifier.OptionalOrDefault()
         from count in RepeatCount.OptionalOrDefault()
         select (ICommand)new KeyCommand(keyName, count == 0 ? 1 : count, speed == TimeSpan.Zero ? null : speed);
@@ -278,8 +279,9 @@ public class TapeParser
 
 
     // Wait command: Wait, Wait+Screen, Wait+Buffer@10ms /pattern/
+    // Also accepts "Wait" as identifier to handle tokenizer ambiguity (e.g., "Wait" vs "WaitTimeout")
     private static readonly TokenListParser<TapeToken, ICommand> WaitCommand =
-        from keyword in Token.EqualTo(TapeToken.Wait)
+        from keyword in Token.EqualTo(TapeToken.Wait).Or(Token.EqualTo(TapeToken.Identifier).Where(t => t.ToStringValue().Equals("Wait", StringComparison.OrdinalIgnoreCase)))
         from scope in Token.EqualTo(TapeToken.PlusScreen).Value(WaitScope.Screen)
             .Or(Token.EqualTo(TapeToken.PlusBuffer).Value(WaitScope.Buffer))
             .Or(Token.EqualTo(TapeToken.PlusLine).Value(WaitScope.Line))
@@ -418,7 +420,7 @@ public class TapeParser
 
         // First, check for prefix matches (e.g., "Font" -> "FontFamily" or "FontSize")
         var prefixMatches = ValidSettingNames
-            .Where(validName => validName.ToLower().StartsWith(invalidLower))
+            .Where(validName => validName.StartsWith(invalidLower, StringComparison.CurrentCultureIgnoreCase))
             .ToList();
 
         if (prefixMatches.Count > 0)

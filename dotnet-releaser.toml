@@ -22,6 +22,9 @@ repo = "vcr"
 [brew]
 publish = false
 
+[scoop]
+publish = false
+
 # Only build for platforms that Playwright supports
 # Playwright .NET does not support Windows ARM
 

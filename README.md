@@ -21,35 +21,32 @@ Inspired by [VHS](https://github.com/charmbracelet/vhs) by Charm Bracelet. VcrSh
 
 ## Installation
 
+Install VcrSharp as a global .NET tool:
+
+```bash
+dotnet tool install --global vcr --version 0.0.4  # or latest version
+```
+
 ### Prerequisites
 
-You'll need these installed and in your PATH:
+You'll also need these installed and in your PATH:
 
-- [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 - [ttyd](https://github.com/tsl0922/ttyd) (>= 1.7.2)
 - [FFmpeg](https://ffmpeg.org/)
 
 Playwright browsers install automatically on first run.
 
-### Building from Source
-
-```bash
-git clone https://github.com/phil-scott-78/vcr.git
-cd vcr
-dotnet build VcrSharp.sln
-```
-
-### Running
+### Usage
 
 ```bash
 # Record a tape file
-dotnet run --project src/VcrSharp.Cli -- demo.tape
+vcr demo.tape
 
 # Validate a tape file without recording
-dotnet run --project src/VcrSharp.Cli -- validate demo.tape
+vcr validate demo.tape
 
 # List available themes
-dotnet run --project src/VcrSharp.Cli -- themes
+vcr themes
 ```
 
 ## Quick Start
@@ -79,7 +76,7 @@ Sleep 2s
 Then record it:
 
 ```bash
-dotnet run --project src/VcrSharp.Cli -- demo.tape
+vcr demo.tape
 ```
 
 This will generate both `demo.gif` and `demo.mp4` showing your terminal session.
@@ -99,20 +96,20 @@ Override any setting using `--set Key=Value`:
 
 ```bash
 # Try different themes
-dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme=Dracula
-dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme=Nord
+vcr demo.tape --set Theme=Dracula
+vcr demo.tape --set Theme=Nord
 
 # Generate high-resolution output
-dotnet run --project src/VcrSharp.Cli -- demo.tape --set Width=1920 --set Height=1080
+vcr demo.tape --set Width=1920 --set Height=1080
 
 # Adjust video settings
-dotnet run --project src/VcrSharp.Cli -- demo.tape --set Framerate=60 --set PlaybackSpeed=1.5
+vcr demo.tape --set Framerate=60 --set PlaybackSpeed=1.5
 
 # Change terminal appearance
-dotnet run --project src/VcrSharp.Cli -- demo.tape --set FontSize=28 --set Padding=100 --set BorderRadius=10
+vcr demo.tape --set FontSize=28 --set Padding=100 --set BorderRadius=10
 ```
 
-CLI `--set` parameters **override** matching SET commands in the tape file. All 31 settings can be overridden (see [Configuration Reference](#configuration-reference)).
+CLI `--set` parameters **override** matching SET commands in the tape file. All 29 settings can be overridden (see [Configuration Reference](#configuration-reference)).
 
 ### Add Output Formats with `--output`
 
@@ -120,10 +117,10 @@ Add additional output files using `-o` or `--output`:
 
 ```bash
 # Add MP4 output to a tape that only specifies GIF
-dotnet run --project src/VcrSharp.Cli -- demo.tape --output demo.mp4
+vcr demo.tape --output demo.mp4
 
 # Generate multiple formats
-dotnet run --project src/VcrSharp.Cli -- demo.tape -o video.mp4 -o video.webm -o video.gif
+vcr demo.tape -o video.mp4 -o video.webm -o video.gif
 ```
 
 CLI `--output` parameters **append** to Output commands in the tape file. If your tape specifies `Output demo.gif` and you add `--output demo.mp4`, both files will be generated.
@@ -133,18 +130,18 @@ CLI `--output` parameters **append** to Output commands in the tape file. If you
 
 ```bash
 # Create variants for light and dark mode
-dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme=Dracula -o dark-demo.gif
-dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme="Solarized Light" -o light-demo.gif
+vcr demo.tape --set Theme=Dracula -o dark-demo.gif
+vcr demo.tape --set Theme="Solarized Light" -o light-demo.gif
 ```
 
 **Reuse tape files for different screen sizes:**
 
 ```bash
 # Mobile-sized demo
-dotnet run --project src/VcrSharp.Cli -- tutorial.tape --set FontSize=12 -o mobile.gif
+vcr tutorial.tape --set FontSize=12 -o mobile.gif
 
 # Desktop-sized demo
-dotnet run --project src/VcrSharp.Cli -- tutorial.tape --set FontSize=22 -o desktop.gif
+vcr tutorial.tape --set FontSize=22 -o desktop.gif
 ```
 
 ## Examples
@@ -233,6 +230,7 @@ Output input.webm
 Set FontSize 12
 Set Cols 80
 Set Rows 30
+Set EndBuffer 2s
 
 Set TypingSpeed 250ms
 
@@ -247,7 +245,6 @@ Down 5
 Sleep 500ms
 Screenshot "file-picker.gif"
 Enter
-Sleep 2000ms
 ```
 
 ### Example 4: PowerShell Scripting (`samples/numbers.tape`)
@@ -285,9 +282,10 @@ Set LineHeight 1.0          # Line height multiplier (default: 1.0)
 Set Framerate 50            # Frames per second, 1-120 (default: 50)
 Set PlaybackSpeed 1.0       # Playback speed multiplier (default: 1.0)
 Set LoopOffset 0            # GIF loop offset percentage (default: 0)
+Set MaxColors 256           # Max colors for GIF palette, 1-256 (default: 256)
 
 Set Theme "Dracula"                # Color theme (default: "Default")
-Set Padding 60                     # Padding around terminal in pixels (default: 60)
+Set Padding 60                     # Padding around terminal in pixels (default: 0)
 Set Margin 0                       # Margin around recording in pixels (default: 0)
 Set MarginFill "#000000"           # Margin fill color or image path (default: null)
 Set WindowBarSize 30               # Window bar height in pixels (default: 30)
@@ -296,12 +294,14 @@ Set CursorBlink true               # Enable cursor blinking (default: true)
 Set TransparentBackground true     # Enable transparent terminal background (default: false)
 
 Set Shell "pwsh"            # Shell to use (default: platform-specific)
-Set TypingSpeed 150ms       # Default typing speed (default: 150ms)
+Set WorkingDirectory "C:\\path"  # Working directory for terminal session
+Set TypingSpeed 60ms        # Default typing speed (default: 60ms)
 Set WaitTimeout 15s         # Max wait time for patterns (default: 15s)
+Set WaitPattern /\$/        # Regex pattern to detect shell prompt
 Set InactivityTimeout 5s    # Inactivity timeout for Exec (default: 5s)
 Set StartWaitTimeout 10s    # Wait for first terminal activity (default: 10s)
 Set StartBuffer 500ms       # Blank time before first activity (default: 500ms)
-Set EndBuffer 1s            # Time after last activity (default: 1s)
+Set EndBuffer 100ms         # Time after last activity (default: 100ms)
 ```
 
 ### Output Commands
@@ -519,7 +519,7 @@ VcrSharp includes 10 built-in themes:
 
 View all themes with:
 ```bash
-dotnet run --project src/VcrSharp.Cli -- themes
+vcr themes
 ```
 
 Use a theme in your tape file:
@@ -549,13 +549,14 @@ Set Theme "Tokyo Night"
 | `Framerate` | 50 | Frames per second (1-120) |
 | `PlaybackSpeed` | 1.0 | Playback speed multiplier |
 | `LoopOffset` | 0 | GIF loop offset percentage |
+| `MaxColors` | 256 | Max colors for GIF palette (1-256) |
 
 ### Styling
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `Theme` | "Default" | Color theme name |
-| `Padding` | 60 | Padding around terminal (px) |
+| `Padding` | 0 | Padding around terminal (px) |
 | `Margin` | 0 | Margin around recording (px) |
 | `MarginFill` | null | Margin fill color or image |
 | `WindowBarSize` | 30 | Window bar height (px) |
@@ -568,12 +569,14 @@ Set Theme "Tokyo Night"
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `Shell` | Platform-specific | Shell to use (pwsh, cmd, bash) |
-| `TypingSpeed` | 150ms | Default character typing delay |
+| `WorkingDirectory` | - | Working directory for terminal session |
+| `TypingSpeed` | 60ms | Default character typing delay |
 | `WaitTimeout` | 15s | Max wait time for patterns |
+| `WaitPattern` | - | Regex pattern to detect shell prompt |
 | `InactivityTimeout` | 5s | Inactivity timeout for Exec |
 | `StartWaitTimeout` | 10s | Wait for first activity |
 | `StartBuffer` | 500ms | Blank time before recording |
-| `EndBuffer` | 1s | Time after last activity |
+| `EndBuffer` | 100ms | Time after last activity |
 
 ## Differences from VHS
 
@@ -598,7 +601,7 @@ If you need those features, use VHS. If you want scriptable, version-controlled 
 
 ### Why VCR and not VHS?
 
-I kept typing VCR when using VHS, no one called is VHS back in the day.
+I kept typing VCR when using VHS, no one called it VHS back in the day.
 
 ## CLI Commands
 
@@ -606,7 +609,6 @@ I kept typing VCR when using VHS, no one called is VHS back in the day.
 
 ```bash
 vcr <tape-file> [OPTIONS]
-dotnet run --project src/VcrSharp.Cli -- demo.tape
 ```
 
 Records the tape file and generates output videos/GIFs.
@@ -621,25 +623,24 @@ Records the tape file and generates output videos/GIFs.
 
 ```bash
 # Override theme and dimensions
-dotnet run --project src/VcrSharp.Cli -- demo.tape --set Theme=Dracula --set Width=1920 --set Height=1080
+vcr demo.tape --set Theme=Dracula --set Width=1920 --set Height=1080
 
 # Add multiple output formats
-dotnet run --project src/VcrSharp.Cli -- demo.tape -o demo.mp4 -o demo.webm
+vcr demo.tape -o demo.mp4 -o demo.webm
 
 # Combine settings and outputs
-dotnet run --project src/VcrSharp.Cli -- demo.tape \
+vcr demo.tape \
   --set Theme=Nord \
   --output hires.gif \
   --output hires.mp4
 ```
 
-All 31 settings can be overridden via `--set`. See the [Configuration Reference](#configuration-reference) for available settings.
+All 29 settings can be overridden via `--set`. See the [Configuration Reference](#configuration-reference) for available settings.
 
 ### Validate
 
 ```bash
 vcr validate <tape-file>
-dotnet run --project src/VcrSharp.Cli -- validate demo.tape
 ```
 
 Check your tape file syntax without actually recording anything. Shows parse errors, command counts, and configuration.
@@ -648,7 +649,6 @@ Check your tape file syntax without actually recording anything. Shows parse err
 
 ```bash
 vcr themes
-dotnet run --project src/VcrSharp.Cli -- themes
 ```
 
 Lists all available themes with color previews.
@@ -656,6 +656,29 @@ Lists all available themes with color previews.
 ## Sample Tape Files
 
 Check out the `samples/` directory for examples of `.tape` files in action.
+
+## Building from Source
+
+For contributors and developers who want to build VcrSharp from source:
+
+```bash
+git clone https://github.com/phil-scott-78/vcr.git
+cd vcr
+dotnet build VcrSharp.sln
+```
+
+Run from source:
+
+```bash
+# Record a tape file
+dotnet run --project src/VcrSharp.Cli -- demo.tape
+
+# Validate a tape file
+dotnet run --project src/VcrSharp.Cli -- validate demo.tape
+
+# List themes
+dotnet run --project src/VcrSharp.Cli -- themes
+```
 
 ## Project Structure
 

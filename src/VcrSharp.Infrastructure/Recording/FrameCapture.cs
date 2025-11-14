@@ -124,7 +124,7 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
     /// Captures text and cursor layers separately and queues them for background writing.
     /// </summary>
     /// <returns>The frame number that was captured</returns>
-    private async Task<int> CaptureFrameAsync()
+    private async Task CaptureFrameAsync()
     {
         var frameNumber = _state.FramesCaptured + 1;
         var timestamp = Stopwatch.Elapsed;
@@ -153,8 +153,6 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
 
         // Notify activity monitor of the captured frame
         _activityMonitor?.NotifyFrameCaptured(frameNumber);
-
-        return frameNumber;
     }
 
     /// <summary>

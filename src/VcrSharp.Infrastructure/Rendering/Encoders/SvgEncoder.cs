@@ -257,7 +257,7 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
         var css = new StringBuilder();
 
         // Base styles (minified - no newlines between rules)
-        css.Append("text{white-space:pre;font-family:monospace;font-size:" + Options.FontSize + "px}");
+        css.Append($"text{{white-space:pre;font-family:{Options.FontFamily};font-size:{Options.FontSize}px}}");
         css.Append($".fg{{fill:{OptimizeHexColor(Options.Theme.Foreground)}}}");
 
         // ANSI color classes

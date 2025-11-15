@@ -195,7 +195,7 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
         {
             Async = true,
             Indent = false,  // Minimize file size
-            OmitXmlDeclaration = false,
+            OmitXmlDeclaration = true,  // Save ~40 bytes
             Encoding = Encoding.UTF8
         });
 
@@ -309,11 +309,13 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
                 var percentage = stop.Timestamp.TotalSeconds / Options.PlaybackSpeed / totalDuration * 100.0;
                 var offset = -1 * stop.StateIndex * _frameWidth;
 
-                // Use adaptive precision
-                var precision = _uniqueStates.Count < 100 ? 1 : _uniqueStates.Count < 1000 ? 2 : 4;
+                // Use adaptive precision (reduced from 4 to 3 for file size)
+                var precision = _uniqueStates.Count < 100 ? 1 : _uniqueStates.Count < 1000 ? 2 : 3;
                 var percentStr = percentage.ToString("F" + precision, CultureInfo.InvariantCulture);
 
-                css.AppendLine($"{percentStr}%{{transform:translateX({offset}px);}}");
+                // Omit 'px' unit for zero values to reduce file size
+                var offsetStr = offset == 0 ? "0" : $"{offset}px";
+                css.AppendLine($"{percentStr}%{{transform:translateX({offsetStr});}}");
                 lastStateIndex = stop.StateIndex;
             }
 
@@ -362,6 +364,11 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
         if (runs.Count == 0)
             return;
 
+        // Skip completely empty lines (no text, no background, no cursor) to reduce file size
+        if (runs.Count == 1 && string.IsNullOrWhiteSpace(runs[0].Text) &&
+            runs[0].BackgroundColor == null && !runs[0].IsCursor)
+            return;
+
         // Render backgrounds first (if any)
         await RenderBackgroundsAsync(xml, runs, row);
 
@@ -373,7 +380,7 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
         await xml.WriteStartElementAsync(null, "text", null);
         await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
         await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(textLength));
-        await xml.WriteAttributeStringAsync(null, "lengthAdjust", null, "spacingAndGlyphs");
+        // Note: lengthAdjust="spacingAndGlyphs" is the default, so we omit it to reduce file size
 
         for (var i = 0; i < runs.Count; i++)
         {
@@ -408,27 +415,47 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
 
     /// <summary>
     /// Renders background rectangles for cells with background colors or cursor.
+    /// Consolidates consecutive cells with the same background color into single wider rectangles.
     /// </summary>
     private async Task RenderBackgroundsAsync(XmlWriter xml, List<StyleRun> runs, int row)
     {
         var col = 0;
+        string? lastBgColor = null;
+        int bgStartCol = 0;
+        int bgLength = 0;
+
         foreach (var run in runs)
         {
-            // Render background color if present
+            // Handle background color consolidation
             if (run.BackgroundColor != null)
             {
-                var x = col * _charWidth;
-                // Align background with text visual bounds (text baseline is at (row + 1) * _charHeight)
-                var y = (row + 1) * _charHeight - _charHeight * 0.85;
-                var width = run.Text.Length * _charWidth;
+                if (run.BackgroundColor == lastBgColor)
+                {
+                    // Same background color - extend the current run
+                    bgLength += run.Text.Length;
+                }
+                else
+                {
+                    // Different background color - render accumulated background if any
+                    if (lastBgColor != null)
+                    {
+                        await RenderBackgroundRectAsync(xml, row, bgStartCol, bgLength, lastBgColor);
+                    }
 
-                await xml.WriteStartElementAsync(null, "rect", null);
-                await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
-                await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
-                await xml.WriteAttributeStringAsync(null, "width", null, FormatNumber(width));
-                await xml.WriteAttributeStringAsync(null, "height", null, FormatNumber(_charHeight));
-                await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(run.BackgroundColor));
-                await xml.WriteEndElementAsync();
+                    // Start new background run
+                    lastBgColor = run.BackgroundColor;
+                    bgStartCol = col;
+                    bgLength = run.Text.Length;
+                }
+            }
+            else
+            {
+                // No background - render accumulated background if any
+                if (lastBgColor != null)
+                {
+                    await RenderBackgroundRectAsync(xml, row, bgStartCol, bgLength, lastBgColor);
+                    lastBgColor = null;
+                }
             }
 
             // Render cursor background (only when cursor is active/visible)
@@ -450,6 +477,31 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
 
             col += run.Text.Length;
         }
+
+        // Render any remaining background at end of line
+        if (lastBgColor != null)
+        {
+            await RenderBackgroundRectAsync(xml, row, bgStartCol, bgLength, lastBgColor);
+        }
+    }
+
+    /// <summary>
+    /// Renders a background rectangle for a range of characters.
+    /// </summary>
+    private async Task RenderBackgroundRectAsync(XmlWriter xml, int row, int startCol, int length, string color)
+    {
+        var x = startCol * _charWidth;
+        // Align background with text visual bounds (text baseline is at (row + 1) * _charHeight)
+        var y = (row + 1) * _charHeight - _charHeight * 0.85;
+        var width = length * _charWidth;
+
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
+        await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
+        await xml.WriteAttributeStringAsync(null, "width", null, FormatNumber(width));
+        await xml.WriteAttributeStringAsync(null, "height", null, FormatNumber(_charHeight));
+        await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(color));
+        await xml.WriteEndElementAsync();
     }
 
     /// <summary>
@@ -506,6 +558,12 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
         if (runs.Count > 0)
         {
             runs[^1].Text = runs[^1].Text.TrimEnd();
+        }
+
+        // Remove trailing empty runs to reduce file size
+        while (runs.Count > 0 && string.IsNullOrWhiteSpace(runs[^1].Text))
+        {
+            runs.RemoveAt(runs.Count - 1);
         }
 
         return runs;

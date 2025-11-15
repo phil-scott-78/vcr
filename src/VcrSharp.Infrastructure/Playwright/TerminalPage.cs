@@ -201,8 +201,8 @@ public class TerminalPage : ITerminalPage
     /// </summary>
     /// <param name="cols">Terminal columns (character width).</param>
     /// <param name="rows">Terminal rows (character height).</param>
-    /// <returns>Tuple of (width, height) representing the final viewport dimensions.</returns>
-    public async Task<(int Width, int Height)> ResizeTerminalToColsRowsAsync(int? cols, int? rows)
+    /// <returns>Tuple of (width, height, cellWidth, cellHeight) representing the final viewport dimensions and measured cell size.</returns>
+    public async Task<(int Width, int Height, double CellWidth, double CellHeight)> ResizeTerminalToColsRowsAsync(int? cols, int? rows)
     {
         // Get current dimensions
         var currentDims = await _page.EvaluateAsync<TerminalDimensions>("""
@@ -295,8 +295,8 @@ public class TerminalPage : ITerminalPage
         // Wait for resize to take effect
         await Task.Delay(100);
 
-        // Return the final viewport dimensions
-        return (requiredViewportWidth, requiredViewportHeight);
+        // Return the final viewport dimensions and actual cell dimensions
+        return (requiredViewportWidth, requiredViewportHeight, cellWidth, cellHeight);
     }
 
     /// <summary>
@@ -933,5 +933,136 @@ public class TerminalPage : ITerminalPage
     {
         var text = await _page.EvaluateAsync<string>("navigator.clipboard.readText()");
         return text;
+    }
+
+    /// <summary>
+    /// Gets the full terminal content with styling information.
+    /// Extracts all cells with character data, colors, and style attributes.
+    /// </summary>
+    /// <returns>Terminal content including text, colors, cursor position, and styles.</returns>
+    public async Task<Core.Rendering.TerminalContent> GetTerminalContentWithStylesAsync()
+    {
+        try
+        {
+            // JavaScript code to extract terminal content with styles
+            var contentJson = await _page.EvaluateAsync<string>("""
+                () => {
+                    const term = window.term;
+                    const buffer = term.buffer.active;
+                    const rows = term.rows;
+                    const cols = term.cols;
+                    const cursorX = buffer.cursorX;
+                    const cursorY = buffer.cursorY;
+
+                    const cells = [];
+
+                    for (let row = 0; row < rows; row++) {
+                        const line = buffer.getLine(row);
+                        const rowCells = [];
+
+                        if (line) {
+                            for (let col = 0; col < cols; col++) {
+                                const cell = line.getCell(col);
+                                if (cell) {
+                                    const char = cell.getChars() || ' ';
+                                    const fg = cell.getFgColor();
+                                    const bg = cell.getBgColor();
+
+                                    // Get cell attributes (xterm.js v5+ uses different API)
+                                    // These methods return numbers (0 or non-zero), convert to boolean
+                                    const isBold = cell.isBold ? (cell.isBold() !== 0) : false;
+                                    const isItalic = cell.isItalic ? (cell.isItalic() !== 0) : false;
+                                    const isUnderline = cell.isUnderline ? (cell.isUnderline() !== 0) : false;
+                                    const isDim = cell.isDim ? (cell.isDim() !== 0) : false;
+
+                                    // Extract colors (xterm.js supports palette and RGB colors)
+                                    let fgColor = null;
+                                    let bgColor = null;
+
+                                    // Foreground color detection
+                                    if (fg !== undefined && fg !== -1) {
+                                        // Check color mode using xterm.js API
+                                        if (cell.isFgRGB && cell.isFgRGB()) {
+                                            // RGB color (24-bit)
+                                            fgColor = '#' + ('000000' + fg.toString(16)).slice(-6);
+                                        } else if (cell.isFgPalette && cell.isFgPalette()) {
+                                            // Palette color (0-255) - pass as string for SVG mapping
+                                            fgColor = fg.toString();
+                                        }
+                                    }
+
+                                    // Background color detection
+                                    if (bg !== undefined && bg !== -1) {
+                                        // Check color mode using xterm.js API
+                                        if (cell.isBgRGB && cell.isBgRGB()) {
+                                            // RGB color (24-bit)
+                                            bgColor = '#' + ('000000' + bg.toString(16)).slice(-6);
+                                        } else if (cell.isBgPalette && cell.isBgPalette()) {
+                                            // Palette color (0-255) - pass as string for SVG mapping
+                                            bgColor = bg.toString();
+                                        }
+                                    }
+
+                                    const isCursor = (row === cursorY && col === cursorX);
+
+                                    rowCells.push({
+                                        character: char.charAt(0) || ' ',
+                                        foregroundColor: fgColor,
+                                        backgroundColor: bgColor,
+                                        isBold: isBold,
+                                        isItalic: isItalic,
+                                        isUnderline: isUnderline,
+                                        isCursor: isCursor
+                                    });
+                                }
+                            }
+                        }
+
+                        cells.push(rowCells);
+                    }
+
+                    return JSON.stringify({
+                        cols: cols,
+                        rows: rows,
+                        cursorX: cursorX,
+                        cursorY: cursorY,
+                        cursorVisible: term.buffer.active.cursorHidden === false,
+                        cells: cells
+                    });
+                }
+            """);
+
+            if (string.IsNullOrEmpty(contentJson))
+            {
+                VcrLogger.Logger.Warning("Terminal content JSON is null or empty");
+                return new Core.Rendering.TerminalContent();
+            }
+
+            // Deserialize the JSON result
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+
+            var content = JsonSerializer.Deserialize<Core.Rendering.TerminalContent>(contentJson, options);
+
+            if (content == null)
+            {
+                VcrLogger.Logger.Warning("Failed to deserialize terminal content (result was null)");
+                return new Core.Rendering.TerminalContent();
+            }
+
+            if (content.Rows == 0 || content.Cols == 0)
+            {
+                VcrLogger.Logger.Warning("Terminal content has invalid dimensions: Rows={Rows}, Cols={Cols}", content.Rows, content.Cols);
+            }
+
+            return content;
+        }
+        catch (Exception ex)
+        {
+            VcrLogger.Logger.Error(ex, "Error capturing terminal content with styles");
+            return new Core.Rendering.TerminalContent();
+        }
     }
 }

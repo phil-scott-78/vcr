@@ -1,6 +1,8 @@
+using Mdazor;
 using MonorailCss.Theme;
 using MyLittleContentEngine.DocSite;
 using MyLittleContentEngine.MonorailCss;
+using VcrSharp.Docs.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,6 +32,9 @@ builder.Services.AddDocSite(_ => new DocSiteOptions()
                  </svg>
                  """,
 });
+
+builder.Services.AddMdazor();
+builder.Services.AddMdazorComponent<VcrTape>();
 
 var app = builder.Build();
 app.UseDocSite();

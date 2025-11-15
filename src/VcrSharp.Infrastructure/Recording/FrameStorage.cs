@@ -12,7 +12,9 @@ public class FrameStorage : IDisposable
 {
     private bool _disposed;
     private readonly List<FrameMetadata> _frameMetadata = [];
+    private readonly List<TerminalContentSnapshot> _terminalSnapshots = [];
     private readonly Lock _metadataLock = new();
+    private readonly Lock _snapshotsLock = new();
 
     /// <summary>
     /// Gets the temporary directory where frames are stored.
@@ -148,6 +150,43 @@ public class FrameStorage : IDisposable
     public string GetFramesManifestPath(string layer)
     {
         return Path.Combine(FrameDirectory, $"frames-{layer}.txt");
+    }
+
+    /// <summary>
+    /// Records a terminal content snapshot for a captured frame.
+    /// </summary>
+    /// <param name="snapshot">The terminal content snapshot to record</param>
+    public void RecordTerminalSnapshot(TerminalContentSnapshot snapshot)
+    {
+        lock (_snapshotsLock)
+        {
+            _terminalSnapshots.Add(snapshot);
+        }
+    }
+
+    /// <summary>
+    /// Gets all terminal content snapshots.
+    /// </summary>
+    /// <returns>Read-only list of terminal content snapshots</returns>
+    public IReadOnlyList<TerminalContentSnapshot> GetTerminalSnapshots()
+    {
+        lock (_snapshotsLock)
+        {
+            return _terminalSnapshots.AsReadOnly();
+        }
+    }
+
+    /// <summary>
+    /// Gets a terminal content snapshot by frame number.
+    /// </summary>
+    /// <param name="frameNumber">The frame number (1-based)</param>
+    /// <returns>The snapshot, or null if not found</returns>
+    public TerminalContentSnapshot? GetTerminalSnapshot(int frameNumber)
+    {
+        lock (_snapshotsLock)
+        {
+            return _terminalSnapshots.FirstOrDefault(s => s.FrameNumber == frameNumber);
+        }
     }
 
     /// <summary>

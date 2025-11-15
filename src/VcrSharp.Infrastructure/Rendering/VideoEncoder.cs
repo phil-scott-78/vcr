@@ -1,7 +1,6 @@
-using FFMpegCore;
-using FFMpegCore.Enums;
 using VcrSharp.Core.Session;
 using VcrSharp.Infrastructure.Recording;
+using VcrSharp.Infrastructure.Rendering.Encoders;
 
 namespace VcrSharp.Infrastructure.Rendering;
 
@@ -13,6 +12,7 @@ public class VideoEncoder
 {
     private readonly SessionOptions _options;
     private readonly FrameStorage _storage;
+    private readonly List<IEncoder> _encoders;
 
     /// <summary>
     /// Initializes a new instance of VideoEncoder.
@@ -25,6 +25,18 @@ public class VideoEncoder
         ArgumentNullException.ThrowIfNull(storage);
         _options = options;
         _storage = storage;
+
+        // Register all available encoders
+        // Note: FramesEncoder should be checked first since it handles directory paths
+        _encoders =
+        [
+            new FramesEncoder(options, storage),
+            new GifEncoder(options, storage),
+            new Mp4Encoder(options, storage),
+            new WebMEncoder(options, storage),
+            new PngEncoder(options, storage),
+            new SvgEncoder(options, storage)
+        ];
     }
 
     /// <summary>
@@ -45,41 +57,31 @@ public class VideoEncoder
             throw new InvalidOperationException("No frames captured to render");
         }
 
-        // Use frames manifest files for concat demuxer (supports variable frame durations)
-        var textManifest = _storage.GetFramesManifestPath("text");
-        var cursorManifest = _storage.GetFramesManifestPath("cursor");
-
-        // Verify manifest files exist
-        if (!File.Exists(textManifest) || !File.Exists(cursorManifest))
-        {
-            throw new InvalidOperationException("Frame manifest files not found. Call GenerateFramesManifest() first.");
-        }
-
         // Render each output file
+        // Note: Individual encoders will validate their own requirements
+        // (e.g., FFmpeg-based encoders need manifests, SVG encoder needs terminal snapshots)
         var renderedFiles = new List<string>();
-        foreach (var outputFile in _options.OutputFiles)
+        foreach (var outputPath in _options.OutputFiles)
         {
-            var extension = Path.GetExtension(outputFile).ToLowerInvariant();
-            var formatName = extension.TrimStart('.').ToUpperInvariant();
+            // Find encoder that supports this output path
+            var encoder = _encoders.FirstOrDefault(e => e.SupportsPath(outputPath));
+            if (encoder == null)
+            {
+                var extension = Path.GetExtension(outputPath);
+                throw new NotSupportedException($"Output format '{extension}' is not supported. No encoder found for path: {outputPath}");
+            }
 
+            var formatName = GetFormatName(outputPath);
             progress?.Report($"Rendering {formatName}...");
 
             try
             {
-                await (extension switch
-                {
-                    ".gif" => RenderGifAsync(textManifest, cursorManifest, outputFile),
-                    ".mp4" => RenderMp4Async(textManifest, cursorManifest, outputFile),
-                    ".webm" => RenderWebMAsync(textManifest, cursorManifest, outputFile),
-                    ".png" => RenderPngAsync(textManifest, cursorManifest, outputFile),
-                    _ => throw new NotSupportedException($"Output format '{extension}' is not supported")
-                });
-
-                renderedFiles.Add(outputFile);
+                var renderedPath = await encoder.RenderAsync(outputPath, progress);
+                renderedFiles.Add(renderedPath);
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"Failed to render {extension} output: {ex.Message}", ex);
+                throw new InvalidOperationException($"Failed to render {formatName} output: {ex.Message}", ex);
             }
         }
 
@@ -87,266 +89,18 @@ public class VideoEncoder
     }
 
     /// <summary>
-    /// Renders GIF output using FFMpegCore with layer compositing and palette generation.
-    /// Uses concat demuxer to support variable frame durations.
-    /// Matches VHS implementation with fps, setpts, and scale filters for optimal file size.
+    /// Gets a display name for the output format.
     /// </summary>
-    private async Task RenderGifAsync(string textManifest, string cursorManifest, string outputFile)
+    private static string GetFormatName(string outputPath)
     {
-        // Calculate terminal dimensions (content area without padding)
-        var termWidth = _options.Width - 2 * _options.Padding;
-        var termHeight = _options.Height - 2 * _options.Padding;
-
-        // Log dimensions for debugging
-        Core.Logging.VcrLogger.Logger.Debug(
-            "VideoEncoder dimensions - Width: {Width}, Height: {Height}, Padding: {Padding}, termWidth: {termWidth}, termHeight: {termHeight}",
-            _options.Width, _options.Height, _options.Padding, termWidth, termHeight);
-
-        var backgroundColor = _options.Theme.Background;
-
-        // Build filter chain: handle padding=0 case differently to avoid scale+pad issues
-        string filterComplex;
-        if (_options.Padding == 0)
+        // Check if it's a directory (Frames encoder)
+        if (Directory.Exists(outputPath) || !Path.HasExtension(outputPath))
         {
-            // No padding: simplified filter chain without scale/pad operations
-            // This avoids issues with force_original_aspect_ratio and unnecessary padding
-            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
-                           $"[merged]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[final];" +
-                           $"[final]split[s0][s1];" +
-                           $"[s0]palettegen=max_colors={_options.MaxColors}[p];" +
-                           $"[s1][p]paletteuse";
-        }
-        else
-        {
-            // With padding: full filter chain with scale, pad, and fillborders
-            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
-                           $"[merged]scale={termWidth}:{termHeight}:force_original_aspect_ratio=1[scaled];" +
-                           $"[scaled]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
-                           $"[speed]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:{backgroundColor}[padded];" +
-                           $"[padded]fillborders=left={_options.Padding}:right={_options.Padding}:top={_options.Padding}:bottom={_options.Padding}:mode=fixed:color={backgroundColor}[final];" +
-                           $"[final]split[s0][s1];" +
-                           $"[s0]palettegen=max_colors={_options.MaxColors}[p];" +
-                           $"[s1][p]paletteuse";
+            return "FRAMES";
         }
 
-        await FFMpegArguments
-            .FromFileInput(textManifest, verifyExists: true, options => options
-                .WithCustomArgument("-f concat")
-                .WithCustomArgument("-safe 0"))
-            .AddFileInput(cursorManifest, verifyExists: true, options => options
-                .WithCustomArgument("-f concat")
-                .WithCustomArgument("-safe 0"))
-            .OutputToFile(outputFile, overwrite: true, options => options
-                .WithCustomArgument($"-filter_complex \"{filterComplex}\"")
-                .ForceFormat("gif"))
-            .NotifyOnOutput(_ =>
-            {
-                // Suppress verbose output - only critical errors will be shown
-            })
-            .NotifyOnError(_ =>
-            {
-                // Suppress verbose error output
-            })
-            .ProcessAsynchronously();
+        var extension = Path.GetExtension(outputPath).ToLowerInvariant().TrimStart('.');
+        return extension.ToUpperInvariant();
     }
 
-    /// <summary>
-    /// Renders MP4 output using FFMpegCore with H.264 encoding and layer compositing.
-    /// Uses concat demuxer to support variable frame durations.
-    /// Matches VHS implementation with fps, setpts, and scale filters.
-    /// </summary>
-    private async Task RenderMp4Async(string textManifest, string cursorManifest, string outputFile)
-    {
-        // Calculate terminal dimensions (content area without padding)
-        var termWidth = _options.Width - 2 * _options.Padding;
-        var termHeight = _options.Height - 2 * _options.Padding;
-
-        var backgroundColor = _options.Theme.Background;
-
-        // Build filter chain: handle padding=0 case differently to avoid scale+pad issues
-        string filterComplex;
-        if (_options.Padding == 0)
-        {
-            // No padding: simplified filter chain
-            // Ensure even dimensions for H.264 (yuv420p requires even width/height)
-            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
-                           $"[merged]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
-                           $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'";
-        }
-        else
-        {
-            // With padding: full filter chain with scale, pad, and fillborders
-            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
-                           $"[merged]scale={termWidth}:{termHeight}:force_original_aspect_ratio=1[scaled];" +
-                           $"[scaled]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
-                           $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'[even];" +
-                           $"[even]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:{backgroundColor}[padded];" +
-                           $"[padded]fillborders=left={_options.Padding}:right={_options.Padding}:top={_options.Padding}:bottom={_options.Padding}:mode=fixed:color={backgroundColor}";
-        }
-
-        await FFMpegArguments
-            .FromFileInput(textManifest, verifyExists: true, options => options
-                .WithCustomArgument("-f concat")
-                .WithCustomArgument("-safe 0"))
-            .AddFileInput(cursorManifest, verifyExists: true, options => options
-                .WithCustomArgument("-f concat")
-                .WithCustomArgument("-safe 0"))
-            .OutputToFile(outputFile, overwrite: true, options => options
-                .WithVideoCodec(VideoCodec.LibX264)
-                .WithConstantRateFactor(20)  // Match VHS quality (was 23)
-                .WithCustomArgument($"-filter_complex \"{filterComplex}\"")
-                .WithCustomArgument("-pix_fmt yuv420p")
-                .WithCustomArgument("-movflags +faststart"))
-            .NotifyOnOutput(_ =>
-            {
-                // Suppress verbose output
-            })
-            .NotifyOnError(_ =>
-            {
-                // Suppress verbose error output
-            })
-            .ProcessAsynchronously();
-    }
-
-    /// <summary>
-    /// Renders WebM output using FFMpegCore with VP9 encoding and layer compositing.
-    /// Uses concat demuxer to support variable frame durations.
-    /// Supports transparent backgrounds with yuva420p pixel format when TransparentBackground is enabled.
-    /// Uses optimized VP9 encoding settings for better quality.
-    /// </summary>
-    private async Task RenderWebMAsync(string textManifest, string cursorManifest, string outputFile)
-    {
-        // Calculate terminal dimensions (content area without padding)
-        var termWidth = _options.Width - 2 * _options.Padding;
-        var termHeight = _options.Height - 2 * _options.Padding;
-
-        var backgroundColor = _options.Theme.Background;
-        var isTransparent = _options.TransparentBackground;
-
-        // Build filter chain: handle padding=0 case differently to avoid scale+pad issues
-        string filterComplex;
-        if (_options.Padding == 0)
-        {
-            // No padding: simplified filter chain
-            // Ensure even dimensions for VP9
-            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
-                           $"[merged]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
-                           $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'";
-
-            // Add format conversion for alpha channel preservation
-            if (isTransparent)
-            {
-                filterComplex += "[scaled];[scaled]format=yuva420p";
-            }
-        }
-        else
-        {
-            // With padding: full filter chain with scale, pad, and fillborders
-            filterComplex = $"[0:v][1:v]overlay=0:0[merged];" +
-                           $"[merged]scale={termWidth}:{termHeight}:force_original_aspect_ratio=1[scaled];" +
-                           $"[scaled]fps={_options.Framerate},setpts=PTS/{_options.PlaybackSpeed.ToString(System.Globalization.CultureInfo.InvariantCulture)}[speed];" +
-                           $"[speed]scale='trunc(iw/2)*2':'trunc(ih/2)*2'[even];";
-
-            if (isTransparent)
-            {
-                // Use transparent padding - pad filter with alpha channel
-                filterComplex += $"[even]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:color=0x00000000[padded];" +
-                               $"[padded]format=yuva420p";
-            }
-            else
-            {
-                // Use opaque background color for padding
-                filterComplex += $"[even]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:{backgroundColor}[padded];" +
-                               $"[padded]fillborders=left={_options.Padding}:right={_options.Padding}:top={_options.Padding}:bottom={_options.Padding}:mode=fixed:color={backgroundColor}";
-            }
-        }
-
-        // Build custom arguments string with all VP9 encoding parameters
-        var customArgs = $"-filter_complex \"{filterComplex}\" -b:v 0 -deadline good -cpu-used 1 -auto-alt-ref 1";
-
-        // Add pixel format for alpha channel support
-        if (isTransparent)
-        {
-            customArgs += " -pix_fmt yuva420p";
-        }
-
-        await FFMpegArguments
-            .FromFileInput(textManifest, verifyExists: true, options => options
-                .WithCustomArgument("-f concat")
-                .WithCustomArgument("-safe 0"))
-            .AddFileInput(cursorManifest, verifyExists: true, options => options
-                .WithCustomArgument("-f concat")
-                .WithCustomArgument("-safe 0"))
-            .OutputToFile(outputFile, overwrite: true, options => options
-                .WithVideoCodec("libvpx-vp9")
-                .WithConstantRateFactor(30)  // Match VHS quality (was 31)
-                .WithCustomArgument(customArgs))
-            .NotifyOnOutput(_ =>
-            {
-                // Suppress verbose output
-            })
-            .NotifyOnError(_ =>
-            {
-                // Suppress verbose error output
-            })
-            .ProcessAsynchronously();
-    }
-
-    /// <summary>
-    /// Renders PNG output (single frame) using FFMpegCore with layer compositing.
-    /// Uses concat demuxer to support variable frame durations.
-    /// </summary>
-    private async Task RenderPngAsync(string textManifest, string cursorManifest, string outputFile)
-    {
-        // Build filter chain with padding if needed
-        var filterComplex = BuildFilterChain("[0:v][1:v]overlay=0:0");
-
-        await FFMpegArguments
-            .FromFileInput(textManifest, verifyExists: true, options => options
-                .WithCustomArgument("-f concat")
-                .WithCustomArgument("-safe 0"))
-            .AddFileInput(cursorManifest, verifyExists: true, options => options
-                .WithCustomArgument("-f concat")
-                .WithCustomArgument("-safe 0"))
-            .OutputToFile(outputFile, overwrite: true, options => options
-                .WithCustomArgument($"-filter_complex \"{filterComplex}\"")
-                .WithCustomArgument("-frames:v 1"))
-            .NotifyOnOutput(_ =>
-            {
-                // Suppress verbose output
-            })
-            .NotifyOnError(_ =>
-            {
-                // Suppress verbose error output
-            })
-            .ProcessAsynchronously();
-    }
-
-    /// <summary>
-    /// Builds FFmpeg filter chain with optional padding.
-    /// Matches VHS behavior: pad filter to expand canvas, fillborders to fill with background color.
-    /// </summary>
-    /// <param name="baseFilter">The base filter chain (e.g., overlay, palette, etc.)</param>
-    /// <returns>Complete filter chain with padding applied if needed</returns>
-    private string BuildFilterChain(string baseFilter)
-    {
-        if (_options.Padding <= 0)
-        {
-            // No padding - return base filter as-is
-            return baseFilter;
-        }
-
-        // Extract background color from theme
-        var backgroundColor = _options.Theme.Background;
-
-        // Build filter chain with padding
-        // 1. Apply base filter
-        // 2. Pad to target dimensions (Width x Height) centered
-        // 3. Fill borders with background color
-        var filterChain = $"{baseFilter}[merged];" +
-                          $"[merged]pad={_options.Width}:{_options.Height}:(ow-iw)/2:(oh-ih)/2:{backgroundColor}[padded];" +
-                          $"[padded]fillborders=left={_options.Padding}:right={_options.Padding}:top={_options.Padding}:bottom={_options.Padding}:mode=fixed:color={backgroundColor}";
-
-        return filterChain;
-    }
 }

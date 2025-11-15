@@ -67,4 +67,10 @@ public interface ITerminalPage
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task PasteFromClipboardAsync(CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gets the full terminal content with styling information.
+    /// </summary>
+    /// <returns>Terminal content including text, colors, cursor position, and styles.</returns>
+    Task<Rendering.TerminalContent> GetTerminalContentWithStylesAsync();
 }

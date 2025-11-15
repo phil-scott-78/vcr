@@ -122,6 +122,7 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
     /// <summary>
     /// Captures a single frame immediately and returns the frame number.
     /// Captures text and cursor layers separately and queues them for background writing.
+    /// Also captures terminal content with styles for SVG/text-based outputs.
     /// </summary>
     /// <returns>The frame number that was captured</returns>
     private async Task CaptureFrameAsync()
@@ -139,6 +140,17 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         // Enqueue for background writing (non-blocking)
         await _writeQueue.EnqueueAsync(textPath, textBytes);
         await _writeQueue.EnqueueAsync(cursorPath, cursorBytes);
+
+        // Capture terminal content with styles for SVG/text-based outputs
+        // This runs in parallel with PNG writes and doesn't block the capture loop
+        var terminalContent = await _terminalPage.GetTerminalContentWithStylesAsync();
+        var snapshot = new TerminalContentSnapshot
+        {
+            FrameNumber = frameNumber,
+            Timestamp = timestamp,
+            Content = terminalContent
+        };
+        _storage.RecordTerminalSnapshot(snapshot);
 
         // Record frame metadata with timestamp
         var metadata = new FrameMetadata

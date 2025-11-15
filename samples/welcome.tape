@@ -1,8 +1,7 @@
-Output welcome.webm
-Output welcome.gif
+Output welcome.svg
 
-Set Width 1200
-Set Height 600
+Set Cols 80
+Set Rows 18
 Set TypingSpeed 40ms
 
 Type "Welcome to VCR#!"

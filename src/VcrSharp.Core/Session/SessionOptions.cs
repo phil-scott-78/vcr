@@ -63,6 +63,20 @@ public class SessionOptions
     /// </summary>
     public float LineHeight { get; set; } = 1.0f;
 
+    /// <summary>
+    /// Gets or sets the actual rendered cell width in pixels.
+    /// This is measured from xterm.js after fonts are loaded.
+    /// If null, SVG encoder will estimate based on FontSize.
+    /// </summary>
+    public double? ActualCellWidth { get; set; }
+
+    /// <summary>
+    /// Gets or sets the actual rendered cell height in pixels.
+    /// This is measured from xterm.js after fonts are loaded.
+    /// If null, SVG encoder will estimate based on FontSize.
+    /// </summary>
+    public double? ActualCellHeight { get; set; }
+
     // Video Settings
 
     /// <summary>

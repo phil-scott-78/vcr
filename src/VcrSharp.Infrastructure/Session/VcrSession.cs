@@ -101,15 +101,19 @@ public class VcrSession : IAsyncDisposable
             // (this ensures cell dimensions are measured with the correct font)
             if (_options.Cols.HasValue || _options.Rows.HasValue)
             {
-                var (viewportWidth, viewportHeight) = await _terminalPage.ResizeTerminalToColsRowsAsync(_options.Cols, _options.Rows);
+                var (viewportWidth, viewportHeight, cellWidth, cellHeight) = await _terminalPage.ResizeTerminalToColsRowsAsync(_options.Cols, _options.Rows);
+
+                // Store actual measured cell dimensions for SVG encoder to use
+                _options.ActualCellWidth = cellWidth;
+                _options.ActualCellHeight = cellHeight;
 
                 // Update Width/Height in options so VideoEncoder uses the correct dimensions
                 // Add padding back since VideoEncoder expects Width/Height to include padding
                 _options.Width = viewportWidth + 2 * _options.Padding;
                 _options.Height = viewportHeight + 2 * _options.Padding;
 
-                VcrLogger.Logger.Information("Terminal resized to {Cols}x{Rows} (viewport: {ViewportWidth}x{ViewportHeight}, total with padding: {Width}x{Height})",
-                    _options.Cols, _options.Rows, viewportWidth, viewportHeight, _options.Width, _options.Height);
+                VcrLogger.Logger.Information("Terminal resized to {Cols}x{Rows} (viewport: {ViewportWidth}x{ViewportHeight}, cell: {CellWidth}x{CellHeight}, total with padding: {Width}x{Height})",
+                    _options.Cols, _options.Rows, viewportWidth, viewportHeight, cellWidth, cellHeight, _options.Width, _options.Height);
             }
 
             // 8. Click terminal to give it focus for interactive applications

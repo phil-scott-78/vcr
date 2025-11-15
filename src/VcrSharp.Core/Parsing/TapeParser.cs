@@ -36,7 +36,7 @@ public class TapeParser
             var content = value.Substring(1, value.Length - 2);
             // Process escape sequences
             var result = new System.Text.StringBuilder();
-            for (int i = 0; i < content.Length; i++)
+            for (var i = 0; i < content.Length; i++)
             {
                 if (content[i] == '\\' && i + 1 < content.Length)
                 {

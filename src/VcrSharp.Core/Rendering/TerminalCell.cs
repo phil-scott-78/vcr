@@ -1,0 +1,51 @@
+using System.Text.Json.Serialization;
+
+namespace VcrSharp.Core.Rendering;
+
+/// <summary>
+/// Represents a single terminal cell with character and style information.
+/// </summary>
+public sealed class TerminalCell
+{
+    /// <summary>
+    /// Gets or sets the character in this cell.
+    /// </summary>
+    [JsonPropertyName("character")]
+    public char Character { get; set; }
+
+    /// <summary>
+    /// Gets or sets the foreground color (hex format like "#FFFFFF" or ANSI color index).
+    /// </summary>
+    [JsonPropertyName("foregroundColor")]
+    public string? ForegroundColor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the background color (hex format like "#000000" or ANSI color index).
+    /// </summary>
+    [JsonPropertyName("backgroundColor")]
+    public string? BackgroundColor { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the text is bold.
+    /// </summary>
+    [JsonPropertyName("isBold")]
+    public bool IsBold { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the text is italic.
+    /// </summary>
+    [JsonPropertyName("isItalic")]
+    public bool IsItalic { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether the text is underlined.
+    /// </summary>
+    [JsonPropertyName("isUnderline")]
+    public bool IsUnderline { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether this cell contains the cursor.
+    /// </summary>
+    [JsonPropertyName("isCursor")]
+    public bool IsCursor { get; set; }
+}

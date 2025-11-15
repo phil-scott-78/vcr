@@ -209,12 +209,15 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
         // Styles and animations
         await WriteStylesAndAnimationsAsync(xml, totalDuration);
 
-        // Background
-        await xml.WriteStartElementAsync(null, "rect", null);
-        await xml.WriteAttributeStringAsync(null, "width", null, "100%");
-        await xml.WriteAttributeStringAsync(null, "height", null, "100%");
-        await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(Options.Theme.Background));
-        await xml.WriteEndElementAsync();
+        // Background (skip if transparent background is enabled)
+        if (!Options.TransparentBackground)
+        {
+            await xml.WriteStartElementAsync(null, "rect", null);
+            await xml.WriteAttributeStringAsync(null, "width", null, "100%");
+            await xml.WriteAttributeStringAsync(null, "height", null, "100%");
+            await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(Options.Theme.Background));
+            await xml.WriteEndElementAsync();
+        }
 
         // Inner SVG with viewBox (shows one frame at a time)
         await xml.WriteStartElementAsync(null, "svg", null);

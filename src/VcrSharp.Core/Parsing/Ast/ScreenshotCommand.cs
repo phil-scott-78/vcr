@@ -2,7 +2,11 @@ namespace VcrSharp.Core.Parsing.Ast;
 
 /// <summary>
 /// Represents a Screenshot command that captures a single frame.
-/// Example: Screenshot output.png
+/// Supports both PNG (raster) and SVG (vector) output formats.
+/// Format is auto-detected from file extension.
+/// Examples:
+///   Screenshot output.png  (PNG format)
+///   Screenshot output.svg  (SVG format)
 /// </summary>
 public class ScreenshotCommand(string filePath) : ICommand
 {
@@ -10,8 +14,8 @@ public class ScreenshotCommand(string filePath) : ICommand
 
     public async Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var frameCapture = context.FrameCapture;
-        await frameCapture.CaptureScreenshotAsync(FilePath);
+        // Delegate to frame capture - format detection happens in Infrastructure layer
+        await context.FrameCapture.CaptureScreenshotAsync(FilePath);
     }
 
     public override string ToString() => $"Screenshot {FilePath}";

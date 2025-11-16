@@ -3,6 +3,7 @@ using VcrSharp.Core.Logging;
 using VcrSharp.Core.Recording;
 using VcrSharp.Core.Session;
 using VcrSharp.Infrastructure.Playwright;
+using VcrSharp.Infrastructure.Rendering;
 
 namespace VcrSharp.Infrastructure.Recording;
 
@@ -223,6 +224,7 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
 
     /// <summary>
     /// Captures a screenshot to a specific file path (for Screenshot command).
+    /// Format is auto-detected from file extension (.png for raster, .svg for vector).
     /// </summary>
     /// <param name="path">The file path to save the screenshot</param>
     /// <returns>Task that completes when screenshot is saved</returns>
@@ -230,7 +232,27 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
-        await _terminalPage.ScreenshotAsync(path);
+        // Auto-detect format from file extension
+        var extension = Path.GetExtension(path);
+
+        if (extension.Equals(".svg", StringComparison.OrdinalIgnoreCase))
+        {
+            // SVG screenshot - capture terminal content and render as SVG
+            var content = await _terminalPage.GetTerminalContentWithStylesAsync();
+
+            if (content == null)
+            {
+                throw new InvalidOperationException("Failed to capture terminal content for SVG screenshot");
+            }
+
+            var renderer = new SvgRenderer(_options);
+            await renderer.RenderStaticAsync(path, content);
+        }
+        else
+        {
+            // PNG screenshot (default for .png or any other extension)
+            await _terminalPage.ScreenshotAsync(path);
+        }
     }
 
     /// <summary>

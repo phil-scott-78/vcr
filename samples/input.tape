@@ -1,4 +1,4 @@
-Output input.webm
+Output input.svg
 
 Set FontSize 12
 Set Cols 80
@@ -18,5 +18,6 @@ Up 3
 Down 5
 Sleep 500ms
 Screenshot "file-picker.gif"
+Screenshot "file-picker.svg"
 Enter
 Sleep 2000ms

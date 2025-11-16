@@ -1,3 +1,4 @@
+using Microsoft.Playwright;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using VcrSharp.Cli.Helpers;
@@ -111,7 +112,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                 }
 
                 // Ensure Playwright browser is installed (will auto-install if needed with its own UI)
-                PlaywrightBrowser.EnsureBrowsersInstalled();
+                await PlaywrightBrowser.EnsureBrowsersInstalled();
 
                 // Record the tape with progress reporting
                 RecordingResult? result = null;
@@ -146,6 +147,21 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
             catch (TapeParseException ex)
             {
                 ErrorReporter.DisplayParseError(ex, settings.TapeFile);
+                return 1;
+            }
+            catch (PlaywrightException ex) when (ex.Message.Contains("Driver not found"))
+            {
+                // Playwright driver files are missing - this shouldn't happen if EnsureBrowsersInstalled() worked,
+                // but catch it as a safety net
+                AnsiConsole.MarkupLine("[bold red]Error:[/] Playwright drivers are missing.");
+                AnsiConsole.MarkupLine("[yellow]This typically happens after upgrading VcrSharp to a new version.[/]");
+                AnsiConsole.MarkupLine("[yellow]To fix this issue, please reinstall the tool:[/]");
+                AnsiConsole.MarkupLine("  [cyan]dotnet tool uninstall -g vcr[/]");
+                AnsiConsole.MarkupLine("  [cyan]dotnet tool install -g vcr[/]");
+                AnsiConsole.WriteLine();
+                AnsiConsole.MarkupLine("[yellow]Or if installed locally:[/]");
+                AnsiConsole.MarkupLine("  [cyan]dotnet tool uninstall vcr[/]");
+                AnsiConsole.MarkupLine("  [cyan]dotnet tool install vcr[/]");
                 return 1;
             }
             catch (Exception ex)

@@ -24,12 +24,29 @@ public class PlaywrightBrowser : IDisposable
     public IBrowserContext? Context => _context;
 
     /// <summary>
-    /// Ensures Playwright browsers are installed. If not found, installs Chromium automatically.
+    /// Ensures Playwright browsers and drivers are installed. If not found, provides clear error messages.
     /// </summary>
     /// <param name="progress">Optional progress callback for reporting installation status.</param>
     /// <returns>A task representing the async operation.</returns>
-    public static void EnsureBrowsersInstalled(Action<string>? progress = null)
+    public static async Task EnsureBrowsersInstalled(Action<string>? progress = null)
     {
+        // Check if Playwright drivers are available
+        // Drivers are installed per-version in the tool directory (e.g., .dotnet/tools/.store/vcr/{version}/tools/.playwright/)
+        // They come from the NuGet package and cannot be installed separately
+        var driversAvailable = await AreDriversAvailable();
+
+        if (!driversAvailable)
+        {
+            throw new InvalidOperationException(
+                "Playwright drivers are missing. This typically happens after upgrading VcrSharp to a new version.\n" +
+                "To fix this issue, please reinstall the tool:\n" +
+                "  dotnet tool uninstall -g vcr\n" +
+                "  dotnet tool install -g vcr\n\n" +
+                "Or if installed locally:\n" +
+                "  dotnet tool uninstall vcr\n" +
+                "  dotnet tool install vcr");
+        }
+
         // Check if Chromium browser is installed by looking for the executable
         // Playwright stores browsers in:
         // - Windows: %USERPROFILE%\AppData\Local\ms-playwright
@@ -63,6 +80,132 @@ public class PlaywrightBrowser : IDisposable
 
             progress?.Invoke("Playwright Chromium installed successfully");
         }
+    }
+
+    /// <summary>
+    /// Checks if Playwright driver files are available at the expected location.
+    /// This replicates Playwright's Driver.GetExecutablePath() logic to check the EXACT location
+    /// that will be used, preventing false positives from old version installations.
+    /// </summary>
+    /// <returns>True if drivers are available at the expected location, false otherwise.</returns>
+    private static Task<bool> AreDriversAvailable()
+    {
+        try
+        {
+            // Replicate Playwright's Driver.GetExecutablePath() logic to find the assembly directory
+            DirectoryInfo? assemblyDirectory = null;
+
+            // First, try AppContext.BaseDirectory
+            if (!string.IsNullOrEmpty(AppContext.BaseDirectory))
+            {
+                assemblyDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+            }
+
+            // Verify it's the right directory by checking for Microsoft.Playwright.dll
+            if (assemblyDirectory?.Exists != true ||
+                !File.Exists(Path.Combine(assemblyDirectory.FullName, "Microsoft.Playwright.dll")))
+            {
+                // Fall back to assembly location
+                var assembly = typeof(Microsoft.Playwright.IPlaywright).Assembly;
+                if (!string.IsNullOrEmpty(assembly.Location))
+                {
+                    assemblyDirectory = new FileInfo(assembly.Location).Directory;
+                }
+                else
+                {
+                    assemblyDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+                }
+            }
+
+            if (assemblyDirectory == null)
+            {
+                return Task.FromResult(false);
+            }
+
+            // Check for PLAYWRIGHT_DRIVER_SEARCH_PATH environment variable (like Playwright does)
+            var driverSearchPath = Environment.GetEnvironmentVariable("PLAYWRIGHT_DRIVER_SEARCH_PATH");
+            if (!string.IsNullOrEmpty(driverSearchPath))
+            {
+                var customDriverPath = GetDriverPath(driverSearchPath);
+                if (File.Exists(customDriverPath))
+                {
+                    return Task.FromResult(true);
+                }
+                // If PLAYWRIGHT_DRIVER_SEARCH_PATH is set but file doesn't exist, Playwright will fail
+                return Task.FromResult(false);
+            }
+
+            // Try direct path: {assemblyDirectory}/.playwright/node/{platform}/node.exe
+            var directPath = GetDriverPath(assemblyDirectory.FullName);
+            if (File.Exists(directPath))
+            {
+                return Task.FromResult(true);
+            }
+
+            // Try NuGet registry structure: {assemblyDirectory}/../../.playwright/node/{platform}/node.exe
+            if (assemblyDirectory.Parent?.Parent != null)
+            {
+                var nugetPath = GetDriverPath(assemblyDirectory.Parent.Parent.FullName);
+                if (File.Exists(nugetPath))
+                {
+                    return Task.FromResult(true);
+                }
+            }
+
+            // No driver found at any expected location
+            return Task.FromResult(false);
+        }
+        catch
+        {
+            // If any error occurs during path resolution, assume drivers are not available
+            return Task.FromResult(false);
+        }
+    }
+
+    /// <summary>
+    /// Gets the expected driver path for a given base directory.
+    /// Replicates the logic from Playwright's Driver.GetPath() method.
+    /// </summary>
+    private static string GetDriverPath(string driversPath)
+    {
+        string platformId;
+        string nodeExecutable;
+
+        if (OperatingSystem.IsWindows())
+        {
+            platformId = "win32_x64";
+            nodeExecutable = "node.exe";
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            nodeExecutable = "node";
+            platformId = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
+                         System.Runtime.InteropServices.Architecture.Arm64
+                ? "darwin-arm64"
+                : "darwin-x64";
+        }
+        else if (OperatingSystem.IsLinux())
+        {
+            nodeExecutable = "node";
+            platformId = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture ==
+                         System.Runtime.InteropServices.Architecture.Arm64
+                ? "linux-arm64"
+                : "linux-x64";
+        }
+        else
+        {
+            throw new PlatformNotSupportedException("Unknown platform");
+        }
+
+        // Check PLAYWRIGHT_NODEJS_PATH environment variable (allows override)
+        var nodeJsPath = Environment.GetEnvironmentVariable("PLAYWRIGHT_NODEJS_PATH");
+        if (!string.IsNullOrEmpty(nodeJsPath))
+        {
+            return nodeJsPath;
+        }
+
+        // Standard path: {driversPath}/.playwright/node/{platformId}/node.exe
+        return Path.GetFullPath(Path.Combine(driversPath, ".playwright", "node", platformId, nodeExecutable));
     }
 
     /// <summary>

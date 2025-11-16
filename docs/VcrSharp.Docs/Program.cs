@@ -2,6 +2,7 @@ using Mdazor;
 using MonorailCss.Theme;
 using MyLittleContentEngine.DocSite;
 using MyLittleContentEngine.MonorailCss;
+using VcrSharp.Docs;
 using VcrSharp.Docs.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -31,6 +32,10 @@ builder.Services.AddDocSite(_ => new DocSiteOptions()
                      <path d="M10 17.5C10 17.5 10.6667 18 12 18C13.3333 18 14 17.5 14 17.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
                  </svg>
                  """,
+    ConfigureTextMate = registry =>
+    {
+        registry.AddGrammarFromJson("tape", TapeTextmateGrammar.Grammar);
+    }
 });
 
 builder.Services.AddMdazor();

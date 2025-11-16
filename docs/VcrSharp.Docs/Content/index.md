@@ -1,5 +1,5 @@
 ---
-title: "VCR# Documentation"
+title: "Welcome"
 description: "A .NET terminal recorder that turns .tape files into GIFs and videos"
 uid: "docs.index"
 order: 0

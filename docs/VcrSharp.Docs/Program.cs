@@ -32,11 +32,7 @@ builder.Services.AddDocSite(_ => new DocSiteOptions()
                      <path d="M10 17.5C10 17.5 10.6667 18 12 18C13.3333 18 14 17.5 14 17.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
                  </svg>
                  """,
-    AdditionalHtmlHeadContent = """
-                                <link rel="preconnect" href="https://fonts.googleapis.com">
-                                <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-                                <link href="https://fonts.googleapis.com/css2?family=Cascadia+Code:ital,wght@0,200..700;1,200..700&display=swap" rel="stylesheet">
-                                """,
+
     ConfigureTextMate = registry =>
     {
         registry.AddGrammarFromJson("tape", TapeTextmateGrammar.Grammar);

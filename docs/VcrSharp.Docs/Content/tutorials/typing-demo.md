@@ -17,7 +17,7 @@ This technique is perfect for creating documentation demos and tutorials. This t
 
 ## Prerequisites
 
-This tutorial assumes you have VCR# installed. If not, complete the [Getting Started](./getting-started.md) tutorial first (it takes 5 minutes).
+This tutorial assumes you have VCR# installed. If not, complete the [Getting Started](getting-started) tutorial first (it takes 5 minutes).
 
 You'll need a terminal and about 15 minutes.
 

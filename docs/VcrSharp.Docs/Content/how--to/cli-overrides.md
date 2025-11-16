@@ -95,4 +95,4 @@ All `Set` commands can be overridden from the CLI. Common examples:
 - `BorderRadius` - Corner rounding
 - `TypingSpeed` - Typing animation speed
 
-For a complete list, see the [Settings Reference](../reference/settings.md).
+For a complete list, see the [Settings Reference](../reference/settings).

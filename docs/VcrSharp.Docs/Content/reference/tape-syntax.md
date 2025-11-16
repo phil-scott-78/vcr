@@ -58,7 +58,7 @@ Output "demo.webm"
 
 ### Set
 
-Configure recording settings. See [Configuration Options Reference](configuration-options.md) for detailed information about each setting.
+Configure recording settings. See [Configuration Options Reference](configuration-options) for detailed information about each setting.
 
 **Syntax:**
 ```tape

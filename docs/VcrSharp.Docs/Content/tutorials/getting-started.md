@@ -18,15 +18,78 @@ You'll need:
 - Windows, macOS, or Linux
 - A terminal/command prompt
 
-Don't worry about FFmpeg or other dependencies—VCR# will guide you through installing them if needed.
+### Installing FFmpeg
+
+[FFmpeg](https://ffmpeg.org/) is required for encoding videos and GIFs.
+
+```bash tabs=true title=Windows (using Chocolatey)
+choco install ffmpeg
+```
+
+
+```bash title=macOS (using Homebrew)
+brew install ffmpeg
+```
+
+```bash title=Linux (using apt)
+sudo apt update
+sudo apt install ffmpeg
+```
+
+Verify installation:
+```bash
+ffmpeg -version
+```
+
+### Installing ttyd
+
+[ttyd](https://github.com/tsl0922/ttyd) (>= 1.7.2) is required for terminal emulation.
+
+```bash tabs=true title=Windows
+choco install ttyd
+```
+
+
+```bash title=macOS
+brew install ttyd
+```
+
+```bash title=Linux
+sudo apt update
+sudo apt install ttyd
+```
+
+Verify installation:
+```bash
+ttyd --version
+```
 
 ## Installation
+
+### Install VCR#
 
 Install VCR# globally using the .NET CLI:
 
 ```bash
 dotnet tool install --global vcr
 ```
+
+### Verify Installation
+
+Confirm all dependencies are installed correctly:
+
+```bash
+# Check VCR#
+vcr --version
+
+# Check FFmpeg
+ffmpeg -version
+
+# Check ttyd
+ttyd --version
+```
+
+All three commands should display version information. If any command fails, revisit the Prerequisites section above.
 
 ## Your First Recording
 

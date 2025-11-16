@@ -20,7 +20,7 @@ takes about 20 minutes.
 
 ## Prerequisites
 
-You should complete the [Typing Demo tutorial](./typing-demo.md) first to understand basic VCR# concepts.
+You should complete the [Typing Demo tutorial](typing-demo) first to understand basic VCR# concepts.
 
 You'll also need:
 

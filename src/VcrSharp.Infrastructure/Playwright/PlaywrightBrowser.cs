@@ -49,6 +49,17 @@ public class PlaywrightBrowser : IDisposable
                     "Please ensure you have internet connectivity and sufficient disk space.");
             }
 
+            // Verify drivers are now working after installation
+            var driversNowAvailable = await AreDriversAvailable();
+            if (!driversNowAvailable)
+            {
+                throw new InvalidOperationException(
+                    "Playwright installation completed, but drivers are still not available. " +
+                    "This may indicate a build or packaging issue. Try rebuilding the project:\n" +
+                    "  dotnet clean\n" +
+                    "  dotnet build");
+            }
+
             progress?.Invoke("Playwright installed successfully");
             return;
         }
@@ -90,34 +101,27 @@ public class PlaywrightBrowser : IDisposable
 
     /// <summary>
     /// Checks if Playwright driver files are available and working.
-    /// Tests actual driver functionality to detect both missing drivers and version mismatches.
+    /// Attempts to create a Playwright instance to verify drivers are functional.
     /// </summary>
     /// <returns>True if drivers are available and working, false otherwise.</returns>
     private static async Task<bool> AreDriversAvailable()
     {
         try
         {
-            // Test if drivers are working by running a simple command
-            // This catches both missing drivers AND version mismatches from upgrades
-            // Redirect console output to suppress version info during check
-            var originalOut = Console.Out;
-            var originalError = Console.Error;
-            try
-            {
-                Console.SetOut(TextWriter.Null);
-                Console.SetError(TextWriter.Null);
-                var exitCode = Program.Main(["--version"]);
-                return exitCode == 0;
-            }
-            finally
-            {
-                Console.SetOut(originalOut);
-                Console.SetError(originalError);
-            }
+            // Try to create a Playwright instance - this will fail if drivers are missing or incompatible
+            // This is the most accurate test because it's exactly what we'll do later
+            using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
+            return true;
+        }
+        catch (PlaywrightException ex) when (ex.Message.Contains("Driver not found") ||
+                                              ex.Message.Contains("missing required assets"))
+        {
+            // Drivers are missing or incompatible
+            return false;
         }
         catch
         {
-            // Any error means drivers are not working
+            // Some other error - assume drivers are not working
             return false;
         }
     }

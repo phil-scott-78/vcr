@@ -937,7 +937,9 @@ public class TerminalPage : ITerminalPage
 
     /// <summary>
     /// Gets the full terminal content with styling information.
-    /// Extracts all cells with character data, colors, and style attributes.
+    /// Extracts all cells with character data, colors, and style attributes from the active buffer.
+    /// Reads from the viewport offset (viewportY) to capture what's actually visible on screen,
+    /// matching PNG screenshot behavior for TUI applications.
     /// </summary>
     /// <returns>Terminal content including text, colors, cursor position, and styles.</returns>
     public async Task<Core.Rendering.TerminalContent> GetTerminalContentWithStylesAsync()
@@ -945,19 +947,27 @@ public class TerminalPage : ITerminalPage
         try
         {
             // JavaScript code to extract terminal content with styles
+            // For SVG screenshots, we need to capture what's visually displayed, not just buffer data
+            // This means accounting for viewport position and reading the actual visible rows
             var contentJson = await _page.EvaluateAsync<string>("""
                 () => {
                     const term = window.term;
                     const buffer = term.buffer.active;
                     const rows = term.rows;
                     const cols = term.cols;
+
+                    // Get viewport information to read from the correct buffer offset
+                    const viewportY = buffer.viewportY || 0;
                     const cursorX = buffer.cursorX;
                     const cursorY = buffer.cursorY;
 
                     const cells = [];
 
+                    // Read from viewport offset to get what's actually visible
+                    // viewportY indicates which part of the buffer is currently displayed
                     for (let row = 0; row < rows; row++) {
-                        const line = buffer.getLine(row);
+                        const bufferRow = viewportY + row;
+                        const line = buffer.getLine(bufferRow);
                         const rowCells = [];
 
                         if (line) {
@@ -982,10 +992,13 @@ public class TerminalPage : ITerminalPage
                                     // Foreground color detection
                                     if (fg !== undefined && fg !== -1) {
                                         // Check color mode using xterm.js API
-                                        if (cell.isFgRGB && cell.isFgRGB()) {
+                                        const isRGB = cell.isFgRGB && cell.isFgRGB();
+                                        const isPalette = cell.isFgPalette && cell.isFgPalette();
+
+                                        if (isRGB) {
                                             // RGB color (24-bit)
                                             fgColor = '#' + ('000000' + fg.toString(16)).slice(-6);
-                                        } else if (cell.isFgPalette && cell.isFgPalette()) {
+                                        } else if (isPalette) {
                                             // Palette color (0-255) - pass as string for SVG mapping
                                             fgColor = fg.toString();
                                         }
@@ -1026,7 +1039,7 @@ public class TerminalPage : ITerminalPage
                         rows: rows,
                         cursorX: cursorX,
                         cursorY: cursorY,
-                        cursorVisible: term.buffer.active.cursorHidden === false,
+                        cursorVisible: buffer.cursorHidden === false,
                         cells: cells
                     });
                 }

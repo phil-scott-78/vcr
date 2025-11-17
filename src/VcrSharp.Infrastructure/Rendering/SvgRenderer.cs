@@ -357,9 +357,25 @@ public class SvgRenderer
             }
 
             // Inline color if not using class
-            if (run.ForegroundColor != null && !IsAnsiColor(run.ForegroundColor))
+            if (run.ForegroundColor != null)
             {
-                await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(run.ForegroundColor));
+                string? inlineColor = null;
+
+                // RGB colors (start with #)
+                if (run.ForegroundColor.StartsWith('#'))
+                {
+                    inlineColor = OptimizeHexColor(run.ForegroundColor);
+                }
+                // Extended palette colors (16-255) - convert to RGB
+                else if (int.TryParse(run.ForegroundColor, out var paletteIndex) && paletteIndex >= 16)
+                {
+                    inlineColor = PaletteIndexToRgb(paletteIndex);
+                }
+
+                if (inlineColor != null)
+                {
+                    await xml.WriteAttributeStringAsync(null, "fill", null, inlineColor);
+                }
             }
 
             await xml.WriteStringAsync(run.Text);
@@ -532,10 +548,15 @@ public class SvgRenderer
     {
         var classes = new List<string>();
 
-        // Foreground color class
+        // Foreground color class (only for basic ANSI colors 0-15)
+        // Extended colors (16-255) are handled as inline RGB in WriteTspanAsync
         if (run.ForegroundColor != null && IsAnsiColor(run.ForegroundColor))
         {
-            classes.Add(GetAnsiColorClass(run.ForegroundColor));
+            if (int.TryParse(run.ForegroundColor, out var paletteIndex) && paletteIndex < 16)
+            {
+                classes.Add(GetAnsiColorClass(run.ForegroundColor));
+            }
+            // Extended palette colors will be rendered as inline fill attributes
         }
         else if (run.ForegroundColor == null)
         {
@@ -569,6 +590,7 @@ public class SvgRenderer
     /// <summary>
     /// Gets the CSS class name for an ANSI palette color index.
     /// Maps palette indices 0-15 to VHS-style CSS classes.
+    /// For extended colors (16-255), converts to RGB hex.
     /// </summary>
     private static string GetAnsiColorClass(string color)
     {
@@ -598,9 +620,32 @@ public class SvgRenderer
             13 => "M", // Bright Magenta
             14 => "C", // Bright Cyan
             15 => "W", // Bright White
-            // For extended palette (16-255), use default
+            // For extended palette (16-255), convert to RGB
             _ => "fg"
         };
+    }
+
+    /// <summary>
+    /// Converts an xterm 256-color palette index to RGB hex color.
+    /// Returns null if the index is out of range or is a basic color (0-15).
+    /// </summary>
+    private static string? PaletteIndexToRgb(int index)
+    {
+        if (index < 16 || index > 255) return null;
+
+        // Colors 16-231: 216-color cube (6x6x6)
+        if (index < 232)
+        {
+            var i = index - 16;
+            var r = (i / 36) * 51;
+            var g = ((i / 6) % 6) * 51;
+            var b = (i % 6) * 51;
+            return $"#{r:X2}{g:X2}{b:X2}";
+        }
+
+        // Colors 232-255: grayscale ramp
+        var gray = 8 + (index - 232) * 10;
+        return $"#{gray:X2}{gray:X2}{gray:X2}";
     }
 
     /// <summary>

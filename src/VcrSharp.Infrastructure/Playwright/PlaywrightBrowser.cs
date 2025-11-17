@@ -30,29 +30,45 @@ public class PlaywrightBrowser : IDisposable
     /// <returns>A task representing the async operation.</returns>
     public static async Task EnsureBrowsersInstalled(Action<string>? progress = null)
     {
+        VcrLogger.Logger.Information("Ensuring Playwright browsers and drivers are installed...");
+
         // Check if Playwright drivers are available and working
         // This catches both missing drivers AND version mismatches from upgrades
+        VcrLogger.Logger.Debug("Performing initial driver availability check...");
         var driversAvailable = await AreDriversAvailable();
+        VcrLogger.Logger.Information("Initial driver check result: {Available}", driversAvailable ? "Available" : "Not Available");
 
         if (!driversAvailable)
         {
             // Drivers missing or incompatible - install/update them
             // Running "playwright install" will install both drivers and browsers
+            VcrLogger.Logger.Information("Drivers not available - attempting to install via 'playwright install chromium --no-shell'");
+            VcrLogger.Logger.Debug("Working directory: {WorkingDirectory}", Directory.GetCurrentDirectory());
+            VcrLogger.Logger.Debug("AppContext.BaseDirectory: {BaseDirectory}", AppContext.BaseDirectory);
+
             progress?.Invoke("Installing Playwright drivers and Chromium browser (this may take 10-60 seconds)...");
 
             var exitCode = Program.Main(["install", "chromium", "--no-shell"]);
 
+            VcrLogger.Logger.Information("Playwright install command completed with exit code: {ExitCode}", exitCode);
+
             if (exitCode != 0)
             {
+                VcrLogger.Logger.Error("Playwright installation failed with exit code {ExitCode}", exitCode);
                 throw new InvalidOperationException(
                     $"Failed to install Playwright (exit code: {exitCode}). " +
                     "Please ensure you have internet connectivity and sufficient disk space.");
             }
 
             // Verify drivers are now working after installation
+            VcrLogger.Logger.Debug("Re-checking driver availability after installation...");
             var driversNowAvailable = await AreDriversAvailable();
+            VcrLogger.Logger.Information("Post-installation driver check result: {Available}", driversNowAvailable ? "Available" : "Not Available");
+
             if (!driversNowAvailable)
             {
+                VcrLogger.Logger.Error("Drivers still not available after successful installation - this indicates a packaging or build issue");
+                LogPlaywrightEnvironment(); // Log environment again to see what changed (or didn't)
                 throw new InvalidOperationException(
                     "Playwright installation completed, but drivers are still not available. " +
                     "This may indicate a build or packaging issue. Try rebuilding the project:\n" +
@@ -60,9 +76,12 @@ public class PlaywrightBrowser : IDisposable
                     "  dotnet build");
             }
 
+            VcrLogger.Logger.Information("Playwright drivers installed and verified successfully");
             progress?.Invoke("Playwright installed successfully");
             return;
         }
+
+        VcrLogger.Logger.Debug("Drivers are available - checking if browsers need installation...");
 
         // Drivers are working - check if browsers need installation
         // Playwright stores browsers in:
@@ -77,26 +96,146 @@ public class PlaywrightBrowser : IDisposable
             );
         }
 
+        VcrLogger.Logger.Debug("Checking for browsers at: {PlaywrightHome}", playwrightHome);
+
         // Check if any chromium directory exists
         var browsersInstalled = Directory.Exists(playwrightHome) &&
                                 Directory.GetDirectories(playwrightHome, "chromium*").Length > 0;
 
+        VcrLogger.Logger.Information("Browsers installed: {Installed}", browsersInstalled);
+
         if (!browsersInstalled)
         {
             // Browsers not installed - install them
+            VcrLogger.Logger.Information("Browsers not found - installing Chromium...");
             progress?.Invoke("Installing Chromium browser (this may take 30-60 seconds)...");
 
             var exitCode = Program.Main(["install", "chromium", "--no-shell"]);
 
+            VcrLogger.Logger.Information("Browser install command completed with exit code: {ExitCode}", exitCode);
+
             if (exitCode != 0)
             {
+                VcrLogger.Logger.Error("Browser installation failed with exit code {ExitCode}", exitCode);
                 throw new InvalidOperationException(
                     $"Failed to install Playwright browsers (exit code: {exitCode}). " +
                     "Please ensure you have internet connectivity and sufficient disk space.");
             }
 
+            VcrLogger.Logger.Information("Chromium browser installed successfully");
             progress?.Invoke("Chromium installed successfully");
         }
+        else
+        {
+            VcrLogger.Logger.Debug("Browsers already installed, skipping installation");
+        }
+
+        VcrLogger.Logger.Information("Playwright environment ready - drivers and browsers are available");
+    }
+
+    /// <summary>
+    /// Logs detailed information about Playwright environment and expected driver locations.
+    /// Replicates the logic from Playwright's Driver.GetExecutablePath() to help diagnose issues.
+    /// </summary>
+    private static void LogPlaywrightEnvironment()
+    {
+        VcrLogger.Logger.Debug("=== Playwright Environment Diagnostic ===");
+
+        // Log platform information
+        var platform = OperatingSystem.IsWindows() ? "Windows" :
+                      OperatingSystem.IsMacOS() ? "macOS" :
+                      OperatingSystem.IsLinux() ? "Linux" : "Unknown";
+        var arch = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString();
+        VcrLogger.Logger.Debug("Platform: {Platform} {Architecture}", platform, arch);
+
+        // Determine the expected node executable name based on platform
+        string nodeExecutable = OperatingSystem.IsWindows() ? "node.exe" : "node";
+        string platformId = OperatingSystem.IsWindows() ? "win32_x64" :
+                           OperatingSystem.IsMacOS() ?
+                               (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "darwin-arm64" : "darwin-x64") :
+                           OperatingSystem.IsLinux() ?
+                               (System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "linux-arm64" : "linux-x64") :
+                           "unknown";
+        VcrLogger.Logger.Debug("Expected driver platform: {PlatformId}, executable: {NodeExecutable}", platformId, nodeExecutable);
+
+        // Log environment variables that affect Playwright
+        var driverSearchPath = Environment.GetEnvironmentVariable("PLAYWRIGHT_DRIVER_SEARCH_PATH");
+        var browsersPath = Environment.GetEnvironmentVariable("PLAYWRIGHT_BROWSERS_PATH");
+        var nodejsPath = Environment.GetEnvironmentVariable("PLAYWRIGHT_NODEJS_PATH");
+
+        VcrLogger.Logger.Debug("PLAYWRIGHT_DRIVER_SEARCH_PATH: {DriverSearchPath}", driverSearchPath ?? "(not set)");
+        VcrLogger.Logger.Debug("PLAYWRIGHT_BROWSERS_PATH: {BrowsersPath}", browsersPath ?? "(not set)");
+        VcrLogger.Logger.Debug("PLAYWRIGHT_NODEJS_PATH: {NodejsPath}", nodejsPath ?? "(not set)");
+
+        // Log AppContext.BaseDirectory (Playwright's first choice)
+        var baseDir = AppContext.BaseDirectory;
+        VcrLogger.Logger.Debug("AppContext.BaseDirectory: {BaseDirectory}", baseDir);
+
+        // Check if Microsoft.Playwright.dll exists in BaseDirectory
+        var playwrightDllPath = Path.Combine(baseDir, "Microsoft.Playwright.dll");
+        var playwrightDllExists = File.Exists(playwrightDllPath);
+        VcrLogger.Logger.Debug("Microsoft.Playwright.dll at BaseDirectory: {Exists} ({Path})",
+            playwrightDllExists, playwrightDllPath);
+
+        // Log Assembly.Location (Playwright's fallback)
+        var assembly = typeof(Microsoft.Playwright.IPlaywright).Assembly;
+        VcrLogger.Logger.Debug("Microsoft.Playwright Assembly.Location: {Location}",
+            string.IsNullOrEmpty(assembly.Location) ? "(empty - single-file deployment?)" : assembly.Location);
+
+        // Determine which directory Playwright would use (replicating GetExecutablePath logic)
+        DirectoryInfo? assemblyDirectory = null;
+        if (!string.IsNullOrEmpty(baseDir))
+        {
+            assemblyDirectory = new DirectoryInfo(baseDir);
+        }
+
+        if (assemblyDirectory?.Exists != true || !playwrightDllExists)
+        {
+            VcrLogger.Logger.Debug("BaseDirectory doesn't contain Microsoft.Playwright.dll, using assembly location fallback");
+            if (!string.IsNullOrEmpty(assembly.Location))
+            {
+                assemblyDirectory = new FileInfo(assembly.Location).Directory;
+            }
+            else
+            {
+                assemblyDirectory = new DirectoryInfo(baseDir);
+            }
+        }
+
+        VcrLogger.Logger.Debug("Playwright would use assemblyDirectory: {AssemblyDirectory}", assemblyDirectory?.FullName ?? "(null)");
+
+        // Log the three paths Playwright checks for drivers (in order)
+        if (assemblyDirectory != null)
+        {
+            // Path 1: Direct path (for local builds)
+            var directDriverPath = Path.Combine(assemblyDirectory.FullName, ".playwright", "node", platformId, nodeExecutable);
+            var directDriverExists = File.Exists(directDriverPath);
+            VcrLogger.Logger.Debug("Driver path 1 (direct): {Path} - Exists: {Exists}", directDriverPath, directDriverExists);
+
+            // Path 2: NuGet package structure (assemblyDirectory/../../.playwright/)
+            if (assemblyDirectory.Parent?.Parent != null)
+            {
+                var nugetDriverPath = Path.Combine(assemblyDirectory.Parent.Parent.FullName, ".playwright", "node", platformId, nodeExecutable);
+                var nugetDriverExists = File.Exists(nugetDriverPath);
+                VcrLogger.Logger.Debug("Driver path 2 (NuGet): {Path} - Exists: {Exists}", nugetDriverPath, nugetDriverExists);
+            }
+            else
+            {
+                VcrLogger.Logger.Debug("Driver path 2 (NuGet): Cannot check - assemblyDirectory has no grandparent");
+            }
+
+            // Also check for cli.js which is required
+            var directCliPath = Path.Combine(assemblyDirectory.FullName, ".playwright", "package", "cli.js");
+            var directCliExists = File.Exists(directCliPath);
+            VcrLogger.Logger.Debug("CLI script (direct): {Path} - Exists: {Exists}", directCliPath, directCliExists);
+        }
+
+        // Check if playwright.ps1 wrapper exists (used by install command)
+        var playwrightPs1Path = Path.Combine(baseDir, "playwright.ps1");
+        var playwrightPs1Exists = File.Exists(playwrightPs1Path);
+        VcrLogger.Logger.Debug("playwright.ps1 wrapper: {Path} - Exists: {Exists}", playwrightPs1Path, playwrightPs1Exists);
+
+        VcrLogger.Logger.Debug("=== End Playwright Environment Diagnostic ===");
     }
 
     /// <summary>
@@ -106,22 +245,35 @@ public class PlaywrightBrowser : IDisposable
     /// <returns>True if drivers are available and working, false otherwise.</returns>
     private static async Task<bool> AreDriversAvailable()
     {
+        VcrLogger.Logger.Debug("Checking if Playwright drivers are available...");
+
+        // Log the environment to help diagnose issues
+        LogPlaywrightEnvironment();
+
         try
         {
+            VcrLogger.Logger.Debug("Attempting to create Playwright instance...");
+
             // Try to create a Playwright instance - this will fail if drivers are missing or incompatible
             // This is the most accurate test because it's exactly what we'll do later
             using var playwright = await Microsoft.Playwright.Playwright.CreateAsync();
+
+            VcrLogger.Logger.Debug("Successfully created Playwright instance - drivers are available");
             return true;
         }
         catch (PlaywrightException ex) when (ex.Message.Contains("Driver not found") ||
                                               ex.Message.Contains("missing required assets"))
         {
             // Drivers are missing or incompatible
+            VcrLogger.Logger.Warning("Playwright drivers are not available: {Message}", ex.Message);
+            VcrLogger.Logger.Debug("Full exception: {Exception}", ex.ToString());
             return false;
         }
-        catch
+        catch (Exception ex)
         {
             // Some other error - assume drivers are not working
+            VcrLogger.Logger.Error(ex, "Unexpected error while checking Playwright drivers: {Message}", ex.Message);
+            VcrLogger.Logger.Debug("Full exception: {Exception}", ex.ToString());
             return false;
         }
     }

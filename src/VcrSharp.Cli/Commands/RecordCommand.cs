@@ -136,9 +136,19 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                     AnsiConsole.MarkupLine("[green]✓[/] Videos rendered:");
                     foreach (var outputFile in result.OutputFiles)
                     {
-                        var fileName = Path.GetFileName(outputFile);
-                        var fileSize = new FileInfo(outputFile).Length / 1024.0; // KB
-                        AnsiConsole.MarkupLineInterpolated($"  [dim]•[/] {fileName} ({fileSize:F1} KB)");
+                        // Check if output is a directory (e.g., frames encoder)
+                        if (Directory.Exists(outputFile))
+                        {
+                            var fileCount = Directory.GetFiles(outputFile).Length;
+                            var dirName = Path.GetFileName(outputFile.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)) + "/";
+                            AnsiConsole.MarkupLineInterpolated($"  [dim]•[/] {dirName} ({fileCount} files)");
+                        }
+                        else
+                        {
+                            var fileName = Path.GetFileName(outputFile);
+                            var fileSize = new FileInfo(outputFile).Length / 1024.0; // KB
+                            AnsiConsole.MarkupLineInterpolated($"  [dim]•[/] {fileName} ({fileSize:F1} KB)");
+                        }
                     }
                 }
 

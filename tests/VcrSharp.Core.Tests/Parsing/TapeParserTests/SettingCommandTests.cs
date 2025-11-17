@@ -61,6 +61,23 @@ public class SettingCommandTests
     }
 
     [Fact]
+    public void ParseTape_SetStartupDelay_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new TapeParser();
+        var source = "Set StartupDelay 5s";
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        var cmd = commands[0].ShouldBeOfType<SetCommand>();
+        cmd.SettingName.ShouldBe("StartupDelay");
+        cmd.Value.ShouldBe("00:00:05"); // TimeSpan format
+    }
+
+    [Fact]
     public void ParseTape_SetCommandWithBoolean_ParsesCorrectly()
     {
         // Arrange

@@ -7,7 +7,8 @@ order: 4200
 
 ## Overview
 
-VCR# provides extensive configuration options to customize your terminal recordings. Settings can be configured in two ways:
+VCR# provides extensive configuration options to customize your terminal recordings. Settings can be configured in two
+ways:
 
 1. **In tape files** using the `Set` command:
    ```tape
@@ -31,6 +32,7 @@ CLI flags override tape file settings, allowing quick adjustments without modify
 **Description:** Terminal width in pixels. Only used if `Cols` is not specified.
 
 **Example:**
+
 ```tape
 Set Width 1600
 ```
@@ -42,6 +44,7 @@ Set Width 1600
 **Description:** Terminal height in pixels. Only used if `Rows` is not specified.
 
 **Example:**
+
 ```tape
 Set Height 800
 ```
@@ -50,9 +53,11 @@ Set Height 800
 
 **Type:** Integer
 **Default:** None
-**Description:** Terminal width in character columns. When specified, overrides `Width` and auto-calculates viewport dimensions based on font metrics.
+**Description:** Terminal width in character columns. When specified, overrides `Width` and auto-calculates viewport
+dimensions based on font metrics.
 
 **Example:**
+
 ```tape
 Set Cols 80    # Classic 80-column terminal
 ```
@@ -61,9 +66,11 @@ Set Cols 80    # Classic 80-column terminal
 
 **Type:** Integer
 **Default:** None
-**Description:** Terminal height in character rows. When specified, overrides `Height` and auto-calculates viewport dimensions.
+**Description:** Terminal height in character rows. When specified, overrides `Height` and auto-calculates viewport
+dimensions.
 
 **Example:**
+
 ```tape
 Set Rows 24    # Classic 24-row terminal
 ```
@@ -75,6 +82,7 @@ Set Rows 24    # Classic 24-row terminal
 **Description:** Font size in pixels.
 
 **Example:**
+
 ```tape
 Set FontSize 18
 ```
@@ -86,6 +94,7 @@ Set FontSize 18
 **Description:** Font family name.
 
 **Example:**
+
 ```tape
 Set FontFamily "Fira Code"
 Set FontFamily "Consolas"
@@ -98,6 +107,7 @@ Set FontFamily "Consolas"
 **Description:** Letter spacing multiplier.
 
 **Example:**
+
 ```tape
 Set LetterSpacing 1.2    # Increase spacing
 ```
@@ -109,6 +119,7 @@ Set LetterSpacing 1.2    # Increase spacing
 **Description:** Line height multiplier.
 
 **Example:**
+
 ```tape
 Set LineHeight 1.5
 ```
@@ -123,6 +134,7 @@ Set LineHeight 1.5
 **Description:** Recording framerate in frames per second.
 
 **Example:**
+
 ```tape
 Set Framerate 60    # Smooth 60fps recording
 Set Framerate 30    # Lower framerate for smaller files
@@ -135,6 +147,7 @@ Set Framerate 30    # Lower framerate for smaller files
 **Description:** Playback speed multiplier. Values > 1.0 speed up playback, values < 1.0 slow it down.
 
 **Example:**
+
 ```tape
 Set PlaybackSpeed 1.5    # 1.5x speed
 Set PlaybackSpeed 0.5    # Half speed (slow motion)
@@ -147,6 +160,7 @@ Set PlaybackSpeed 0.5    # Half speed (slow motion)
 **Description:** Loop offset in seconds for GIF animations. Adds delay before the GIF loops.
 
 **Example:**
+
 ```tape
 Set LoopOffset 2.0    # 2 second pause before loop
 ```
@@ -159,6 +173,7 @@ Set LoopOffset 2.0    # 2 second pause before loop
 **Description:** Maximum colors for GIF palette generation. GIF-specific setting.
 
 **Example:**
+
 ```tape
 Set MaxColors 128    # Reduce colors for smaller file
 Set MaxColors 256    # Maximum quality
@@ -171,6 +186,7 @@ Set MaxColors 256    # Maximum quality
 **Type:** String
 **Default:** `"Default"`
 **Available Themes:**
+
 - `Default` - VS Code Dark+
 - `Dracula`
 - `Monokai`
@@ -185,6 +201,7 @@ Set MaxColors 256    # Maximum quality
 **Description:** Color theme for the terminal.
 
 **Example:**
+
 ```tape
 Set Theme "Dracula"
 Set Theme "Nord"
@@ -197,6 +214,7 @@ Set Theme "Nord"
 **Description:** Padding in pixels around the terminal content.
 
 **Example:**
+
 ```tape
 Set Padding 20
 ```
@@ -208,6 +226,7 @@ Set Padding 20
 **Description:** Margin in pixels around the entire recording.
 
 **Example:**
+
 ```tape
 Set Margin 30
 ```
@@ -219,6 +238,7 @@ Set Margin 30
 **Description:** Margin fill color (hex code) or path to an image file.
 
 **Example:**
+
 ```tape
 Set MarginFill "#1a1b26"
 Set MarginFill "background.png"
@@ -231,6 +251,7 @@ Set MarginFill "background.png"
 **Description:** Window bar height in pixels (the decorative bar at the top).
 
 **Example:**
+
 ```tape
 Set WindowBarSize 40
 Set WindowBarSize 0    # No window bar
@@ -243,6 +264,7 @@ Set WindowBarSize 0    # No window bar
 **Description:** Border corner radius in pixels for rounded corners.
 
 **Example:**
+
 ```tape
 Set BorderRadius 8
 ```
@@ -254,6 +276,7 @@ Set BorderRadius 8
 **Description:** Enable or disable cursor blinking.
 
 **Example:**
+
 ```tape
 Set CursorBlink false
 ```
@@ -265,6 +288,7 @@ Set CursorBlink false
 **Description:** Use a transparent terminal background instead of the theme's background color.
 
 **Example:**
+
 ```tape
 Set TransparentBackground true
 ```
@@ -275,12 +299,14 @@ Set TransparentBackground true
 
 **Type:** String
 **Default:** Platform-specific
+
 - Windows: `pwsh` (or `powershell`, or `cmd` if PowerShell not available)
 - Unix/macOS: `bash`
 
 **Description:** Shell to use for the terminal session.
 
 **Example:**
+
 ```tape
 Set Shell "bash"
 Set Shell "zsh"
@@ -294,6 +320,7 @@ Set Shell "cmd"
 **Description:** Working directory for the terminal session.
 
 **Example:**
+
 ```tape
 Set WorkingDirectory "C:\\Projects\\MyApp"
 Set WorkingDirectory "/home/user/projects"
@@ -306,6 +333,7 @@ Set WorkingDirectory "/home/user/projects"
 **Description:** Delay between each keystroke when using the `Type` command.
 
 **Example:**
+
 ```tape
 Set TypingSpeed 100ms    # Slower typing
 Set TypingSpeed 30ms     # Faster typing
@@ -318,6 +346,7 @@ Set TypingSpeed 30ms     # Faster typing
 **Description:** Maximum time to wait for a pattern match in `Wait` commands before timing out.
 
 **Example:**
+
 ```tape
 Set WaitTimeout 30s
 ```
@@ -329,6 +358,7 @@ Set WaitTimeout 30s
 **Description:** Default regex pattern for detecting shell prompt completion in `Wait` commands.
 
 **Example:**
+
 ```tape
 Set WaitPattern />\s*$/       # PowerShell prompt
 Set WaitPattern /\$\s*$/      # Bash prompt
@@ -341,6 +371,7 @@ Set WaitPattern /\$\s*$/      # Bash prompt
 **Description:** How long to wait for terminal inactivity before considering a command complete. Used by `Exec` command.
 
 **Example:**
+
 ```tape
 Set InactivityTimeout 3s
 ```
@@ -352,6 +383,7 @@ Set InactivityTimeout 3s
 **Description:** Maximum time to wait for first terminal activity before starting recording.
 
 **Example:**
+
 ```tape
 Set StartWaitTimeout 15s
 ```
@@ -360,9 +392,11 @@ Set StartWaitTimeout 15s
 
 **Type:** Duration
 **Default:** `500ms`
-**Description:** Amount of blank time to include before the first activity. Frames before (FirstActivity - StartBuffer) are trimmed.
+**Description:** Amount of blank time to include before the first activity. Frames before (FirstActivity - StartBuffer)
+are trimmed.
 
 **Example:**
+
 ```tape
 Set StartBuffer 1s
 ```
@@ -374,8 +408,24 @@ Set StartBuffer 1s
 **Description:** Amount of time to include after the last detected activity before ending the recording.
 
 **Example:**
+
 ```tape
 Set EndBuffer 500ms
+```
+
+### StartupDelay
+
+**Type:** Duration
+**Default:** `3.5s`
+**Description:** Delay before executing `Exec` commands at startup. Allows time for browser and terminal to fully
+initialize. This setting uses shell-specific sleep commands to ensure cross-platform compatibility (PowerShell, CMD,
+Bash, etc.).
+
+**Example:**
+
+```tape
+Set StartupDelay 5s      # Wait 5 seconds before running Exec commands
+Set StartupDelay 2.5s    # Shorter delay for faster systems
 ```
 
 ## Setting Precedence
@@ -387,6 +437,7 @@ When the same setting is configured in multiple places, the following precedence
 3. **Default values**
 
 **Example:**
+
 ```tape
 # demo.tape
 Set Theme "Dracula"
@@ -433,6 +484,7 @@ Set WaitTimeout 15s
 Set InactivityTimeout 5s
 Set StartBuffer 500ms
 Set EndBuffer 100ms
+Set StartupDelay 3.5s
 
 # Commands
 Type "echo Hello VCR#"
@@ -445,6 +497,7 @@ Wait
 VCR# validates settings and provides clear error messages for invalid values:
 
 **Valid Ranges:**
+
 - `Framerate`: 1-120 fps
 - `MaxColors`: 1-256
 - `Padding`, `Margin`, `BorderRadius`: ≥ 0
@@ -452,6 +505,7 @@ VCR# validates settings and provides clear error messages for invalid values:
 - Durations: Must be positive
 
 **Error Example:**
+
 ```
 Error: Framerate must be between 1 and 120 (got: 150)
 Error: WorkingDirectory does not exist: C:\NonExistent

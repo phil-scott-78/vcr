@@ -202,6 +202,12 @@ public class SessionOptions
     /// </summary>
     public TimeSpan EndBuffer { get; set; } = TimeSpan.FromMilliseconds(100);
 
+    /// <summary>
+    /// Gets or sets the delay before executing Exec commands at startup.
+    /// Allows time for browser and terminal to fully initialize.
+    /// </summary>
+    public TimeSpan StartupDelay { get; set; } = TimeSpan.FromSeconds(3.5);
+
     // Output
 
     /// <summary>
@@ -433,6 +439,12 @@ public class SessionOptions
                     options.EndBuffer = eb;
                 else
                     options.EndBuffer = TimeSpan.Parse(value.ToString() ?? "1s");
+                break;
+            case "startupdelay":
+                if (value is TimeSpan sd)
+                    options.StartupDelay = sd;
+                else
+                    options.StartupDelay = TimeSpan.Parse(value.ToString() ?? "3.5s");
                 break;
         }
     }

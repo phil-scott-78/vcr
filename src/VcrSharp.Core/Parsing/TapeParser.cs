@@ -382,7 +382,7 @@ public class TapeParser
         // Behavior
         "Shell", "WorkingDirectory", "TypingSpeed", "WaitTimeout",
         "WaitPattern", "InactivityTimeout", "StartWaitTimeout",
-        "StartBuffer", "EndBuffer"
+        "StartBuffer", "EndBuffer", "StartupDelay"
     };
 
     /// <summary>

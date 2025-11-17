@@ -79,7 +79,8 @@ public class VcrSession : IAsyncDisposable
                 shellCommand,
                 execCommands.Select(cmd => cmd.Command).ToList(),
                 _options.WorkingDirectory,
-                environmentVariables);
+                environmentVariables,
+                _options.StartupDelay);
             await _ttydProcess.StartAsync();
 
             // 3. Launch Playwright browser
@@ -121,9 +122,6 @@ public class VcrSession : IAsyncDisposable
 
             // 6b. Wait for shell prompt to appear (ensures shell is fully ready)
             await _terminalPage.WaitForPromptAsync();
-
-            // 6c. Add settling delay to ensure terminal has fully rendered
-            await Task.Delay(500, cancellationToken);
 
             // 7. Initialize CDP session for optimized frame capture
             await _terminalPage.InitializeCdpSessionAsync();

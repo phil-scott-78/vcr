@@ -15,6 +15,7 @@ public class TtydProcess : IDisposable
     private readonly List<string> _execCommands;
     private readonly string? _workingDirectory;
     private readonly Dictionary<string, string> _environmentVariables;
+    private readonly TimeSpan _execStartDelay;
     private bool _disposed;
 
     /// <summary>
@@ -27,11 +28,14 @@ public class TtydProcess : IDisposable
     /// If not specified, defaults to the current directory.</param>
     /// <param name="environmentVariables">Optional environment variables to set for the shell process.
     /// These are merged with system environment variables.</param>
+    /// <param name="execStartDelay">Optional delay before executing Exec commands at startup.
+    /// If not specified, defaults to 3.5 seconds.</param>
     public TtydProcess(
         List<string> shellCommand,
         List<string>? execCommands = null,
         string? workingDirectory = null,
-        Dictionary<string, string>? environmentVariables = null)
+        Dictionary<string, string>? environmentVariables = null,
+        TimeSpan? execStartDelay = null)
     {
         if (shellCommand == null || shellCommand.Count == 0)
             throw new ArgumentException("Shell command cannot be null or empty", nameof(shellCommand));
@@ -40,6 +44,7 @@ public class TtydProcess : IDisposable
         _execCommands = execCommands ?? [];
         _workingDirectory = workingDirectory;
         _environmentVariables = environmentVariables ?? new Dictionary<string, string>();
+        _execStartDelay = execStartDelay ?? TimeSpan.FromSeconds(3.5);
     }
 
     /// <summary>
@@ -177,7 +182,30 @@ public class TtydProcess : IDisposable
         // Commands run in background while recording proceeds immediately
         var commandChain = string.Join("; ", escapedCommands);
 
-        return $"sleep 1.5; {commandChain}";
+        // Generate shell-specific sleep command
+        var sleepCommand = GetShellSpecificSleepCommand(_execStartDelay.TotalSeconds);
+
+        return $"{sleepCommand}; {commandChain}";
+    }
+
+    /// <summary>
+    /// Gets the shell-specific sleep command for the configured delay.
+    /// </summary>
+    /// <param name="seconds">The number of seconds to sleep.</param>
+    /// <returns>The shell-specific sleep command string.</returns>
+    private string GetShellSpecificSleepCommand(double seconds)
+    {
+        var shellName = _shellCommand[0].ToLowerInvariant();
+
+        // Extract shell name from path (e.g., "/bin/bash" -> "bash")
+        shellName = Path.GetFileNameWithoutExtension(shellName).ToLowerInvariant();
+
+        return shellName switch
+        {
+            "pwsh" or "powershell" => $"Start-Sleep -Seconds {seconds}",
+            "cmd" or "cmd.exe" => $"timeout /t {(int)Math.Ceiling(seconds)} /nobreak >nul",
+            _ => $"sleep {seconds}" // Bash, Zsh, Fish, sh
+        };
     }
 
     /// <summary>
@@ -198,8 +226,8 @@ public class TtydProcess : IDisposable
     /// </summary>
     private async Task WaitForReadyAsync()
     {
-        const int maxAttempts = 50; // 5 seconds total (50 * 100ms)
-        const int delayMs = 100;
+        const int maxAttempts = 250; // 5 seconds total (250 * 20ms)
+        const int delayMs = 20;
 
         for (var i = 0; i < maxAttempts; i++)
         {

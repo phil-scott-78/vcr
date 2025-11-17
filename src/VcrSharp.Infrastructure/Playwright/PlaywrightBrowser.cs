@@ -55,9 +55,22 @@ public class PlaywrightBrowser : IDisposable
             if (exitCode != 0)
             {
                 VcrLogger.Logger.Error("Playwright installation failed with exit code {ExitCode}", exitCode);
+
+                // Determine current platform for better error message
+                var platform = OperatingSystem.IsWindows() ? "Windows" :
+                              OperatingSystem.IsMacOS() ? "macOS" :
+                              OperatingSystem.IsLinux() ? "Linux" : "Unknown";
+
                 throw new InvalidOperationException(
-                    $"Failed to install Playwright (exit code: {exitCode}). " +
-                    "Please ensure you have internet connectivity and sufficient disk space.");
+                    $"Failed to install Playwright drivers for {platform} (exit code: {exitCode}).{Environment.NewLine}" +
+                    $"This may indicate:{Environment.NewLine}" +
+                    $"  • No internet connectivity{Environment.NewLine}" +
+                    $"  • Insufficient disk space{Environment.NewLine}" +
+                    $"  • Platform-specific drivers missing from package{Environment.NewLine}{Environment.NewLine}" +
+                    $"Troubleshooting:{Environment.NewLine}" +
+                    $"  1. Ensure you have internet access{Environment.NewLine}" +
+                    $"  2. Try: dotnet tool uninstall -g vcr && dotnet tool install -g vcr{Environment.NewLine}" +
+                    $"  3. Check available disk space (Playwright needs ~150MB)");
             }
 
             // Verify drivers are now working after installation
@@ -69,11 +82,21 @@ public class PlaywrightBrowser : IDisposable
             {
                 VcrLogger.Logger.Error("Drivers still not available after successful installation - this indicates a packaging or build issue");
                 LogPlaywrightEnvironment(); // Log environment again to see what changed (or didn't)
+
+                // Determine current platform for better error message
+                var platform = OperatingSystem.IsWindows() ? "Windows" :
+                              OperatingSystem.IsMacOS() ? "macOS" :
+                              OperatingSystem.IsLinux() ? "Linux" : "Unknown";
+
                 throw new InvalidOperationException(
-                    "Playwright installation completed, but drivers are still not available. " +
-                    "This may indicate a build or packaging issue. Try rebuilding the project:\n" +
-                    "  dotnet clean\n" +
-                    "  dotnet build");
+                    $"Playwright installation completed, but {platform} drivers are still not available.{Environment.NewLine}" +
+                    $"This indicates the packaged drivers don't match your platform.{Environment.NewLine}{Environment.NewLine}" +
+                    $"Possible solutions:{Environment.NewLine}" +
+                    $"  1. Update to the latest version: dotnet tool update -g vcr{Environment.NewLine}" +
+                    $"  2. Reinstall: dotnet tool uninstall -g vcr && dotnet tool install -g vcr{Environment.NewLine}" +
+                    $"  3. Clear NuGet cache: dotnet nuget locals all --clear{Environment.NewLine}{Environment.NewLine}" +
+                    $"If the issue persists, please report it at:{Environment.NewLine}" +
+                    $"  https://github.com/phil-scott-78/vcr/issues");
             }
 
             VcrLogger.Logger.Information("Playwright drivers installed and verified successfully");
@@ -117,9 +140,22 @@ public class PlaywrightBrowser : IDisposable
             if (exitCode != 0)
             {
                 VcrLogger.Logger.Error("Browser installation failed with exit code {ExitCode}", exitCode);
+
+                // Determine current platform for better error message
+                var platform = OperatingSystem.IsWindows() ? "Windows" :
+                              OperatingSystem.IsMacOS() ? "macOS" :
+                              OperatingSystem.IsLinux() ? "Linux" : "Unknown";
+
                 throw new InvalidOperationException(
-                    $"Failed to install Playwright browsers (exit code: {exitCode}). " +
-                    "Please ensure you have internet connectivity and sufficient disk space.");
+                    $"Failed to install Chromium browser for {platform} (exit code: {exitCode}).{Environment.NewLine}" +
+                    $"Common causes:{Environment.NewLine}" +
+                    $"  • No internet connectivity{Environment.NewLine}" +
+                    $"  • Insufficient disk space (need ~150MB){Environment.NewLine}" +
+                    $"  • Firewall blocking download{Environment.NewLine}{Environment.NewLine}" +
+                    $"Troubleshooting:{Environment.NewLine}" +
+                    $"  1. Check internet connection{Environment.NewLine}" +
+                    $"  2. Verify disk space available{Environment.NewLine}" +
+                    $"  3. Try reinstalling: dotnet tool uninstall -g vcr && dotnet tool install -g vcr");
             }
 
             VcrLogger.Logger.Information("Chromium browser installed successfully");

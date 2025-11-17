@@ -142,6 +142,18 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                     }
                 }
 
+                if (result.ScreenshotFiles.Count > 0)
+                {
+                    AnsiConsole.WriteLine();
+                    AnsiConsole.MarkupLine("[green]✓[/] Screenshots captured:");
+                    foreach (var screenshotFile in result.ScreenshotFiles)
+                    {
+                        var fileName = Path.GetFileName(screenshotFile);
+                        var fileSize = new FileInfo(screenshotFile).Length / 1024.0; // KB
+                        AnsiConsole.MarkupLineInterpolated($"  [dim]•[/] {fileName} ({fileSize:F1} KB)");
+                    }
+                }
+
                 return 0;
             }
             catch (TapeParseException ex)

@@ -219,7 +219,8 @@ public class VcrSession : IAsyncDisposable
                 FrameDirectory = _frameStorage.FrameDirectory,
                 FrameCount = _state.FramesCaptured,
                 Duration = stopwatch.Elapsed,
-                OutputFiles = outputFiles
+                OutputFiles = outputFiles,
+                ScreenshotFiles = _state.ScreenshotFiles
             };
         }
         catch (Exception ex)
@@ -527,6 +528,7 @@ public class RecordingResult
     public int FrameCount { get; set; }
     public TimeSpan Duration { get; set; }
     public List<string> OutputFiles { get; set; } = new();
+    public List<string> ScreenshotFiles { get; set; } = new();
 }
 
 /// <summary>

@@ -64,4 +64,9 @@ public class SessionState
     /// Helps identify new content to append to PersistentBuffer.
     /// </summary>
     public string LastBufferSnapshot { get; set; } = string.Empty;
+
+    /// <summary>
+    /// List of screenshot file paths captured during this session.
+    /// </summary>
+    public List<string> ScreenshotFiles { get; set; } = new();
 }

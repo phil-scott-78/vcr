@@ -253,6 +253,9 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
             // PNG screenshot (default for .png or any other extension)
             await _terminalPage.ScreenshotAsync(path);
         }
+
+        // Track screenshot file in session state
+        _state.ScreenshotFiles.Add(path);
     }
 
     /// <summary>

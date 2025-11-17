@@ -25,9 +25,11 @@ public static class TapeTokenizer
         };
 
     // Double-quoted string with escape support
+    // Note: Newlines are explicitly excluded to prevent strings from spanning multiple lines,
+    // which causes confusing error messages when quotes are left unclosed (common with Windows paths ending in \")
     private static TextParser<Unit> DoubleQuotedString =>
         from open in Character.EqualTo('"')
-        from parts in EscapeSequence.Or(Character.ExceptIn('"', '\\').Select(c => c.ToString())).Many()
+        from parts in EscapeSequence.Or(Character.ExceptIn('"', '\\', '\r', '\n').Select(c => c.ToString())).Many()
         from close in Character.EqualTo('"')
         select Unit.Value;
 

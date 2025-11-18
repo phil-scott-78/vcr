@@ -740,6 +740,13 @@ public class TerminalPage : ITerminalPage
     /// <param name="path">Path to save the screenshot.</param>
     public async Task ScreenshotAsync(string path)
     {
+        // Ensure output directory exists
+        var directory = Path.GetDirectoryName(path);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
         try
         {
             // VHS approach: Capture canvas layers directly using toDataURL()

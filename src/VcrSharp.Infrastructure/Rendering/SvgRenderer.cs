@@ -32,6 +32,13 @@ public class SvgRenderer
     /// </summary>
     public async Task RenderStaticAsync(string outputPath, TerminalContent content, CancellationToken cancellationToken = default)
     {
+        // Ensure output directory exists
+        var directory = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
         await using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
         await using var xml = XmlWriter.Create(writer, new XmlWriterSettings
         {
@@ -92,6 +99,13 @@ public class SvgRenderer
         double totalDurationSeconds,
         CancellationToken cancellationToken = default)
     {
+        // Ensure output directory exists
+        var directory = Path.GetDirectoryName(outputPath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
         await using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
         await using var xml = XmlWriter.Create(writer, new XmlWriterSettings
         {

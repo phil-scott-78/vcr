@@ -76,6 +76,9 @@ public class WebMEncoder(SessionOptions options, FrameStorage storage) : Encoder
             customArgs += " -pix_fmt yuva420p";
         }
 
+        // Ensure output directory exists
+        EnsureDirectoryExists(outputPath);
+
         await FFMpegArguments
             .FromFileInput(textManifest, verifyExists: true, options => options
                 .WithCustomArgument("-f concat")

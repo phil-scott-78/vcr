@@ -23,6 +23,9 @@ public class PngEncoder(SessionOptions options, FrameStorage storage) : EncoderB
         // Build filter chain with padding if needed
         var filterComplex = BuildFilterChain("[0:v][1:v]overlay=0:0");
 
+        // Ensure output directory exists
+        EnsureDirectoryExists(outputPath);
+
         await FFMpegArguments
             .FromFileInput(textManifest, verifyExists: true, options => options
                 .WithCustomArgument("-f concat")

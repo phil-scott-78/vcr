@@ -107,4 +107,18 @@ public abstract class EncoderBase : IEncoder
 
         return (textManifest, cursorManifest);
     }
+
+    /// <summary>
+    /// Ensures the parent directory exists for the given file path.
+    /// Creates the directory if it doesn't exist.
+    /// </summary>
+    /// <param name="filePath">The file path whose parent directory should be created.</param>
+    protected void EnsureDirectoryExists(string filePath)
+    {
+        var directory = Path.GetDirectoryName(filePath);
+        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+    }
 }

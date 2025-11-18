@@ -57,6 +57,9 @@ public class GifEncoder(SessionOptions options, FrameStorage storage) : EncoderB
                            $"[s1][p]paletteuse";
         }
 
+        // Ensure output directory exists
+        EnsureDirectoryExists(outputPath);
+
         await FFMpegArguments
             .FromFileInput(textManifest, verifyExists: true, options => options
                 .WithCustomArgument("-f concat")

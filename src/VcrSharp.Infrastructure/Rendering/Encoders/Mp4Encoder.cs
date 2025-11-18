@@ -49,6 +49,9 @@ public class Mp4Encoder(SessionOptions options, FrameStorage storage) : EncoderB
                            $"[padded]fillborders=left={Options.Padding}:right={Options.Padding}:top={Options.Padding}:bottom={Options.Padding}:mode=fixed:color={backgroundColor}";
         }
 
+        // Ensure output directory exists
+        EnsureDirectoryExists(outputPath);
+
         await FFMpegArguments
             .FromFileInput(textManifest, verifyExists: true, options => options
                 .WithCustomArgument("-f concat")

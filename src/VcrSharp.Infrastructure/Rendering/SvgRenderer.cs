@@ -196,7 +196,10 @@ public class SvgRenderer
         css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}");
 
         // Cursor styles (minified, no animation for static)
-        css.Append($".cursor-block{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
+        if (!_options.DisableCursor)
+        {
+            css.Append($".cursor-block{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
+        }
 
         await xml.WriteStringAsync(css.ToString());
         await xml.WriteEndElementAsync(); // style
@@ -225,9 +228,12 @@ public class SvgRenderer
         css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}");
 
         // Cursor styles (minified)
-        css.Append("@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}");
-        css.Append(".cursor-idle{animation:blink 1s steps(1) infinite}");
-        css.Append($".cursor-block{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
+        if (!_options.DisableCursor)
+        {
+            css.Append("@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}");
+            css.Append(".cursor-idle{animation:blink 1s steps(1) infinite}");
+            css.Append($".cursor-block{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
+        }
 
         // Slide animation keyframes
         if (states.Count > 0)
@@ -364,7 +370,7 @@ public class SvgRenderer
             }
 
             // Apply styling
-            var classes = BuildCssClasses(run);
+            var classes = BuildCssClasses(run, _options.DisableCursor);
             if (!string.IsNullOrEmpty(classes))
             {
                 await xml.WriteAttributeStringAsync(null, "class", null, classes);
@@ -444,8 +450,8 @@ public class SvgRenderer
                 }
             }
 
-            // Render cursor background (only when cursor is active/visible)
-            if (run is { IsCursor: true, IsCursorIdle: false })
+            // Render cursor background (only when cursor is active/visible and not disabled)
+            if (!_options.DisableCursor && run is { IsCursor: true, IsCursorIdle: false })
             {
                 var x = col * _charWidth;
                 // Align cursor with text visual bounds (text baseline is at (row + 1) * _charHeight)
@@ -558,7 +564,7 @@ public class SvgRenderer
     /// <summary>
     /// Builds CSS class string for a style run.
     /// </summary>
-    private static string BuildCssClasses(StyleRun run)
+    private static string BuildCssClasses(StyleRun run, bool disableCursor)
     {
         var classes = new List<string>();
 
@@ -582,8 +588,8 @@ public class SvgRenderer
         if (run.IsItalic) classes.Add("italic");
         if (run.IsUnderline) classes.Add("underline");
 
-        // Cursor
-        if (run is { IsCursor: true, IsCursorIdle: true })
+        // Cursor (only add class if cursor is not disabled)
+        if (!disableCursor && run is { IsCursor: true, IsCursorIdle: true })
         {
             classes.Add("cursor-idle");
         }

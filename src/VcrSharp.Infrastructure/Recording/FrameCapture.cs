@@ -124,7 +124,8 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         var timestamp = Stopwatch.Elapsed;
 
         // Capture both layers (VHS approach - defer compositing to FFmpeg)
-        var (textBytes, cursorBytes) = await _terminalPage.CaptureLayersAsync();
+        // Skip cursor layer if DisableCursor is enabled
+        var (textBytes, cursorBytes) = await _terminalPage.CaptureLayersAsync(captureCursor: !_options.DisableCursor);
 
         // Get file paths for both layers
         var textPath = _storage.GetFrameLayerPath(frameNumber, "text");
@@ -243,7 +244,8 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         else
         {
             // PNG screenshot (default for .png or any other extension)
-            await _terminalPage.ScreenshotAsync(path);
+            // Skip cursor layer if DisableCursor is enabled
+            await _terminalPage.ScreenshotAsync(path, captureCursor: !_options.DisableCursor);
         }
 
         // Track screenshot file in session state

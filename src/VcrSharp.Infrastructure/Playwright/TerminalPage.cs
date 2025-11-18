@@ -419,6 +419,17 @@ public class TerminalPage : ITerminalPage
     }
 
     /// <summary>
+    /// Hides the cursor by injecting CSS to hide the cursor canvas layer.
+    /// </summary>
+    public async Task HideCursorAsync()
+    {
+        await _page.AddStyleTagAsync(new PageAddStyleTagOptions
+        {
+            Content = "canvas.xterm-cursor-layer { display: none !important; }"
+        });
+    }
+
+    /// <summary>
     /// Gets the current terminal buffer content as a string.
     /// </summary>
     /// <returns>The terminal buffer content.</returns>
@@ -697,6 +708,19 @@ public class TerminalPage : ITerminalPage
     }
 
     /// <summary>
+    /// Creates a minimal transparent 1x1 PNG image.
+    /// Used when cursor layer should not be rendered (DisableCursor option).
+    /// </summary>
+    private static byte[] CreateTransparentPng()
+    {
+        using var image = new Image<Rgba32>(1, 1);
+        image[0, 0] = new Rgba32(0, 0, 0, 0); // Fully transparent pixel
+        using var ms = new MemoryStream();
+        image.SaveAsPng(ms);
+        return ms.ToArray();
+    }
+
+    /// <summary>
     /// Initializes a CDP session for optimized screenshot capture.
     /// Should be called once after terminal is ready.
     /// </summary>
@@ -724,11 +748,14 @@ public class TerminalPage : ITerminalPage
     /// Captures terminal canvas layers separately and returns them as byte arrays.
     /// This allows deferred compositing in FFmpeg for maximum capture performance.
     /// </summary>
+    /// <param name="captureCursor">Whether to capture the cursor layer. If false, returns a transparent cursor layer.</param>
     /// <returns>Tuple of (textLayerBytes, cursorLayerBytes).</returns>
-    public async Task<(byte[] TextLayer, byte[] CursorLayer)> CaptureLayersAsync()
+    public async Task<(byte[] TextLayer, byte[] CursorLayer)> CaptureLayersAsync(bool captureCursor = true)
     {
         var textBytes = await CaptureCanvasLayerAsync("canvas.xterm-text-layer");
-        var cursorBytes = await CaptureCanvasLayerAsync("canvas.xterm-cursor-layer");
+        var cursorBytes = captureCursor
+            ? await CaptureCanvasLayerAsync("canvas.xterm-cursor-layer")
+            : CreateTransparentPng();
         return (textBytes, cursorBytes);
     }
 
@@ -738,7 +765,8 @@ public class TerminalPage : ITerminalPage
     /// then composites them. Falls back to CDP/Playwright methods if canvas capture fails.
     /// </summary>
     /// <param name="path">Path to save the screenshot.</param>
-    public async Task ScreenshotAsync(string path)
+    /// <param name="captureCursor">Whether to capture the cursor layer. If false, cursor will not appear in the screenshot.</param>
+    public async Task ScreenshotAsync(string path, bool captureCursor = true)
     {
         // Ensure output directory exists
         var directory = Path.GetDirectoryName(path);
@@ -752,7 +780,9 @@ public class TerminalPage : ITerminalPage
             // VHS approach: Capture canvas layers directly using toDataURL()
             // This is GPU-accelerated and 2-3x faster than CDP Page.captureScreenshot
             var textBytes = await CaptureCanvasLayerAsync("canvas.xterm-text-layer");
-            var cursorBytes = await CaptureCanvasLayerAsync("canvas.xterm-cursor-layer");
+            var cursorBytes = captureCursor
+                ? await CaptureCanvasLayerAsync("canvas.xterm-cursor-layer")
+                : CreateTransparentPng();
 
             // Composite the two layers (text + cursor)
             using var textImage = Image.Load<Rgba32>(textBytes);

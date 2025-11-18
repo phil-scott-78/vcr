@@ -129,7 +129,7 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
             }
 
             // Compute hash for deduplication
-            var hash = ComputeFrameHash(content, isCursorIdle);
+            var hash = ComputeFrameHash(content, isCursorIdle, Options.DisableCursor);
 
             // Check if this state already exists
             if (!_stateHashes.TryGetValue(hash, out var stateIndex))
@@ -183,7 +183,7 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
     /// <summary>
     /// Computes MD5 hash of terminal state for frame deduplication.
     /// </summary>
-    private static string ComputeFrameHash(TerminalContent content, bool isCursorIdle)
+    private static string ComputeFrameHash(TerminalContent content, bool isCursorIdle, bool disableCursor)
     {
         var sb = new StringBuilder();
 
@@ -202,7 +202,11 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
             sb.AppendLine();
         }
 
-        sb.Append($"{content.CursorX},{content.CursorY},{content.CursorVisible},{isCursorIdle}");
+        // Only include cursor data in hash if cursor will be rendered
+        if (!disableCursor)
+        {
+            sb.Append($"{content.CursorX},{content.CursorY},{content.CursorVisible},{isCursorIdle}");
+        }
 
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var hash = MD5.HashData(bytes);

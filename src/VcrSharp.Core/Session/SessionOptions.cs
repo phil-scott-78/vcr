@@ -137,6 +137,12 @@ public class SessionOptions
     public bool CursorBlink { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets whether the cursor should be disabled in output.
+    /// When true, cursor is not rendered in browser terminal, screenshots, or SVG output.
+    /// </summary>
+    public bool DisableCursor { get; set; } = false;
+
+    /// <summary>
     /// Gets or sets whether the terminal background should be transparent.
     /// When true, sets allowTransparency on xTerm.js and uses a transparent background color.
     /// </summary>
@@ -379,6 +385,9 @@ public class SessionOptions
                 break;
             case "cursorblink":
                 options.CursorBlink = Convert.ToBoolean(value);
+                break;
+            case "disablecursor":
+                options.DisableCursor = Convert.ToBoolean(value);
                 break;
             case "transparentbackground":
                 options.TransparentBackground = Convert.ToBoolean(value);

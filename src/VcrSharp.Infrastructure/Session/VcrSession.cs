@@ -291,6 +291,12 @@ public class VcrSession : IAsyncDisposable
         }
 
         await _terminalPage.ConfigureTerminalAsync(terminalOptions);
+
+        // Hide cursor if requested (using CSS injection)
+        if (_options.DisableCursor)
+        {
+            await _terminalPage.HideCursorAsync();
+        }
     }
 
     /// <summary>

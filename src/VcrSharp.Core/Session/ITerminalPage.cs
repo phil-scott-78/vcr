@@ -73,4 +73,9 @@ public interface ITerminalPage
     /// </summary>
     /// <returns>Terminal content including text, colors, cursor position, and styles.</returns>
     Task<Rendering.TerminalContent> GetTerminalContentWithStylesAsync();
+
+    /// <summary>
+    /// Hides the cursor by injecting CSS to hide the cursor canvas layer.
+    /// </summary>
+    Task HideCursorAsync();
 }

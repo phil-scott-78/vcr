@@ -377,7 +377,7 @@ public class TapeParser
 
         // Styling
         "Theme", "Padding", "Margin", "MarginFill", "WindowBarSize",
-        "BorderRadius", "CursorBlink", "TransparentBackground",
+        "BorderRadius", "CursorBlink", "DisableCursor", "TransparentBackground",
 
         // Behavior
         "Shell", "WorkingDirectory", "TypingSpeed", "WaitTimeout",

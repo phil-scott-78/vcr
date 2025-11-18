@@ -95,6 +95,40 @@ public class SettingCommandTests
     }
 
     [Fact]
+    public void ParseTape_SetDisableCursorTrue_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new TapeParser();
+        var source = "Set DisableCursor true";
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        var cmd = commands[0].ShouldBeOfType<SetCommand>();
+        cmd.SettingName.ShouldBe("DisableCursor");
+        cmd.Value.ShouldBe("True");
+    }
+
+    [Fact]
+    public void ParseTape_SetDisableCursorFalse_ParsesCorrectly()
+    {
+        // Arrange
+        var parser = new TapeParser();
+        var source = "Set DisableCursor false";
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        var cmd = commands[0].ShouldBeOfType<SetCommand>();
+        cmd.SettingName.ShouldBe("DisableCursor");
+        cmd.Value.ShouldBe("False");
+    }
+
+    [Fact]
     public void ParseTape_SetTransparentBackground_ParsesCorrectly()
     {
         // Arrange

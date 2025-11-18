@@ -186,7 +186,7 @@ public class SvgRenderer
         var css = new StringBuilder();
 
         // Base styles (minified - no newlines between rules)
-        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px}}");
+        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:text-before-edge}}");
         css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
 
         // ANSI color classes
@@ -218,7 +218,7 @@ public class SvgRenderer
         var css = new StringBuilder();
 
         // Base styles (minified - no newlines between rules)
-        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px}}");
+        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:text-before-edge}}");
         css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
 
         // ANSI color classes
@@ -356,7 +356,7 @@ public class SvgRenderer
         await xml.WriteStartElementAsync(null, "text", null);
         await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
         await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(textLength));
-        // Note: lengthAdjust="spacingAndGlyphs" is the default, so we omit it to reduce file size
+        await xml.WriteAttributeStringAsync(null, "lengthAdjust", null, "spacing");
 
         for (var i = 0; i < runs.Count; i++)
         {

@@ -9,9 +9,10 @@ public sealed class TerminalCell
 {
     /// <summary>
     /// Gets or sets the character in this cell.
+    /// Stored as string to support Unicode surrogate pairs (emojis, etc.).
     /// </summary>
     [JsonPropertyName("character")]
-    public char Character { get; set; }
+    public string Character { get; set; } = " ";
 
     /// <summary>
     /// Gets or sets the foreground color (hex format like "#FFFFFF" or ANSI color index).

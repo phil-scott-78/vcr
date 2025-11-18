@@ -1056,7 +1056,7 @@ public class TerminalPage : ITerminalPage
                                     const isCursor = (row === cursorY && col === cursorX);
 
                                     rowCells.push({
-                                        character: char.charAt(0) || ' ',
+                                        character: char || ' ',
                                         foregroundColor: fgColor,
                                         backgroundColor: bgColor,
                                         isBold: isBold,

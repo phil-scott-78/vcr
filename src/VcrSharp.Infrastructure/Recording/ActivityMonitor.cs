@@ -78,6 +78,20 @@ public class ActivityMonitor : IDisposable
     }
 
     /// <summary>
+    /// Explicitly marks the current frame as the last activity point.
+    /// Used by commands (like Sleep) that don't produce terminal output but should preserve frames.
+    /// </summary>
+    public void MarkCurrentFrameAsLastActivity()
+    {
+        var currentTimestamp = _stopwatch.Elapsed;
+        _sessionState.LastActivityTimestamp = currentTimestamp;
+        _sessionState.LastActivityFrameNumber = _currentFrameNumber;
+
+        VcrLogger.Logger.Verbose("Explicitly marked frame {FrameNumber} (timestamp: {Timestamp}s) as last activity",
+            _currentFrameNumber, currentTimestamp.TotalSeconds);
+    }
+
+    /// <summary>
     /// Main monitoring loop that polls the terminal buffer for changes.
     /// </summary>
     private async Task MonitorLoopAsync()

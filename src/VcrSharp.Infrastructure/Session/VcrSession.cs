@@ -143,8 +143,8 @@ public class VcrSession : IAsyncDisposable
             // 11. Start frame capture loop (stopwatch starts here)
             await _frameCapture.StartAsync(cancellationToken);
 
-            // Apply StartBuffer delay for non-Exec commands (gives terminal time to settle)
-            if (execCommands.Count == 0 && _options.StartBuffer > TimeSpan.Zero)
+            // Apply StartBuffer delay
+            if (_options.StartBuffer > TimeSpan.Zero)
             {
                 await Task.Delay(_options.StartBuffer, cancellationToken);
             }
@@ -160,11 +160,15 @@ public class VcrSession : IAsyncDisposable
                 progress?.Report("Waiting for commands to complete...");
                 await WaitForInactivityAsync(cancellationToken);
             }
-            else if (_options.EndBuffer > TimeSpan.Zero)
+
+            // Apply EndBuffer delay
+            if (_options.EndBuffer > TimeSpan.Zero)
             {
-                // Apply EndBuffer delay for non-Exec commands (gives terminal time to finish rendering)
                 await Task.Delay(_options.EndBuffer, cancellationToken);
             }
+
+            // Mark current frame as last activity to preserve EndBuffer frames
+            _activityMonitor?.MarkCurrentFrameAsLastActivity();
 
             // 13. Stop activity monitor
             if (_activityMonitor != null)
@@ -356,6 +360,10 @@ public class VcrSession : IAsyncDisposable
                 commandStopwatch.Stop();
                 VcrLogger.Logger.Debug("Command completed in {ElapsedMs}ms: {Command}",
                     commandStopwatch.ElapsedMilliseconds, command);
+
+                // Mark current frame as last activity to preserve frames from commands
+                // that don't produce terminal output (Sleep, Hide, Show, etc.)
+                _activityMonitor?.MarkCurrentFrameAsLastActivity();
             }
             catch (Exception ex)
             {

@@ -123,9 +123,15 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         var frameNumber = _state.FramesCaptured + 1;
         var timestamp = Stopwatch.Elapsed;
 
-        // Capture both layers (VHS approach - defer compositing to FFmpeg)
+        // Capture both PNG layers and terminal content in parallel for better performance
         // Skip cursor layer if DisableCursor is enabled
-        var (textBytes, cursorBytes) = await _terminalPage.CaptureLayersAsync(captureCursor: !_options.DisableCursor);
+        var captureLayersTask = _terminalPage.CaptureLayersAsync(captureCursor: !_options.DisableCursor);
+        var terminalContentTask = _terminalPage.GetTerminalContentWithStylesAsync();
+
+        await Task.WhenAll(captureLayersTask, terminalContentTask);
+
+        var (textBytes, cursorBytes) = captureLayersTask.Result;
+        var terminalContent = terminalContentTask.Result;
 
         // Get file paths for both layers
         var textPath = _storage.GetFrameLayerPath(frameNumber, "text");
@@ -135,9 +141,7 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         await _writeQueue.EnqueueAsync(textPath, textBytes);
         await _writeQueue.EnqueueAsync(cursorPath, cursorBytes);
 
-        // Capture terminal content with styles for SVG/text-based outputs
-        // This runs in parallel with PNG writes and doesn't block the capture loop
-        var terminalContent = await _terminalPage.GetTerminalContentWithStylesAsync();
+        // Record terminal content snapshot for SVG/text-based outputs
         var snapshot = new TerminalContentSnapshot
         {
             FrameNumber = frameNumber,

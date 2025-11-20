@@ -413,8 +413,8 @@ public class SvgRenderer
     {
         var col = 0;
         string? lastBgColor = null;
-        int bgStartCol = 0;
-        int bgLength = 0;
+        var bgStartCol = 0;
+        var bgLength = 0;
 
         foreach (var run in runs)
         {
@@ -651,15 +651,15 @@ public class SvgRenderer
     /// </summary>
     private static string? PaletteIndexToRgb(int index)
     {
-        if (index < 16 || index > 255) return null;
+        if (index is < 16 or > 255) return null;
 
         // Colors 16-231: 216-color cube (6x6x6)
         if (index < 232)
         {
             var i = index - 16;
-            var r = (i / 36) * 51;
-            var g = ((i / 6) % 6) * 51;
-            var b = (i % 6) * 51;
+            var r = i / 36 * 51;
+            var g = i / 6 % 6 * 51;
+            var b = i % 6 * 51;
             return $"#{r:X2}{g:X2}{b:X2}";
         }
 

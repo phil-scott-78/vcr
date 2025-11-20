@@ -9,17 +9,18 @@ namespace VcrSharp.Infrastructure.Rendering.Encoders;
 
 /// <summary>
 /// Encoder that renders SVG output with text-based animation.
-/// Follows AgentStation/vHS approach: text rendered as SVG elements, frame deduplication, CSS animations.
+/// Follows AgentStation/vHS approach: text rendered as SVG elements, consecutive frame deduplication, CSS animations.
 /// See - https://github.com/agentstation/vhs/blob/main/svg.go
 ///
+/// Uses consecutive frame deduplication (not global) to preserve animation quality while reducing file size.
 /// This works surprisingly well, but still rough around the edges especially with the cursor.
 /// </summary>
 public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderBase(options, storage)
 {
-    // State management for deduplication
-    private readonly Dictionary<string, int> _stateHashes = new();
+    // State management for consecutive frame deduplication
     private readonly List<TerminalState> _uniqueStates = [];
     private readonly List<KeyframeStop> _timeline = [];
+    private string? _previousHash;
 
     public override bool SupportsPath(string outputPath)
     {
@@ -46,7 +47,7 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
         // Process frames and build timeline
         ProcessFrames(snapshots, frameMetadata);
 
-        progress?.Report($"Deduplication: {snapshots.Count} frames -> {_uniqueStates.Count} unique states");
+        progress?.Report($"Consecutive frame deduplication: {snapshots.Count} frames -> {_uniqueStates.Count} unique states");
 
         // Calculate animation duration
         var totalDuration = _timeline.Count > 0 ? _timeline[^1].Timestamp.TotalSeconds / Options.PlaybackSpeed : 1.0;
@@ -128,20 +129,26 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
                 }
             }
 
-            // Compute hash for deduplication
+            // Compute hash for consecutive frame deduplication
             var hash = ComputeFrameHash(content, isCursorIdle, Options.DisableCursor);
 
-            // Check if this state already exists
-            if (!_stateHashes.TryGetValue(hash, out var stateIndex))
+            // Only deduplicate consecutive identical frames (not all identical frames globally)
+            int stateIndex;
+            if (_previousHash == hash && _uniqueStates.Count > 0)
             {
-                // New unique state
+                // Same as previous frame - reuse last state
+                stateIndex = _uniqueStates.Count - 1;
+            }
+            else
+            {
+                // Different from previous frame - create new state
                 stateIndex = _uniqueStates.Count;
-                _stateHashes[hash] = stateIndex;
                 _uniqueStates.Add(new TerminalState
                 {
                     Content = content,
                     IsCursorIdle = isCursorIdle
                 });
+                _previousHash = hash;
             }
 
             // Add to timeline

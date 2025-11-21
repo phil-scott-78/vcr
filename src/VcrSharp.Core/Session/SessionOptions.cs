@@ -140,7 +140,7 @@ public class SessionOptions
     /// Gets or sets whether the cursor should be disabled in output.
     /// When true, cursor is not rendered in browser terminal, screenshots, or SVG output.
     /// </summary>
-    public bool DisableCursor { get; set; } = false;
+    public bool DisableCursor { get; set; }
 
     /// <summary>
     /// Gets or sets whether the terminal background should be transparent.
@@ -200,7 +200,7 @@ public class SessionOptions
     /// Gets or sets the amount of blank time to include before the first activity.
     /// Frames captured before (FirstActivity - StartBuffer) will be trimmed.
     /// </summary>
-    public TimeSpan StartBuffer { get; set; } = TimeSpan.FromMilliseconds(500);
+    public TimeSpan StartBuffer { get; set; } = TimeSpan.FromMilliseconds(0);
 
     /// <summary>
     /// Gets or sets the amount of time to include after the last detected activity.

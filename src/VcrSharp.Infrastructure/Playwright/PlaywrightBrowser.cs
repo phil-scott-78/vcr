@@ -214,7 +214,7 @@ public class PlaywrightBrowser : IDisposable
             playwrightDllExists, playwrightDllPath);
 
         // Log Assembly.Location (Playwright's fallback)
-        var assembly = typeof(Microsoft.Playwright.IPlaywright).Assembly;
+        var assembly = typeof(IPlaywright).Assembly;
         VcrLogger.Logger.Debug("Microsoft.Playwright Assembly.Location: {Location}",
             string.IsNullOrEmpty(assembly.Location) ? "(empty - single-file deployment?)" : assembly.Location);
 

@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text;
 using System.Xml;
-using VcrSharp.Core.Recording;
 using VcrSharp.Core.Rendering;
 using VcrSharp.Core.Session;
 

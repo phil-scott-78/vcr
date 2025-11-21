@@ -1,4 +1,3 @@
-using Microsoft.Playwright;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using VcrSharp.Cli.Helpers;

@@ -1,3 +1,4 @@
+using VcrSharp.Core.Logging;
 using VcrSharp.Core.Session;
 
 namespace VcrSharp.Infrastructure.Recording;
@@ -18,9 +19,13 @@ public class FrameTrimmer(SessionOptions options, SessionState state)
     /// <returns>A tuple of (firstFrameToKeep, lastFrameToKeep), or null if no trimming needed.</returns>
     public (int firstFrame, int lastFrame)? CalculateFrameRange()
     {
+        VcrLogger.Logger.Debug("CalculateFrameRange: FirstActivityFrame={FirstActivityFrame}, LastActivityFrame={LastActivityFrame}, StartBuffer={StartBuffer}s, EndBuffer={EndBuffer}s, Framerate={Framerate}fps",
+            state.FirstActivityFrameNumber, state.LastActivityFrameNumber, options.StartBuffer.TotalSeconds, options.EndBuffer.TotalSeconds, _framerate);
+
         // If no activity was detected, keep all frames
         if (!state.FirstActivityFrameNumber.HasValue || !state.LastActivityFrameNumber.HasValue)
         {
+            VcrLogger.Logger.Warning("No activity detected (FirstActivityFrameNumber or LastActivityFrameNumber is null). Keeping all frames without trimming.");
             return null;
         }
 
@@ -28,15 +33,25 @@ public class FrameTrimmer(SessionOptions options, SessionState state)
         var startBufferFrames = (int)(options.StartBuffer.TotalSeconds * _framerate);
         var endBufferFrames = (int)(options.EndBuffer.TotalSeconds * _framerate);
 
+        VcrLogger.Logger.Debug("Buffer frames: StartBuffer={StartBufferFrames} frames, EndBuffer={EndBufferFrames} frames",
+            startBufferFrames, endBufferFrames);
+
         // Calculate frame range directly from activity frame numbers
         var firstFrame = state.FirstActivityFrameNumber.Value - startBufferFrames;
         var lastFrame = state.LastActivityFrameNumber.Value + endBufferFrames;
 
+        VcrLogger.Logger.Debug("Calculated frame range (before clamping): firstFrame={FirstFrame}, lastFrame={LastFrame}",
+            firstFrame, lastFrame);
+
         // Ensure first frame is at least 1 (frames are 1-based)
         if (firstFrame < 1)
         {
+            VcrLogger.Logger.Debug("Clamping firstFrame from {OriginalFirstFrame} to 1 (frames are 1-based)", firstFrame);
             firstFrame = 1;
         }
+
+        VcrLogger.Logger.Information("Frame trimming range calculated: keeping frames {FirstFrame} to {LastFrame} (total: {FrameCount} frames)",
+            firstFrame, lastFrame, lastFrame - firstFrame + 1);
 
         return (firstFrame, lastFrame);
     }
@@ -50,10 +65,18 @@ public class FrameTrimmer(SessionOptions options, SessionState state)
     public void TrimFrames(string frameDirectory, int firstFrame, int lastFrame)
     {
         if (!Directory.Exists(frameDirectory))
+        {
+            VcrLogger.Logger.Warning("Frame directory does not exist: {FrameDirectory}", frameDirectory);
             return;
+        }
+
+        VcrLogger.Logger.Debug("Trimming frames in directory: {FrameDirectory}, keeping range [{FirstFrame}, {LastFrame}]",
+            frameDirectory, firstFrame, lastFrame);
 
         // Process both text and cursor frames
         var patterns = new[] { "frame-text-*.png", "frame-cursor-*.png" };
+        var totalDeleted = 0;
+        var totalKept = 0;
 
         foreach (var pattern in patterns)
         {
@@ -61,15 +84,25 @@ public class FrameTrimmer(SessionOptions options, SessionState state)
                 .OrderBy(f => f)
                 .ToList();
 
+            VcrLogger.Logger.Debug("Processing {FileCount} files matching pattern '{Pattern}'", frameFiles.Count, pattern);
+
             foreach (var file in frameFiles)
             {
                 var frameNumber = ExtractFrameNumber(file);
                 if (frameNumber < firstFrame || frameNumber > lastFrame)
                 {
                     File.Delete(file);
+                    totalDeleted++;
+                }
+                else
+                {
+                    totalKept++;
                 }
             }
         }
+
+        VcrLogger.Logger.Information("Frame trimming complete: kept {KeptCount} frames, deleted {DeletedCount} frames",
+            totalKept, totalDeleted);
     }
 
     /// <summary>

@@ -208,13 +208,20 @@ public class TerminalPage : ITerminalPage
         const int pollInterval = 20; // Poll frequently to minimize delay
         var maxAttempts = timeout / pollInterval;
 
+        VcrLogger.Logger.Debug("Waiting for buffer content (timeout: {Timeout}ms, poll interval: {PollInterval}ms)",
+            timeout, pollInterval);
+
         for (var i = 0; i < maxAttempts; i++)
         {
             // Get current buffer content and check if it's non-empty
             var content = await GetBufferContentAsync();
+            var contentLength = content?.Length ?? 0;
+            var contentPreview = content?.Length > 50 ? content.Substring(0, 50) + "..." : content;
+
             if (!string.IsNullOrWhiteSpace(content))
             {
-                VcrLogger.Logger.Debug("Buffer content detected after {ElapsedMs}ms", i * pollInterval);
+                VcrLogger.Logger.Information("Buffer content detected after {ElapsedMs}ms (length: {Length}, preview: {Preview})",
+                    i * pollInterval, contentLength, contentPreview?.Replace("\n", "\\n"));
                 return;
             }
 
@@ -222,7 +229,8 @@ public class TerminalPage : ITerminalPage
         }
 
         // Log warning but don't throw - continue with recording even if buffer appears empty
-        VcrLogger.Logger.Warning("Timeout waiting for buffer content after {Timeout}ms, continuing anyway", timeout);
+        VcrLogger.Logger.Warning("Timeout waiting for buffer content after {Timeout}ms, continuing anyway. This may result in blank frames being captured.",
+            timeout);
     }
 
     /// <summary>

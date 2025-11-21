@@ -41,12 +41,14 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
     /// <param name="state">Session state for tracking capture status</param>
     /// <param name="storage">Frame storage manager</param>
     /// <param name="activityMonitor">Activity monitor to notify of frame captures (optional)</param>
+    /// <param name="stopwatch">Optional shared stopwatch for timing. If null, a new stopwatch is created.</param>
     public FrameCapture(
         TerminalPage terminalPage,
         SessionOptions options,
         SessionState state,
         FrameStorage storage,
-        ActivityMonitor? activityMonitor = null)
+        ActivityMonitor? activityMonitor = null,
+        Stopwatch? stopwatch = null)
     {
         ArgumentNullException.ThrowIfNull(terminalPage);
         ArgumentNullException.ThrowIfNull(options);
@@ -57,7 +59,7 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         _state = state;
         _storage = storage;
         _activityMonitor = activityMonitor;
-        Stopwatch = new Stopwatch();
+        Stopwatch = stopwatch ?? new Stopwatch();
         _writeQueue = new FrameWriteQueue();
     }
 

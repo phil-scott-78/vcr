@@ -133,20 +133,28 @@ public class VcrSession : IAsyncDisposable
             // 8. Initialize frame storage
             _frameStorage = new FrameStorage();
 
-            // 9. Create frame capture (this creates the stopwatch)
-            _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage);
+            // 9. Create a shared stopwatch for timing synchronization between FrameCapture and ActivityMonitor
+            var sharedStopwatch = new Stopwatch();
+            VcrLogger.Logger.Debug("Created shared stopwatch for frame timing (hash: {StopwatchHashCode})",
+                sharedStopwatch.GetHashCode());
 
-            // 10. Create activity monitor with FrameCapture's stopwatch for shared timing
-            _activityMonitor = new ActivityMonitor(_terminalPage, _state, _frameCapture.Stopwatch);
+            // 10. Create activity monitor with the shared stopwatch
+            _activityMonitor = new ActivityMonitor(_terminalPage, _state, sharedStopwatch);
+            VcrLogger.Logger.Debug("Initialized ActivityMonitor with shared stopwatch");
 
-            // 11. Recreate frame capture with activity monitor wired in
-            _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage, _activityMonitor);
+            // 11. Create FrameCapture with ActivityMonitor and shared stopwatch
+            _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage, _activityMonitor, sharedStopwatch);
+            VcrLogger.Logger.Debug("Initialized FrameCapture with ActivityMonitor and shared stopwatch (hash: {StopwatchHashCode})",
+                _frameCapture.Stopwatch.GetHashCode());
 
             // 12. Start activity monitor first (begins polling for activity)
             _activityMonitor.Start();
+            VcrLogger.Logger.Debug("ActivityMonitor started, ready to detect first activity");
 
             // 13. Start frame capture loop (stopwatch starts here)
+            VcrLogger.Logger.Debug("Starting frame capture (stopwatch will start now)");
             await _frameCapture.StartAsync(cancellationToken);
+            VcrLogger.Logger.Debug("Frame capture started, recording in progress");
 
             progress?.Report("Recording tape...");
 

@@ -99,6 +99,8 @@ public class ActivityMonitor : IDisposable
         // Poll at 20ms to match typical frame rate (50fps), reducing timing lag
         var pollInterval = TimeSpan.FromMilliseconds(20);
 
+        VcrLogger.Logger.Debug("ActivityMonitor loop started (poll interval: {PollIntervalMs}ms)", pollInterval.TotalMilliseconds);
+
         while (!_cts.Token.IsCancellationRequested)
         {
             try
@@ -110,19 +112,28 @@ public class ActivityMonitor : IDisposable
                 if (currentContent != _lastBufferContent)
                 {
                     var currentTimestamp = _stopwatch.Elapsed;
+                    var contentPreview = currentContent?.Length > 50 ? currentContent.Substring(0, 50).Replace("\n", "\\n") + "..." : currentContent?.Replace("\n", "\\n");
 
                     // Record first activity if this is the first change
                     if (!_sessionState.FirstActivityTimestamp.HasValue)
                     {
                         _sessionState.FirstActivityTimestamp = currentTimestamp;
                         _sessionState.FirstActivityFrameNumber = _currentFrameNumber;
+
+                        VcrLogger.Logger.Information("FIRST ACTIVITY DETECTED: Frame #{FrameNumber}, Timestamp: {Timestamp}s, Content preview: {Preview}",
+                            _currentFrameNumber, currentTimestamp.TotalSeconds, contentPreview);
+                    }
+                    else
+                    {
+                        VcrLogger.Logger.Verbose("Activity detected: Frame #{FrameNumber}, Timestamp: {Timestamp}s",
+                            _currentFrameNumber, currentTimestamp.TotalSeconds);
                     }
 
                     // Always update last activity timestamp and frame number
                     _sessionState.LastActivityTimestamp = currentTimestamp;
                     _sessionState.LastActivityFrameNumber = _currentFrameNumber;
 
-                    _lastBufferContent = currentContent;
+                    _lastBufferContent = currentContent ?? string.Empty;
                 }
 
                 // Wait before next poll
@@ -131,6 +142,7 @@ public class ActivityMonitor : IDisposable
             catch (OperationCanceledException)
             {
                 // Exit gracefully
+                VcrLogger.Logger.Debug("ActivityMonitor loop cancelled gracefully");
                 break;
             }
             catch (Exception ex)
@@ -141,6 +153,12 @@ public class ActivityMonitor : IDisposable
                 await Task.Delay(pollInterval, _cts.Token);
             }
         }
+
+        var firstTimeSeconds = _sessionState.FirstActivityTimestamp?.TotalSeconds;
+        var lastTimeSeconds = _sessionState.LastActivityTimestamp.TotalSeconds;
+        VcrLogger.Logger.Information("ActivityMonitor loop ended. First activity: Frame #{FirstFrame} at {FirstTime}s, Last activity: Frame #{LastFrame} at {LastTime}s",
+            _sessionState.FirstActivityFrameNumber, firstTimeSeconds,
+            _sessionState.LastActivityFrameNumber, lastTimeSeconds);
     }
 
     public void Dispose()

@@ -197,6 +197,35 @@ public class TerminalPage : ITerminalPage
     }
 
     /// <summary>
+    /// Waits for the terminal buffer to contain actual non-empty content.
+    /// This ensures that GetBufferContentAsync() will return meaningful data rather than empty strings.
+    /// Should be called after WaitForPromptAsync() and before starting recording to avoid capturing blank frames.
+    /// </summary>
+    /// <param name="timeout">Maximum time to wait in milliseconds (default: 1000ms).</param>
+    /// <returns>A task representing the async operation.</returns>
+    public async Task WaitForBufferContentAsync(int timeout = 1000)
+    {
+        const int pollInterval = 20; // Poll frequently to minimize delay
+        var maxAttempts = timeout / pollInterval;
+
+        for (var i = 0; i < maxAttempts; i++)
+        {
+            // Get current buffer content and check if it's non-empty
+            var content = await GetBufferContentAsync();
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                VcrLogger.Logger.Debug("Buffer content detected after {ElapsedMs}ms", i * pollInterval);
+                return;
+            }
+
+            await Task.Delay(pollInterval);
+        }
+
+        // Log warning but don't throw - continue with recording even if buffer appears empty
+        VcrLogger.Logger.Warning("Timeout waiting for buffer content after {Timeout}ms, continuing anyway", timeout);
+    }
+
+    /// <summary>
     /// Resizes the terminal to specific cols/rows and adjusts viewport to fit exactly.
     /// </summary>
     /// <param name="cols">Terminal columns (character width).</param>

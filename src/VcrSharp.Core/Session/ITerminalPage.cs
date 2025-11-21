@@ -78,4 +78,11 @@ public interface ITerminalPage
     /// Hides the cursor by injecting CSS to hide the cursor canvas layer.
     /// </summary>
     Task HideCursorAsync();
+
+    /// <summary>
+    /// Waits for the terminal buffer to contain actual non-empty content.
+    /// This ensures recording starts only when there's meaningful terminal output.
+    /// </summary>
+    /// <param name="timeout">Maximum time to wait in milliseconds (default: 1000ms).</param>
+    Task WaitForBufferContentAsync(int timeout = 1000);
 }

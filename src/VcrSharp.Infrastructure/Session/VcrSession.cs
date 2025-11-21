@@ -123,31 +123,30 @@ public class VcrSession : IAsyncDisposable
             // 6b. Wait for shell prompt to appear (ensures shell is fully ready)
             await _terminalPage.WaitForPromptAsync();
 
+            // 6c. Wait for buffer to contain actual content before starting recording
+            // This prevents capturing blank frames at the start
+            await _terminalPage.WaitForBufferContentAsync();
+
             // 7. Initialize CDP session for optimized frame capture
             await _terminalPage.InitializeCdpSessionAsync();
 
-            // 8. Initialize frame storage and frame capture
+            // 8. Initialize frame storage
             _frameStorage = new FrameStorage();
+
+            // 9. Create frame capture (this creates the stopwatch)
             _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage);
 
-            // 9. Start activity monitor BEFORE frame capture starts
-            // Pass FrameCapture's stopwatch so they share the same timing reference
+            // 10. Create activity monitor with FrameCapture's stopwatch for shared timing
             _activityMonitor = new ActivityMonitor(_terminalPage, _state, _frameCapture.Stopwatch);
 
-            // Now wire up the activity monitor to frame capture
+            // 11. Recreate frame capture with activity monitor wired in
             _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage, _activityMonitor);
 
-            // 10. Start activity monitor first, then frame capture
+            // 12. Start activity monitor first (begins polling for activity)
             _activityMonitor.Start();
 
-            // 11. Start frame capture loop (stopwatch starts here)
+            // 13. Start frame capture loop (stopwatch starts here)
             await _frameCapture.StartAsync(cancellationToken);
-
-            // Apply StartBuffer delay
-            if (_options.StartBuffer > TimeSpan.Zero)
-            {
-                await Task.Delay(_options.StartBuffer, cancellationToken);
-            }
 
             progress?.Report("Recording tape...");
 

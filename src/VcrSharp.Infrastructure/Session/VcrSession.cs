@@ -125,6 +125,10 @@ public class VcrSession : IAsyncDisposable
             // Works for both traditional shells (prompt appears in buffer) and TUI apps (content appears in buffer)
             await _terminalPage.WaitForBufferContentAsync();
 
+            // Wait additional time for Exec commands to produce meaningful output
+            // This prevents detecting shell prompt or partial output as "first activity"
+            await Task.Delay(200);
+
             // 7. Initialize CDP session for optimized frame capture
             await _terminalPage.InitializeCdpSessionAsync();
 
@@ -139,6 +143,10 @@ public class VcrSession : IAsyncDisposable
             // 10. Create activity monitor with the shared stopwatch
             _activityMonitor = new ActivityMonitor(_terminalPage, _state, sharedStopwatch);
             VcrLogger.Logger.Debug("Initialized ActivityMonitor with shared stopwatch");
+
+            // Initialize baseline to capture current buffer content before monitoring starts
+            // This ensures only NEW content (appearing after recording starts) is detected as "first activity"
+            await _activityMonitor.InitializeBaselineAsync();
 
             // 11. Create FrameCapture with ActivityMonitor and shared stopwatch
             _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage, _activityMonitor, sharedStopwatch);
@@ -156,10 +164,10 @@ public class VcrSession : IAsyncDisposable
 
             progress?.Report("Recording tape...");
 
-            // 11. Execute commands sequentially
+            // 15. Execute commands sequentially
             await ExecuteCommandsAsync(commands, cancellationToken, progress);
 
-            // 12. If Exec commands were present, wait for terminal to become inactive
+            // 16. If Exec commands were present, wait for terminal to become inactive
             if (execCommands.Count > 0)
             {
                 progress?.Report("Waiting for commands to complete...");
@@ -175,21 +183,27 @@ public class VcrSession : IAsyncDisposable
             // Mark current frame as last activity to preserve EndBuffer frames
             _activityMonitor?.MarkCurrentFrameAsLastActivity();
 
-            // 13. Stop activity monitor
+            // 17. Stop activity monitor
             if (_activityMonitor != null)
             {
                 await _activityMonitor.StopAsync();
             }
 
-            // 14. Stop frame capture
+            // 18. Stop frame capture
             await _frameCapture.StopAsync();
 
-            // 15. Trim frames based on activity frame numbers
+            // 19. Trim frames based on activity frame numbers
             var frameTrimmer = new FrameTrimmer(_options, _state);
             var frameRange = frameTrimmer.CalculateFrameRange();
             if (frameRange.HasValue)
             {
                 progress?.Report("Trimming frames based on activity...");
+
+                // Store the trimmed frame range in options so encoders can access it
+                // These are the ORIGINAL frame numbers before renumbering
+                _options.TrimmedFirstFrame = frameRange.Value.firstFrame;
+                _options.TrimmedLastFrame = frameRange.Value.lastFrame;
+
                 frameTrimmer.TrimFrames(_frameStorage.FrameDirectory, frameRange.Value.firstFrame, frameRange.Value.lastFrame);
                 frameTrimmer.RenumberFrames(_frameStorage.FrameDirectory);
 
@@ -201,7 +215,7 @@ public class VcrSession : IAsyncDisposable
                 _state.ElapsedTime = TimeSpan.FromSeconds(remainingFrames / (double)_options.Framerate);
             }
 
-            // 16. Generate frames manifest with variable durations
+            // 20. Generate frames manifest with variable durations
             progress?.Report("Generating frames manifest...");
             var defaultFrameInterval = TimeSpan.FromSeconds(1.0 / _options.Framerate);
             _frameStorage.GenerateFramesManifest(defaultFrameInterval);
@@ -210,7 +224,7 @@ public class VcrSession : IAsyncDisposable
 
             // Calculate actual achieved framerate from recording
 
-            // 16. Render videos using frames manifest (only if output files were specified)
+            // 21. Render videos using frames manifest (only if output files were specified)
             var outputFiles = new List<string>();
             if (_options.OutputFiles.Count > 0)
             {

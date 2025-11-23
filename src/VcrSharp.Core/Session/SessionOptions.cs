@@ -221,6 +221,18 @@ public class SessionOptions
     /// </summary>
     public TimeSpan StartupDelay { get; set; } = TimeSpan.FromSeconds(3.5);
 
+    /// <summary>
+    /// Gets or sets the first frame number that was kept after trimming (original frame number before renumbering).
+    /// Null if no trimming was performed. Set by VcrSession after frame trimming.
+    /// </summary>
+    public int? TrimmedFirstFrame { get; set; }
+
+    /// <summary>
+    /// Gets or sets the last frame number that was kept after trimming (original frame number before renumbering).
+    /// Null if no trimming was performed. Set by VcrSession after frame trimming.
+    /// </summary>
+    public int? TrimmedLastFrame { get; set; }
+
     // Output
 
     /// <summary>

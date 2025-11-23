@@ -37,6 +37,26 @@ public class ActivityMonitor : IDisposable
     }
 
     /// <summary>
+    /// Initializes the baseline buffer content before starting monitoring.
+    /// This prevents pre-existing content from being detected as "first activity".
+    /// </summary>
+    public async Task InitializeBaselineAsync()
+    {
+        // Capture current buffer content as baseline
+        _lastBufferContent = await _terminalPage.GetBufferContentAsync();
+
+        var isEmpty = string.IsNullOrEmpty(_lastBufferContent);
+        var isWhitespaceOnly = !isEmpty && string.IsNullOrWhiteSpace(_lastBufferContent);
+        var length = _lastBufferContent.Length;
+        var contentPreview = _lastBufferContent.Length > 200
+            ? _lastBufferContent.Substring(0, 200).Replace("\n", "\\n").Replace("\r", "\\r") + "..."
+            : _lastBufferContent.Replace("\n", "\\n").Replace("\r", "\\r");
+
+        VcrLogger.Logger.Information("ActivityMonitor baseline initialized. Length: {Length}, IsEmpty: {IsEmpty}, IsWhitespaceOnly: {IsWhitespaceOnly}, Content: [{Preview}]",
+            length, isEmpty, isWhitespaceOnly, contentPreview);
+    }
+
+    /// <summary>
     /// Starts monitoring terminal buffer for changes.
     /// </summary>
     public void Start()
@@ -112,21 +132,39 @@ public class ActivityMonitor : IDisposable
                 if (currentContent != _lastBufferContent)
                 {
                     var currentTimestamp = _stopwatch.Elapsed;
-                    var contentPreview = currentContent.Length > 50 ? currentContent.Substring(0, 50).Replace("\n", "\\n") + "..." : currentContent.Replace("\n", "\\n");
 
-                    // Record first activity if this is the first change
+                    // Detailed content analysis
+                    var oldLength = _lastBufferContent.Length;
+                    var newLength = currentContent.Length;
+                    var oldIsEmpty = string.IsNullOrEmpty(_lastBufferContent);
+                    var newIsEmpty = string.IsNullOrEmpty(currentContent);
+                    var oldIsWhitespace = !oldIsEmpty && string.IsNullOrWhiteSpace(_lastBufferContent);
+                    var newIsWhitespace = !newIsEmpty && string.IsNullOrWhiteSpace(currentContent);
+
+                    var oldPreview = _lastBufferContent.Length > 100
+                        ? _lastBufferContent.Substring(0, 100).Replace("\n", "\\n").Replace("\r", "\\r") + "..."
+                        : _lastBufferContent.Replace("\n", "\\n").Replace("\r", "\\r");
+                    var newPreview = currentContent.Length > 100
+                        ? currentContent.Substring(0, 100).Replace("\n", "\\n").Replace("\r", "\\r") + "..."
+                        : currentContent.Replace("\n", "\\n").Replace("\r", "\\r");
+
+                    // Record first activity if this is the first change (after baseline initialization)
                     if (!_sessionState.FirstActivityTimestamp.HasValue)
                     {
                         _sessionState.FirstActivityTimestamp = currentTimestamp;
                         _sessionState.FirstActivityFrameNumber = _currentFrameNumber;
 
-                        VcrLogger.Logger.Information("FIRST ACTIVITY DETECTED: Frame #{FrameNumber}, Timestamp: {Timestamp}s, Content preview: {Preview}",
-                            _currentFrameNumber, currentTimestamp.TotalSeconds, contentPreview);
+                        VcrLogger.Logger.Information("FIRST ACTIVITY DETECTED at Frame #{FrameNumber}, Timestamp: {Timestamp}s",
+                            _currentFrameNumber, currentTimestamp.TotalSeconds);
+                        VcrLogger.Logger.Information("  OLD content: Length={OldLength}, Empty={OldEmpty}, Whitespace={OldWhitespace}, Content=[{OldPreview}]",
+                            oldLength, oldIsEmpty, oldIsWhitespace, oldPreview);
+                        VcrLogger.Logger.Information("  NEW content: Length={NewLength}, Empty={NewEmpty}, Whitespace={NewWhitespace}, Content=[{NewPreview}]",
+                            newLength, newIsEmpty, newIsWhitespace, newPreview);
                     }
                     else
                     {
-                        VcrLogger.Logger.Verbose("Activity detected: Frame #{FrameNumber}, Timestamp: {Timestamp}s",
-                            _currentFrameNumber, currentTimestamp.TotalSeconds);
+                        VcrLogger.Logger.Verbose("Activity detected: Frame #{FrameNumber}, Timestamp: {Timestamp}s, OldLen={OldLength}, NewLen={NewLength}",
+                            _currentFrameNumber, currentTimestamp.TotalSeconds, oldLength, newLength);
                     }
 
                     // Always update last activity timestamp and frame number

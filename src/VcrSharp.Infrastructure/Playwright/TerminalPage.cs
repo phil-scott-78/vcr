@@ -148,58 +148,10 @@ public class TerminalPage : ITerminalPage
     }
 
     /// <summary>
-    /// Waits for the shell prompt to appear, indicating the terminal is ready to accept commands.
-    /// This polls the terminal content until text appears on the last line (indicating a prompt).
-    /// </summary>
-    /// <param name="timeout">Maximum time to wait in milliseconds (default: 3000ms).</param>
-    /// <returns>A task representing the async operation.</returns>
-    public async Task WaitForPromptAsync(int timeout = 3000)
-    {
-        const int pollInterval = 100;
-        var maxAttempts = timeout / pollInterval;
-
-        for (var i = 0; i < maxAttempts; i++)
-        {
-            // Check if there's any text content on the last line of the terminal buffer
-            var hasPrompt = await _page.EvaluateAsync<bool>("""
-
-                                                            () => {
-                                                                if (!window.term || !window.term.buffer || !window.term.buffer.active) {
-                                                                    return false;
-                                                                }
-
-                                                                const buffer = window.term.buffer.active;
-                                                                const lastLineIndex = buffer.baseY + buffer.cursorY;
-                                                                const lastLine = buffer.getLine(lastLineIndex);
-
-                                                                if (!lastLine) {
-                                                                    return false;
-                                                                }
-
-                                                                // Check if last line has any non-whitespace content
-                                                                const lineText = lastLine.translateToString(true);
-                                                                return lineText.trim().length > 0;
-                                                            }
-
-                                                            """);
-
-            if (hasPrompt)
-            {
-                return;
-            }
-
-            await Task.Delay(pollInterval);
-        }
-
-        // Timeout is not fatal - continue anyway
-        // Some shells may not show a prompt immediately
-        VcrLogger.Logger.Warning("Timeout waiting for shell prompt after {Timeout}ms, continuing anyway", timeout);
-    }
-
-    /// <summary>
     /// Waits for the terminal buffer to contain actual non-empty content.
     /// This ensures that GetBufferContentAsync() will return meaningful data rather than empty strings.
-    /// Should be called after WaitForPromptAsync() and before starting recording to avoid capturing blank frames.
+    /// Should be called before starting recording to avoid capturing blank frames.
+    /// Works for both traditional shells (prompt appears in buffer) and TUI applications (content appears in buffer).
     /// </summary>
     /// <param name="timeout">Maximum time to wait in milliseconds (default: 1000ms).</param>
     /// <returns>A task representing the async operation.</returns>

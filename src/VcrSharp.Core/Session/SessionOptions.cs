@@ -191,6 +191,13 @@ public class SessionOptions
     public TimeSpan InactivityTimeout { get; set; } = TimeSpan.FromSeconds(5);
 
     /// <summary>
+    /// Gets or sets the maximum time to wait for terminal inactivity after Exec commands complete.
+    /// This is separate from WaitTimeout to allow long-running programs.
+    /// Use larger values for programs that take longer to complete execution.
+    /// </summary>
+    public TimeSpan MaxWaitForInactivity { get; set; } = TimeSpan.FromSeconds(120);
+
+    /// <summary>
     /// Gets or sets the maximum time to wait for first terminal activity.
     /// Recording will start when the first buffer change is detected or this timeout is reached.
     /// </summary>
@@ -234,10 +241,10 @@ public class SessionOptions
     {
         var errors = new List<string>();
 
-        if (Cols.HasValue && Cols.Value <= 0)
+        if (Cols is <= 0)
             errors.Add("Cols must be greater than 0");
 
-        if (Rows.HasValue && Rows.Value <= 0)
+        if (Rows is <= 0)
             errors.Add("Rows must be greater than 0");
 
         if (!Cols.HasValue && Width <= 0)
@@ -249,13 +256,13 @@ public class SessionOptions
         if (FontSize <= 0)
             errors.Add("FontSize must be greater than 0");
 
-        if (Framerate < 1 || Framerate > 120)
+        if (Framerate is < 1 or > 120)
             errors.Add("Framerate must be between 1 and 120");
 
         if (PlaybackSpeed <= 0)
             errors.Add("PlaybackSpeed must be greater than 0");
 
-        if (MaxColors < 1 || MaxColors > 256)
+        if (MaxColors is < 1 or > 256)
             errors.Add("MaxColors must be between 1 and 256");
 
         if (Padding < 0)
@@ -430,6 +437,12 @@ public class SessionOptions
                     options.InactivityTimeout = it;
                 else
                     options.InactivityTimeout = TimeSpan.Parse(value.ToString() ?? "5s");
+                break;
+            case "maxwaitforinactivity":
+                if (value is TimeSpan mwi)
+                    options.MaxWaitForInactivity = mwi;
+                else
+                    options.MaxWaitForInactivity = TimeSpan.Parse(value.ToString() ?? "120s");
                 break;
             case "startwaittimeout":
                 if (value is TimeSpan swt)

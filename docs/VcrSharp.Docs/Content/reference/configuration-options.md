@@ -376,6 +376,19 @@ Set WaitPattern /\$\s*$/      # Bash prompt
 Set InactivityTimeout 3s
 ```
 
+### MaxWaitForInactivity
+
+**Type:** Duration
+**Default:** `120s`
+**Description:** Maximum time to wait for terminal inactivity after `Exec` commands complete. This is separate from `WaitTimeout` to allow long-running programs to complete while keeping `Wait` command timeouts short. Use larger values for programs that take longer to execute.
+
+**Example:**
+
+```tape
+Set MaxWaitForInactivity 180s    # Wait up to 3 minutes for program completion
+Set MaxWaitForInactivity 60s     # Shorter timeout for faster programs
+```
+
 ### StartWaitTimeout
 
 **Type:** Duration
@@ -482,6 +495,7 @@ Set Shell "pwsh"
 Set TypingSpeed 60ms
 Set WaitTimeout 15s
 Set InactivityTimeout 5s
+Set MaxWaitForInactivity 120s
 Set StartBuffer 500ms
 Set EndBuffer 100ms
 Set StartupDelay 3.5s

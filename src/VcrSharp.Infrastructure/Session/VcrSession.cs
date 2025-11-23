@@ -120,11 +120,9 @@ public class VcrSession : IAsyncDisposable
             // 8. Click terminal to give it focus for interactive applications
             await _terminalPage.ClickTerminalAsync();
 
-            // 6b. Wait for shell prompt to appear (ensures shell is fully ready)
-            await _terminalPage.WaitForPromptAsync();
-
-            // 6c. Wait for buffer to contain actual content before starting recording
+            // 9. Wait for buffer to contain actual content before starting recording
             // This prevents capturing blank frames at the start
+            // Works for both traditional shells (prompt appears in buffer) and TUI apps (content appears in buffer)
             await _terminalPage.WaitForBufferContentAsync();
 
             // 7. Initialize CDP session for optimized frame capture
@@ -416,13 +414,14 @@ public class VcrSession : IAsyncDisposable
             throw new InvalidOperationException("Terminal page not initialized");
 
         var inactivityTimeout = _options.InactivityTimeout;
-        var maxWaitTime = _options.WaitTimeout;
+        var maxWaitTime = _options.MaxWaitForInactivity;
 
         // Monitor terminal buffer for changes
         string? lastContent = null;
         DateTime? lastChangeTime = null;
         var startTime = DateTime.UtcNow;
         const int pollIntervalMs = 50; // Check every 50ms (reduced from 200ms to minimize timing lag)
+        var iterationCount = 0;
 
         VcrLogger.Logger.Debug("Waiting for terminal inactivity (timeout: {InactivityTimeout}s, max wait: {MaxWait}s)",
             inactivityTimeout.TotalSeconds, maxWaitTime.TotalSeconds);
@@ -430,9 +429,12 @@ public class VcrSession : IAsyncDisposable
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            iterationCount++;
+
+            var elapsed = DateTime.UtcNow - startTime;
 
             // Check if we've exceeded maximum wait time
-            if (DateTime.UtcNow - startTime > maxWaitTime)
+            if (elapsed > maxWaitTime)
             {
                 VcrLogger.Logger.Debug("Maximum wait time reached, stopping inactivity wait");
                 break;

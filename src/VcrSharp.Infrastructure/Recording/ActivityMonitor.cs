@@ -112,7 +112,7 @@ public class ActivityMonitor : IDisposable
                 if (currentContent != _lastBufferContent)
                 {
                     var currentTimestamp = _stopwatch.Elapsed;
-                    var contentPreview = currentContent?.Length > 50 ? currentContent.Substring(0, 50).Replace("\n", "\\n") + "..." : currentContent?.Replace("\n", "\\n");
+                    var contentPreview = currentContent.Length > 50 ? currentContent.Substring(0, 50).Replace("\n", "\\n") + "..." : currentContent.Replace("\n", "\\n");
 
                     // Record first activity if this is the first change
                     if (!_sessionState.FirstActivityTimestamp.HasValue)
@@ -133,7 +133,7 @@ public class ActivityMonitor : IDisposable
                     _sessionState.LastActivityTimestamp = currentTimestamp;
                     _sessionState.LastActivityFrameNumber = _currentFrameNumber;
 
-                    _lastBufferContent = currentContent ?? string.Empty;
+                    _lastBufferContent = currentContent;
                 }
 
                 // Wait before next poll

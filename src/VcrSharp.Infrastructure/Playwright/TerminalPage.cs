@@ -167,13 +167,13 @@ public class TerminalPage : ITerminalPage
         {
             // Get current buffer content and check if it's non-empty
             var content = await GetBufferContentAsync();
-            var contentLength = content?.Length ?? 0;
-            var contentPreview = content?.Length > 50 ? content.Substring(0, 50) + "..." : content;
+            var contentLength = content.Length;
+            var contentPreview = content.Length > 50 ? content[..50] + "..." : content;
 
             if (!string.IsNullOrWhiteSpace(content))
             {
                 VcrLogger.Logger.Information("Buffer content detected after {ElapsedMs}ms (length: {Length}, preview: {Preview})",
-                    i * pollInterval, contentLength, contentPreview?.Replace("\n", "\\n"));
+                    i * pollInterval, contentLength, contentPreview.Replace("\n", "\\n"));
                 return;
             }
 

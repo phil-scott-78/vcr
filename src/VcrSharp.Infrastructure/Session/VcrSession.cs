@@ -421,7 +421,6 @@ public class VcrSession : IAsyncDisposable
         DateTime? lastChangeTime = null;
         var startTime = DateTime.UtcNow;
         const int pollIntervalMs = 50; // Check every 50ms (reduced from 200ms to minimize timing lag)
-        var iterationCount = 0;
 
         VcrLogger.Logger.Debug("Waiting for terminal inactivity (timeout: {InactivityTimeout}s, max wait: {MaxWait}s)",
             inactivityTimeout.TotalSeconds, maxWaitTime.TotalSeconds);
@@ -429,7 +428,6 @@ public class VcrSession : IAsyncDisposable
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            iterationCount++;
 
             var elapsed = DateTime.UtcNow - startTime;
 

@@ -174,15 +174,6 @@ public class VcrSession : IAsyncDisposable
                 await WaitForInactivityAsync(cancellationToken);
             }
 
-            // Apply EndBuffer delay
-            if (_options.EndBuffer > TimeSpan.Zero)
-            {
-                await Task.Delay(_options.EndBuffer, cancellationToken);
-            }
-
-            // Mark current frame as last activity to preserve EndBuffer frames
-            _activityMonitor?.MarkCurrentFrameAsLastActivity();
-
             // 17. Stop activity monitor
             if (_activityMonitor != null)
             {

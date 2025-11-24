@@ -112,6 +112,22 @@ public class ActivityMonitor : IDisposable
     }
 
     /// <summary>
+    /// Checks if the content change includes meaningful (non-whitespace) differences.
+    /// Returns false if only whitespace was added/removed/changed.
+    /// </summary>
+    /// <param name="oldContent">Previous buffer content.</param>
+    /// <param name="newContent">Current buffer content.</param>
+    /// <returns>True if meaningful content changed, false if only whitespace changed.</returns>
+    private static bool HasMeaningfulContentChange(string oldContent, string newContent)
+    {
+        // Extract non-whitespace characters for comparison
+        var oldMeaningful = new string(oldContent.Where(c => !char.IsWhiteSpace(c)).ToArray());
+        var newMeaningful = new string(newContent.Where(c => !char.IsWhiteSpace(c)).ToArray());
+
+        return oldMeaningful != newMeaningful;
+    }
+
+    /// <summary>
     /// Main monitoring loop that polls the terminal buffer for changes.
     /// </summary>
     private async Task MonitorLoopAsync()
@@ -133,32 +149,33 @@ public class ActivityMonitor : IDisposable
                 {
                     var currentTimestamp = _stopwatch.Elapsed;
 
-                    // Detailed content analysis
-                    var oldLength = _lastBufferContent.Length;
-                    var newLength = currentContent.Length;
-                    var oldIsEmpty = string.IsNullOrEmpty(_lastBufferContent);
-                    var newIsEmpty = string.IsNullOrEmpty(currentContent);
-                    var oldIsWhitespace = !oldIsEmpty && string.IsNullOrWhiteSpace(_lastBufferContent);
-                    var newIsWhitespace = !newIsEmpty && string.IsNullOrWhiteSpace(currentContent);
+                    // Check if this is a meaningful content change (not just whitespace)
+                    var hasMeaningfulChange = HasMeaningfulContentChange(_lastBufferContent, currentContent);
 
-                    var oldPreview = _lastBufferContent.Length > 100
-                        ? _lastBufferContent.Substring(0, 100).Replace("\n", "\\n").Replace("\r", "\\r") + "..."
-                        : _lastBufferContent.Replace("\n", "\\n").Replace("\r", "\\r");
-                    var newPreview = currentContent.Length > 100
-                        ? currentContent.Substring(0, 100).Replace("\n", "\\n").Replace("\r", "\\r") + "..."
-                        : currentContent.Replace("\n", "\\n").Replace("\r", "\\r");
-
-                    // Record first activity if this is the first change (after baseline initialization)
-                    if (!_sessionState.FirstActivityTimestamp.HasValue)
+                    if (hasMeaningfulChange)
                     {
-                        _sessionState.FirstActivityTimestamp = currentTimestamp;
-                        _sessionState.FirstActivityFrameNumber = _currentFrameNumber;
+                        // Record first activity if this is the first change (after baseline initialization)
+                        if (!_sessionState.FirstActivityTimestamp.HasValue)
+                        {
+                            _sessionState.FirstActivityTimestamp = currentTimestamp;
+                            _sessionState.FirstActivityFrameNumber = _currentFrameNumber;
+                        }
+
+                        // Update last activity timestamp and frame number
+                        _sessionState.LastActivityTimestamp = currentTimestamp;
+                        _sessionState.LastActivityFrameNumber = _currentFrameNumber;
+
+                        VcrLogger.Logger.Verbose("Activity detected at frame {FrameNumber} (timestamp: {Timestamp}s)",
+                            _currentFrameNumber, currentTimestamp.TotalSeconds);
+                    }
+                    else
+                    {
+                        // Content changed but only whitespace - don't count as activity
+                        VcrLogger.Logger.Verbose("Whitespace-only change detected at frame {FrameNumber} - ignoring for activity tracking",
+                            _currentFrameNumber);
                     }
 
-                    // Always update last activity timestamp and frame number
-                    _sessionState.LastActivityTimestamp = currentTimestamp;
-                    _sessionState.LastActivityFrameNumber = _currentFrameNumber;
-
+                    // Always update buffer content to avoid repeated checks
                     _lastBufferContent = currentContent;
                 }
 

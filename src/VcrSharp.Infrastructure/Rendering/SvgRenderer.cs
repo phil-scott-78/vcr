@@ -331,7 +331,7 @@ public class SvgRenderer
     /// </summary>
     private async Task RenderLineAsync(XmlWriter xml, TerminalContent content, int row, bool isCursorIdle)
     {
-        var y = (row + 1) * _charHeight; // Baseline position
+        var y = row * _charHeight + _charHeight * 0.85; // Baseline position
 
         // Group consecutive cells with same styling
         var runs = BuildStyleRuns(content.Cells[row], row, content.CursorY, content.CursorX, isCursorIdle);
@@ -453,8 +453,8 @@ public class SvgRenderer
             if (!_options.DisableCursor && run is { IsCursor: true, IsCursorIdle: false })
             {
                 var x = col * _charWidth;
-                // Align cursor with text visual bounds (text baseline is at (row + 1) * _charHeight)
-                var y = (row + 1) * _charHeight - _charHeight * 0.85;
+                // Align cursor with text visual bounds
+                var y = row * _charHeight;
                 var width = _charWidth; // Cursor is always 1 character wide
 
                 await xml.WriteStartElementAsync(null, "rect", null);
@@ -482,8 +482,8 @@ public class SvgRenderer
     private async Task RenderBackgroundRectAsync(XmlWriter xml, int row, int startCol, int length, string color)
     {
         var x = startCol * _charWidth;
-        // Align background with text visual bounds (text baseline is at (row + 1) * _charHeight)
-        var y = (row + 1) * _charHeight - _charHeight * 0.85;
+        // Align background with text visual bounds
+        var y = row * _charHeight;
         var width = length * _charWidth;
 
         await xml.WriteStartElementAsync(null, "rect", null);

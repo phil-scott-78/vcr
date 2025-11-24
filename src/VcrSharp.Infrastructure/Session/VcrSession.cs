@@ -125,10 +125,6 @@ public class VcrSession : IAsyncDisposable
             // Works for both traditional shells (prompt appears in buffer) and TUI apps (content appears in buffer)
             await _terminalPage.WaitForBufferContentAsync();
 
-            // Wait additional time for Exec commands to produce meaningful output
-            // This prevents detecting shell prompt or partial output as "first activity"
-            await Task.Delay(200);
-
             // 7. Initialize CDP session for optimized frame capture
             await _terminalPage.InitializeCdpSessionAsync();
 
@@ -137,12 +133,9 @@ public class VcrSession : IAsyncDisposable
 
             // 9. Create a shared stopwatch for timing synchronization between FrameCapture and ActivityMonitor
             var sharedStopwatch = new Stopwatch();
-            VcrLogger.Logger.Debug("Created shared stopwatch for frame timing (hash: {StopwatchHashCode})",
-                sharedStopwatch.GetHashCode());
 
             // 10. Create activity monitor with the shared stopwatch
             _activityMonitor = new ActivityMonitor(_terminalPage, _state, sharedStopwatch);
-            VcrLogger.Logger.Debug("Initialized ActivityMonitor with shared stopwatch");
 
             // Initialize baseline to capture current buffer content before monitoring starts
             // This ensures only NEW content (appearing after recording starts) is detected as "first activity"
@@ -150,15 +143,11 @@ public class VcrSession : IAsyncDisposable
 
             // 11. Create FrameCapture with ActivityMonitor and shared stopwatch
             _frameCapture = new FrameCapture(_terminalPage, _options, _state, _frameStorage, _activityMonitor, sharedStopwatch);
-            VcrLogger.Logger.Debug("Initialized FrameCapture with ActivityMonitor and shared stopwatch (hash: {StopwatchHashCode})",
-                _frameCapture.Stopwatch.GetHashCode());
 
             // 12. Start activity monitor first (begins polling for activity)
             _activityMonitor.Start();
-            VcrLogger.Logger.Debug("ActivityMonitor started, ready to detect first activity");
 
             // 13. Start frame capture loop (stopwatch starts here)
-            VcrLogger.Logger.Debug("Starting frame capture (stopwatch will start now)");
             await _frameCapture.StartAsync(cancellationToken);
             VcrLogger.Logger.Debug("Frame capture started, recording in progress");
 

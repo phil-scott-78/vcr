@@ -153,18 +153,6 @@ public class ActivityMonitor : IDisposable
                     {
                         _sessionState.FirstActivityTimestamp = currentTimestamp;
                         _sessionState.FirstActivityFrameNumber = _currentFrameNumber;
-
-                        VcrLogger.Logger.Information("FIRST ACTIVITY DETECTED at Frame #{FrameNumber}, Timestamp: {Timestamp}s",
-                            _currentFrameNumber, currentTimestamp.TotalSeconds);
-                        VcrLogger.Logger.Information("  OLD content: Length={OldLength}, Empty={OldEmpty}, Whitespace={OldWhitespace}, Content=[{OldPreview}]",
-                            oldLength, oldIsEmpty, oldIsWhitespace, oldPreview);
-                        VcrLogger.Logger.Information("  NEW content: Length={NewLength}, Empty={NewEmpty}, Whitespace={NewWhitespace}, Content=[{NewPreview}]",
-                            newLength, newIsEmpty, newIsWhitespace, newPreview);
-                    }
-                    else
-                    {
-                        VcrLogger.Logger.Verbose("Activity detected: Frame #{FrameNumber}, Timestamp: {Timestamp}s, OldLen={OldLength}, NewLen={NewLength}",
-                            _currentFrameNumber, currentTimestamp.TotalSeconds, oldLength, newLength);
                     }
 
                     // Always update last activity timestamp and frame number
@@ -180,7 +168,6 @@ public class ActivityMonitor : IDisposable
             catch (OperationCanceledException)
             {
                 // Exit gracefully
-                VcrLogger.Logger.Debug("ActivityMonitor loop cancelled gracefully");
                 break;
             }
             catch (Exception ex)

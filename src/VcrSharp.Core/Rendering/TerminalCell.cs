@@ -49,4 +49,12 @@ public sealed class TerminalCell
     /// </summary>
     [JsonPropertyName("isCursor")]
     public bool IsCursor { get; set; }
+
+    /// <summary>
+    /// Gets or sets the display width of this cell in terminal columns.
+    /// Normal characters have width 1, wide characters (emojis, CJK, certain symbols) have width 2.
+    /// Continuation cells (second column of a wide character) have width 0.
+    /// </summary>
+    [JsonPropertyName("width")]
+    public int Width { get; set; } = 1;
 }

@@ -8,12 +8,14 @@ using VcrSharp.Infrastructure.Recording;
 namespace VcrSharp.Infrastructure.Rendering.Encoders;
 
 /// <summary>
-/// Encoder that renders SVG output with text-based animation.
-/// Follows AgentStation/vHS approach: text rendered as SVG elements, consecutive frame deduplication, CSS animations.
+/// Legacy SVG encoder using CSS keyframe animations with filmstrip approach.
+/// Follows AgentStation/VHS approach: text rendered as SVG elements, consecutive frame deduplication, CSS animations.
 /// See - https://github.com/agentstation/vhs/blob/main/svg.go
 ///
 /// Uses consecutive frame deduplication (not global) to preserve animation quality while reducing file size.
-/// This works surprisingly well, but still rough around the edges especially with the cursor.
+/// Each unique frame is rendered side-by-side, and CSS translateX animation slides between them.
+///
+/// Use ".legacy.svg" extension to select this encoder. The default ".svg" uses SMIL animations.
 /// </summary>
 public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderBase(options, storage)
 {
@@ -24,7 +26,7 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
 
     public override bool SupportsPath(string outputPath)
     {
-        return Path.GetExtension(outputPath).Equals(".svg", StringComparison.OrdinalIgnoreCase);
+        return outputPath.EndsWith(".legacy.svg", StringComparison.OrdinalIgnoreCase);
     }
 
     public override async Task<string> RenderAsync(string outputPath, IProgress<string>? progress = null, CancellationToken cancellationToken = default)

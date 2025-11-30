@@ -1044,6 +1044,9 @@ public class TerminalPage : ITerminalPage
 
                                     const isCursor = (row === cursorY && col === cursorX);
 
+                                    // Get cell width (1 for normal, 2 for wide chars like emojis/CJK, 0 for continuation)
+                                    const cellWidth = cell.getWidth ? cell.getWidth() : 1;
+
                                     rowCells.push({
                                         character: char || ' ',
                                         foregroundColor: fgColor,
@@ -1051,7 +1054,8 @@ public class TerminalPage : ITerminalPage
                                         isBold: isBold,
                                         isItalic: isItalic,
                                         isUnderline: isUnderline,
-                                        isCursor: isCursor
+                                        isCursor: isCursor,
+                                        width: cellWidth
                                     });
                                 }
                             }

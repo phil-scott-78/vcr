@@ -111,6 +111,7 @@ public static class TapeTokenizer
             .Match(Span.EqualTo("Paste"), TapeToken.Paste, requireDelimiters: true)
             .Match(Span.EqualTo("Env"), TapeToken.Env, requireDelimiters: true)
             .Match(Span.EqualTo("Exec"), TapeToken.Exec, requireDelimiters: true)
+            .Match(Span.EqualTo("Wait"), TapeToken.Wait, requireDelimiters: true)
 
             // Keywords - Modifiers (before Identifier so "Ctrl+C" tokens work)
             // Parser will accept these as identifiers when needed (e.g., "CtrlTimeout" as identifier)
@@ -126,9 +127,6 @@ public static class TapeTokenizer
             // Command keywords above still work because they have requireDelimiters: true
             // Modifiers and booleans above get priority but parser will accept identifiers where needed
             .Match(Identifier, TapeToken.Identifier)
-
-            // Wait command (no delimiters needed, and after Identifier so "WaitTimeout" is not split)
-            .Match(Span.EqualTo("Wait"), TapeToken.Wait)
 
             // Keywords - Special keys (after Identifier so compound words like "EndBuffer" match as Identifier first)
             .Match(Span.EqualTo("Enter"), TapeToken.Enter)

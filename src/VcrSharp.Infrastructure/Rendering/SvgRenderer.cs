@@ -347,15 +347,15 @@ public class SvgRenderer
         // Render backgrounds first (if any)
         await RenderBackgroundsAsync(xml, runs, row);
 
-        // Calculate total text length for this line
-        var totalChars = runs.Sum(r => r.Text.Length);
-        var textLength = totalChars * _charWidth;
+        // Calculate total text length using cell widths (accounts for wide characters)
+        var totalCellWidth = runs.Sum(r => r.CellWidth);
+        var textLength = totalCellWidth * _charWidth;
 
         // Render text with exact length enforcement to prevent drift
         await xml.WriteStartElementAsync(null, "text", null);
         await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
         await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(textLength));
-        await xml.WriteAttributeStringAsync(null, "lengthAdjust", null, "spacing");
+        await xml.WriteAttributeStringAsync(null, "lengthAdjust", null, "spacingAndGlyphs");
 
         for (var i = 0; i < runs.Count; i++)
         {
@@ -407,13 +407,14 @@ public class SvgRenderer
     /// <summary>
     /// Renders background rectangles for cells with background colors or cursor.
     /// Consolidates consecutive cells with the same background color into single wider rectangles.
+    /// Uses cell widths for proper positioning with wide characters.
     /// </summary>
     private async Task RenderBackgroundsAsync(XmlWriter xml, List<StyleRun> runs, int row)
     {
-        var col = 0;
+        var cellCol = 0; // Track position in cell widths, not character count
         string? lastBgColor = null;
         var bgStartCol = 0;
-        var bgLength = 0;
+        var bgCellWidth = 0;
 
         foreach (var run in runs)
         {
@@ -423,20 +424,20 @@ public class SvgRenderer
                 if (run.BackgroundColor == lastBgColor)
                 {
                     // Same background color - extend the current run
-                    bgLength += run.Text.Length;
+                    bgCellWidth += run.CellWidth;
                 }
                 else
                 {
                     // Different background color - render accumulated background if any
                     if (lastBgColor != null)
                     {
-                        await RenderBackgroundRectAsync(xml, row, bgStartCol, bgLength, lastBgColor);
+                        await RenderBackgroundRectAsync(xml, row, bgStartCol, bgCellWidth, lastBgColor);
                     }
 
                     // Start new background run
                     lastBgColor = run.BackgroundColor;
-                    bgStartCol = col;
-                    bgLength = run.Text.Length;
+                    bgStartCol = cellCol;
+                    bgCellWidth = run.CellWidth;
                 }
             }
             else
@@ -444,7 +445,7 @@ public class SvgRenderer
                 // No background - render accumulated background if any
                 if (lastBgColor != null)
                 {
-                    await RenderBackgroundRectAsync(xml, row, bgStartCol, bgLength, lastBgColor);
+                    await RenderBackgroundRectAsync(xml, row, bgStartCol, bgCellWidth, lastBgColor);
                     lastBgColor = null;
                 }
             }
@@ -452,9 +453,9 @@ public class SvgRenderer
             // Render cursor background (only when cursor is active/visible and not disabled)
             if (!_options.DisableCursor && run is { IsCursor: true, IsCursorIdle: false })
             {
-                var x = col * _charWidth;
+                var x = cellCol * _charWidth;
                 var y = row * _charHeight; // Top edge position (aligned with text-before-edge)
-                var width = _charWidth; // Cursor is always 1 character wide
+                var width = _charWidth; // Cursor is always 1 cell wide
 
                 await xml.WriteStartElementAsync(null, "rect", null);
                 await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
@@ -465,24 +466,24 @@ public class SvgRenderer
                 await xml.WriteEndElementAsync();
             }
 
-            col += run.Text.Length;
+            cellCol += run.CellWidth; // Advance by cell width, not character count
         }
 
         // Render any remaining background at end of line
         if (lastBgColor != null)
         {
-            await RenderBackgroundRectAsync(xml, row, bgStartCol, bgLength, lastBgColor);
+            await RenderBackgroundRectAsync(xml, row, bgStartCol, bgCellWidth, lastBgColor);
         }
     }
 
     /// <summary>
-    /// Renders a background rectangle for a range of characters.
+    /// Renders a background rectangle for a range of cells.
     /// </summary>
-    private async Task RenderBackgroundRectAsync(XmlWriter xml, int row, int startCol, int length, string color)
+    private async Task RenderBackgroundRectAsync(XmlWriter xml, int row, int startCol, int cellWidth, string color)
     {
         var x = startCol * _charWidth;
         var y = row * _charHeight; // Top edge position (aligned with text-before-edge)
-        var width = length * _charWidth;
+        var width = cellWidth * _charWidth;
 
         await xml.WriteStartElementAsync(null, "rect", null);
         await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
@@ -495,6 +496,8 @@ public class SvgRenderer
 
     /// <summary>
     /// Builds style runs from a row of cells.
+    /// Skips continuation cells (width 0) which are placeholders after wide characters.
+    /// Tracks cell width for proper SVG text positioning.
     /// </summary>
     private static List<StyleRun> BuildStyleRuns(TerminalCell[] cells, int row, int cursorY, int cursorX, bool isCursorIdle)
     {
@@ -504,6 +507,11 @@ public class SvgRenderer
         for (var col = 0; col < cells.Length; col++)
         {
             var cell = cells[col];
+
+            // Skip continuation cells (width 0) - these are placeholders after wide characters
+            if (cell.Width == 0)
+                continue;
+
             var isCursor = row == cursorY && col == cursorX;
 
             // Check if we need to start a new run
@@ -536,6 +544,7 @@ public class SvgRenderer
             }
 
             currentRun.Text += cell.Character;
+            currentRun.CellWidth += cell.Width; // Track actual cell width (1 or 2)
         }
 
         if (currentRun.Text.Length > 0)
@@ -543,10 +552,14 @@ public class SvgRenderer
             runs.Add(currentRun);
         }
 
-        // Trim trailing spaces from last run
+        // Trim trailing spaces from last run (and adjust cell width accordingly)
         if (runs.Count > 0)
         {
-            runs[^1].Text = runs[^1].Text.TrimEnd();
+            var lastRun = runs[^1];
+            var originalLength = lastRun.Text.Length;
+            lastRun.Text = lastRun.Text.TrimEnd();
+            // Spaces are always width 1, so subtract the difference
+            lastRun.CellWidth -= (originalLength - lastRun.Text.Length);
         }
 
         // Remove trailing empty runs to reduce file size
@@ -705,6 +718,10 @@ public class SvgRenderer
         public bool IsUnderline { get; set; }
         public bool IsCursor { get; set; }
         public bool IsCursorIdle { get; set; }
+        /// <summary>
+        /// Total cell width of this run (accounts for wide characters taking 2 cells).
+        /// </summary>
+        public int CellWidth { get; set; }
     }
 }
 

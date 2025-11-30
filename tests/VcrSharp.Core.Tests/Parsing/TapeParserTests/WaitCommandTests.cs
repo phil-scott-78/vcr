@@ -129,4 +129,72 @@ public class WaitCommandTests
         cmd.Timeout!.Value.TotalMilliseconds.ShouldBe(10);
         cmd.Pattern!.ToString().ShouldBe("pattern");
     }
+
+    [Fact]
+    public void ParseTape_WaitWithMultipleSpacesBeforePattern_ParsesCorrectly()
+    {
+        // Arrange - regression test for spacing issue
+        var parser = new TapeParser();
+        var source = "Wait    /pattern/";
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        var cmd = commands[0].ShouldBeOfType<WaitCommand>();
+        cmd.Pattern!.ToString().ShouldBe("pattern");
+    }
+
+    [Fact]
+    public void ParseTape_WaitWithPatternContainingSpaces_ParsesCorrectly()
+    {
+        // Arrange - regression test for patterns with spaces
+        var parser = new TapeParser();
+        var source = "Wait /size pizza/";
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        var cmd = commands[0].ShouldBeOfType<WaitCommand>();
+        cmd.Pattern!.ToString().ShouldBe("size pizza");
+    }
+
+    [Fact]
+    public void ParseTape_WaitWithMultipleSpacesAndPatternWithSpaces_ParsesCorrectly()
+    {
+        // Arrange - regression test for the originally reported bug
+        var parser = new TapeParser();
+        var source = "Wait    /size pizza/";
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        var cmd = commands[0].ShouldBeOfType<WaitCommand>();
+        cmd.Pattern!.ToString().ShouldBe("size pizza");
+    }
+
+    [Theory]
+    [InlineData("Wait")]
+    [InlineData("Wait            /World/")]
+    [InlineData("Wait+Screen     /World/")]
+    [InlineData("Wait+Line       /World/")]
+    [InlineData("Wait@10ms       /World/")]
+    [InlineData("Wait+Line@10ms  /World/")]
+    public void ParseTape_WaitVariations_ParsesWithoutError(string source)
+    {
+        // Arrange
+        var parser = new TapeParser();
+
+        // Act
+        var commands = parser.ParseTape(source);
+
+        // Assert
+        commands.Count.ShouldBe(1);
+        commands[0].ShouldBeOfType<WaitCommand>();
+    }
 }

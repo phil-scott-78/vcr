@@ -357,24 +357,28 @@ public class SmilSvgRenderer
             cellCol += run.CellWidth;
         }
 
-        // Render text with explicit x positioning per tspan (prevents drift from wide characters)
-        // Note: dy="0.9em" provides cross-browser hanging baseline behavior since Safari
+        // Render each run as a separate <text> element with explicit positioning and textLength.
+        // Using <text> instead of <tspan> because Firefox supports textLength on <text> but not <tspan>.
+        // y offset (0.9em) is pre-calculated for cross-browser baseline handling since Safari
         // doesn't properly support dominant-baseline:hanging and clips text at y=0
-        await xml.WriteStartElementAsync(null, "text", null);
-        await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
-        await xml.WriteAttributeStringAsync(null, "dy", null, "0.9em");
-
+        var yWithBaseline = y + _options.FontSize * 0.9;
         var cumulativeCellWidth = 0;
-        for (var i = 0; i < runs.Count; i++)
+        foreach (var run in runs)
         {
-            var run = runs[i];
-            await xml.WriteStartElementAsync(null, "tspan", null);
-
-            // Every tspan gets explicit x position and textLength based on cell width
             var x = cumulativeCellWidth * _charWidth;
-            await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
             var runLength = run.CellWidth * _charWidth;
+
+            await xml.WriteStartElementAsync(null, "text", null);
+            await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
+            await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(yWithBaseline));
             await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(runLength));
+
+            // Box-drawing and block characters need spacingAndGlyphs to connect seamlessly.
+            // Regular text is fine with default spacing adjustment.
+            if (run.Text.Any(c => (c >= 0x2500 && c <= 0x257F) || (c >= 0x2580 && c <= 0x259F)))
+            {
+                await xml.WriteAttributeStringAsync(null, "lengthAdjust", null, "spacingAndGlyphs");
+            }
 
             var classes = BuildCssClasses(run);
             if (!string.IsNullOrEmpty(classes))
@@ -395,12 +399,10 @@ public class SmilSvgRenderer
             }
 
             await xml.WriteStringAsync(run.Text);
-            await xml.WriteEndElementAsync(); // tspan
+            await xml.WriteEndElementAsync(); // text
 
             cumulativeCellWidth += run.CellWidth;
         }
-
-        await xml.WriteEndElementAsync(); // text
     }
 
     /// <summary>
@@ -482,9 +484,8 @@ public class SmilSvgRenderer
 
         var css = new StringBuilder();
 
-        // Base text styles
-        // Note: Using 'hanging' instead of 'text-before-edge' for better Safari compatibility
-        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:hanging}}");
+        // Base text styles (baseline is pre-calculated into y position for cross-browser compatibility)
+        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none}}");
         css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
 
         // ANSI color classes

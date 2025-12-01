@@ -21,7 +21,7 @@ public static class VcrLogger
     /// <summary>
     /// Configures the global logger with the specified verbosity.
     /// </summary>
-    /// <param name="verbose">If true, enables Debug-level logging. Otherwise, uses Information level.</param>
+    /// <param name="verbose">If true, enables file logging with Debug-level output. Otherwise, creates a silent logger.</param>
     public static void Configure(bool verbose = false)
     {
         if (_isConfigured)
@@ -29,35 +29,35 @@ public static class VcrLogger
             return;
         }
 
-        var logLevel = verbose ? LogEventLevel.Debug : LogEventLevel.Information;
-
-        // Get current working directory for log files
-        var logDirectory = Path.Combine(Directory.GetCurrentDirectory(), "vcrsharp-logs");
-        Directory.CreateDirectory(logDirectory);
-
-        var logFilePath = Path.Combine(logDirectory, $"vcrsharp-{DateTime.Now:yyyyMMdd}.log");
-
-        _logger = new LoggerConfiguration()
-            .MinimumLevel.Is(logLevel)
-            .WriteTo.File(
-                logFilePath,
-                restrictedToMinimumLevel: LogEventLevel.Debug, // Always log debug+ to file
-                rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 7,
-                outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-            .CreateLogger();
-
-        _isConfigured = true;
-
-        // Log the configuration
         if (verbose)
         {
+            // Get current working directory for log files
+            var logDirectory = Path.Combine(Directory.GetCurrentDirectory(), "vcrsharp-logs");
+            Directory.CreateDirectory(logDirectory);
+
+            var logFilePath = Path.Combine(logDirectory, $"vcrsharp-{DateTime.Now:yyyyMMdd}.log");
+
+            _logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.File(
+                    logFilePath,
+                    restrictedToMinimumLevel: LogEventLevel.Debug,
+                    rollingInterval: RollingInterval.Day,
+                    retainedFileCountLimit: 7,
+                    outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+                .CreateLogger();
+
             _logger.Debug("Verbose logging enabled. Log file: {LogFile}", logFilePath);
         }
         else
         {
-            _logger.Information("Logging configured. Log file: {LogFile}", logFilePath);
+            // Create a silent logger (no sinks) when verbose is not enabled
+            _logger = new LoggerConfiguration()
+                .MinimumLevel.Fatal() // Effectively disables all logging
+                .CreateLogger();
         }
+
+        _isConfigured = true;
     }
 
     /// <summary>

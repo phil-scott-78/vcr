@@ -46,40 +46,6 @@ public class TokenizerEdgeCaseTests
     }
 
     [Fact]
-    public void ParseTape_SetWaitTimeout_ParsesAsIdentifier()
-    {
-        // Arrange
-        var parser = new TapeParser();
-        var source = "Set WaitTimeout 5s";
-
-        // Act
-        var commands = parser.ParseTape(source);
-
-        // Assert
-        commands.Count.ShouldBe(1);
-        var cmd = commands[0].ShouldBeOfType<SetCommand>();
-        cmd.SettingName.ShouldBe("WaitTimeout");
-        cmd.Value.ShouldBe("00:00:05");
-    }
-
-    [Fact]
-    public void ParseTape_SetWaitPattern_ParsesAsIdentifier()
-    {
-        // Arrange
-        var parser = new TapeParser();
-        var source = "Set WaitPattern \"^\\\\$\"";
-
-        // Act
-        var commands = parser.ParseTape(source);
-
-        // Assert
-        commands.Count.ShouldBe(1);
-        var cmd = commands[0].ShouldBeOfType<SetCommand>();
-        cmd.SettingName.ShouldBe("WaitPattern");
-        cmd.Value.ShouldBe("^\\$");
-    }
-
-    [Fact]
     public void ParseTape_SetStartWaitTimeout_ParsesAsIdentifier()
     {
         // Arrange

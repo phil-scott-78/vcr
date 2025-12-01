@@ -74,6 +74,17 @@ public class SmilSvgRenderer
         // Styles (minimal - no keyframe animations needed)
         await WriteStylesAsync(xml);
 
+        // Clip path definition for terminal content area (Safari has issues with nested SVGs)
+        await xml.WriteStartElementAsync(null, "defs", null);
+        await xml.WriteStartElementAsync(null, "clipPath", null);
+        await xml.WriteAttributeStringAsync(null, "id", null, "terminal-clip");
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "width", null, _frameWidth.ToString(CultureInfo.InvariantCulture));
+        await xml.WriteAttributeStringAsync(null, "height", null, _frameHeight.ToString(CultureInfo.InvariantCulture));
+        await xml.WriteEndElementAsync(); // rect
+        await xml.WriteEndElementAsync(); // clipPath
+        await xml.WriteEndElementAsync(); // defs
+
         // Background
         if (!_options.TransparentBackground)
         {
@@ -84,13 +95,10 @@ public class SmilSvgRenderer
             await xml.WriteEndElementAsync();
         }
 
-        // Inner SVG for terminal content
-        await xml.WriteStartElementAsync(null, "svg", null);
-        await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(_options.Padding));
-        await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(_options.Padding));
-        await xml.WriteAttributeStringAsync(null, "width", null, _frameWidth.ToString(CultureInfo.InvariantCulture));
-        await xml.WriteAttributeStringAsync(null, "height", null, _frameHeight.ToString(CultureInfo.InvariantCulture));
-        await xml.WriteAttributeStringAsync(null, "viewBox", null, $"0 0 {_frameWidth} {_frameHeight}");
+        // Terminal content group (replaces nested SVG for better Safari compatibility)
+        await xml.WriteStartElementAsync(null, "g", null);
+        await xml.WriteAttributeStringAsync(null, "transform", null, $"translate({FormatNumber(_options.Padding)},{FormatNumber(_options.Padding)})");
+        await xml.WriteAttributeStringAsync(null, "clip-path", null, "url(#terminal-clip)");
 
         // Content group
         await xml.WriteStartElementAsync(null, "g", null);
@@ -105,8 +113,8 @@ public class SmilSvgRenderer
             await RenderCursorWithSmilAsync(xml, cursorTimeline, totalDurationSeconds);
         }
 
-        await xml.WriteEndElementAsync(); // g
-        await xml.WriteEndElementAsync(); // svg inner
+        await xml.WriteEndElementAsync(); // g (content)
+        await xml.WriteEndElementAsync(); // g (terminal)
         await xml.WriteEndElementAsync(); // svg outer
 
         await xml.FlushAsync();
@@ -304,12 +312,12 @@ public class SmilSvgRenderer
             }
         }
 
-        // Ensure we end with a keyTime at or near 1.0 for smooth looping
-        // If the last value is "visible" and extends to the end, we need to add hidden at the very end
-        // so the loop restarts cleanly (unless it should stay visible at loop point)
+        // Safari requires keyTimes to explicitly end at 1.0 for proper looping.
+        // Add a final keyframe at 1.0 with the same value as the last keyframe.
         if (keyTimes.Count > 0 && keyTimes[^1] < 0.999)
         {
-            // Animation ends before totalDuration, already handled
+            values.Add(values[^1]); // Repeat last visibility state
+            keyTimes.Add(1.0);
         }
 
         // Format output
@@ -350,8 +358,11 @@ public class SmilSvgRenderer
         }
 
         // Render text with explicit x positioning per tspan (prevents drift from wide characters)
+        // Note: dy="0.9em" provides cross-browser hanging baseline behavior since Safari
+        // doesn't properly support dominant-baseline:hanging and clips text at y=0
         await xml.WriteStartElementAsync(null, "text", null);
         await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
+        await xml.WriteAttributeStringAsync(null, "dy", null, "0.9em");
 
         var cumulativeCellWidth = 0;
         for (var i = 0; i < runs.Count; i++)
@@ -413,8 +424,22 @@ public class SmilSvgRenderer
         // X position animation
         if (keyframes.Count > 1)
         {
-            var xValues = string.Join(";", keyframes.Select(k => FormatNumber(k.X * _charWidth)));
-            var keyTimes = string.Join(";", keyframes.Select(k => FormatTime(k.Timestamp / totalDuration)));
+            // Build keyTimes list, ensuring it ends at 1.0 for Safari looping compatibility
+            var keyTimesList = keyframes.Select(k => k.Timestamp / totalDuration).ToList();
+            var xValuesList = keyframes.Select(k => FormatNumber(k.X * _charWidth)).ToList();
+            var yValuesList = keyframes.Select(k => FormatNumber(k.Y * _charHeight)).ToList();
+
+            // Safari requires keyTimes to explicitly end at 1.0 for proper looping
+            if (keyTimesList[^1] < 0.999)
+            {
+                keyTimesList.Add(1.0);
+                xValuesList.Add(xValuesList[^1]); // Repeat last position
+                yValuesList.Add(yValuesList[^1]);
+            }
+
+            var keyTimes = string.Join(";", keyTimesList.Select(FormatTime));
+            var xValues = string.Join(";", xValuesList);
+            var yValues = string.Join(";", yValuesList);
 
             await xml.WriteStartElementAsync(null, "animate", null);
             await xml.WriteAttributeStringAsync(null, "attributeName", null, "x");
@@ -426,8 +451,6 @@ public class SmilSvgRenderer
             await xml.WriteEndElementAsync();
 
             // Y position animation
-            var yValues = string.Join(";", keyframes.Select(k => FormatNumber(k.Y * _charHeight)));
-
             await xml.WriteStartElementAsync(null, "animate", null);
             await xml.WriteAttributeStringAsync(null, "attributeName", null, "y");
             await xml.WriteAttributeStringAsync(null, "values", null, yValues);
@@ -460,7 +483,8 @@ public class SmilSvgRenderer
         var css = new StringBuilder();
 
         // Base text styles
-        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:text-before-edge}}");
+        // Note: Using 'hanging' instead of 'text-before-edge' for better Safari compatibility
+        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:hanging}}");
         css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
 
         // ANSI color classes

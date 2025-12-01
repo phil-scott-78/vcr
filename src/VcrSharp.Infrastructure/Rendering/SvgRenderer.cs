@@ -54,6 +54,17 @@ public class SvgRenderer
         // Styles (no animations for static SVG)
         await WriteStaticStylesAsync(xml);
 
+        // Clip path definition for terminal content area (Safari has issues with nested SVGs)
+        await xml.WriteStartElementAsync(null, "defs", null);
+        await xml.WriteStartElementAsync(null, "clipPath", null);
+        await xml.WriteAttributeStringAsync(null, "id", null, "terminal-clip");
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "width", null, _frameWidth.ToString(CultureInfo.InvariantCulture));
+        await xml.WriteAttributeStringAsync(null, "height", null, _frameHeight.ToString(CultureInfo.InvariantCulture));
+        await xml.WriteEndElementAsync(); // rect
+        await xml.WriteEndElementAsync(); // clipPath
+        await xml.WriteEndElementAsync(); // defs
+
         // Background (skip if transparent background is enabled)
         if (!_options.TransparentBackground)
         {
@@ -64,13 +75,10 @@ public class SvgRenderer
             await xml.WriteEndElementAsync();
         }
 
-        // Inner SVG with viewBox (shows the terminal content)
-        await xml.WriteStartElementAsync(null, "svg", null);
-        await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(_options.Padding));
-        await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(_options.Padding));
-        await xml.WriteAttributeStringAsync(null, "width", null, _frameWidth.ToString(CultureInfo.InvariantCulture));
-        await xml.WriteAttributeStringAsync(null, "height", null, _frameHeight.ToString(CultureInfo.InvariantCulture));
-        await xml.WriteAttributeStringAsync(null, "viewBox", null, $"0 0 {_frameWidth} {_frameHeight}");
+        // Terminal content group (replaces nested SVG for better Safari compatibility)
+        await xml.WriteStartElementAsync(null, "g", null);
+        await xml.WriteAttributeStringAsync(null, "transform", null, $"translate({FormatNumber(_options.Padding)},{FormatNumber(_options.Padding)})");
+        await xml.WriteAttributeStringAsync(null, "clip-path", null, "url(#terminal-clip)");
 
         // Content group with xml:space
         await xml.WriteStartElementAsync(null, "g", null);
@@ -82,8 +90,8 @@ public class SvgRenderer
             await RenderLineAsync(xml, content, row, isCursorIdle: false);
         }
 
-        await xml.WriteEndElementAsync(); // g
-        await xml.WriteEndElementAsync(); // svg inner
+        await xml.WriteEndElementAsync(); // g (content)
+        await xml.WriteEndElementAsync(); // g (terminal)
         await xml.WriteEndElementAsync(); // svg outer
 
         await xml.FlushAsync();
@@ -121,6 +129,17 @@ public class SvgRenderer
         // Styles and animations
         await WriteAnimatedStylesAsync(xml, states, totalDurationSeconds);
 
+        // Clip path definition for terminal content area (Safari has issues with nested SVGs)
+        await xml.WriteStartElementAsync(null, "defs", null);
+        await xml.WriteStartElementAsync(null, "clipPath", null);
+        await xml.WriteAttributeStringAsync(null, "id", null, "terminal-clip");
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "width", null, _frameWidth.ToString(CultureInfo.InvariantCulture));
+        await xml.WriteAttributeStringAsync(null, "height", null, _frameHeight.ToString(CultureInfo.InvariantCulture));
+        await xml.WriteEndElementAsync(); // rect
+        await xml.WriteEndElementAsync(); // clipPath
+        await xml.WriteEndElementAsync(); // defs
+
         // Background (skip if transparent background is enabled)
         if (!_options.TransparentBackground)
         {
@@ -131,13 +150,10 @@ public class SvgRenderer
             await xml.WriteEndElementAsync();
         }
 
-        // Inner SVG with viewBox (shows one frame at a time)
-        await xml.WriteStartElementAsync(null, "svg", null);
-        await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(_options.Padding));
-        await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(_options.Padding));
-        await xml.WriteAttributeStringAsync(null, "width", null, _frameWidth.ToString(CultureInfo.InvariantCulture));
-        await xml.WriteAttributeStringAsync(null, "height", null, _frameHeight.ToString(CultureInfo.InvariantCulture));
-        await xml.WriteAttributeStringAsync(null, "viewBox", null, $"0 0 {_frameWidth} {_frameHeight}");
+        // Terminal content group (replaces nested SVG for better Safari compatibility)
+        await xml.WriteStartElementAsync(null, "g", null);
+        await xml.WriteAttributeStringAsync(null, "transform", null, $"translate({FormatNumber(_options.Padding)},{FormatNumber(_options.Padding)})");
+        await xml.WriteAttributeStringAsync(null, "clip-path", null, "url(#terminal-clip)");
 
         // Animation container with translateX
         await xml.WriteStartElementAsync(null, "g", null);
@@ -153,7 +169,7 @@ public class SvgRenderer
         }
 
         await xml.WriteEndElementAsync(); // g animation-container
-        await xml.WriteEndElementAsync(); // svg inner
+        await xml.WriteEndElementAsync(); // g (terminal)
         await xml.WriteEndElementAsync(); // svg outer
 
         await xml.FlushAsync();
@@ -185,7 +201,7 @@ public class SvgRenderer
         var css = new StringBuilder();
 
         // Base styles (minified - no newlines between rules)
-        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:text-before-edge}}");
+        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:hanging}}");
         css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
 
         // ANSI color classes
@@ -217,7 +233,7 @@ public class SvgRenderer
         var css = new StringBuilder();
 
         // Base styles (minified - no newlines between rules)
-        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:text-before-edge}}");
+        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:hanging}}");
         css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
 
         // ANSI color classes
@@ -348,8 +364,11 @@ public class SvgRenderer
         await RenderBackgroundsAsync(xml, runs, row);
 
         // Render text with explicit x positioning per tspan (prevents drift from wide characters)
+        // Note: dy="0.9em" provides cross-browser hanging baseline behavior since Safari
+        // doesn't properly support dominant-baseline:hanging and clips text at y=0
         await xml.WriteStartElementAsync(null, "text", null);
         await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
+        await xml.WriteAttributeStringAsync(null, "dy", null, "0.9em");
 
         var cumulativeCellWidth = 0;
         for (var i = 0; i < runs.Count; i++)

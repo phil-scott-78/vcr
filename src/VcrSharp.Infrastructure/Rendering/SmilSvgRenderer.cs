@@ -349,24 +349,21 @@ public class SmilSvgRenderer
             cellCol += run.CellWidth;
         }
 
-        // Render text using cell widths (accounts for wide characters)
-        var totalCellWidth = runs.Sum(r => r.CellWidth);
-        var textLength = totalCellWidth * _charWidth;
-
+        // Render text with explicit x positioning per tspan (prevents drift from wide characters)
         await xml.WriteStartElementAsync(null, "text", null);
         await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
-        await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(textLength));
-        await xml.WriteAttributeStringAsync(null, "lengthAdjust", null, "spacingAndGlyphs");
 
+        var cumulativeCellWidth = 0;
         for (var i = 0; i < runs.Count; i++)
         {
             var run = runs[i];
             await xml.WriteStartElementAsync(null, "tspan", null);
 
-            if (i == 0)
-            {
-                await xml.WriteAttributeStringAsync(null, "x", null, "0");
-            }
+            // Every tspan gets explicit x position and textLength based on cell width
+            var x = cumulativeCellWidth * _charWidth;
+            await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
+            var runLength = run.CellWidth * _charWidth;
+            await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(runLength));
 
             var classes = BuildCssClasses(run);
             if (!string.IsNullOrEmpty(classes))
@@ -388,6 +385,8 @@ public class SmilSvgRenderer
 
             await xml.WriteStringAsync(run.Text);
             await xml.WriteEndElementAsync(); // tspan
+
+            cumulativeCellWidth += run.CellWidth;
         }
 
         await xml.WriteEndElementAsync(); // text

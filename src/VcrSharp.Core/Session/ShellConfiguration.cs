@@ -82,7 +82,7 @@ public class ShellConfiguration
             displayName: "PowerShell",
             promptPattern: @">\s*$",  // PowerShell prompts end with "> " (with space)
             commandLineArgs: ["-Login", "-NoLogo", "-NoExit", "-NoProfile", "-Command"],
-            initCommand: "Set-PSReadLineOption -HistorySaveStyle SaveNothing; " +
+            initCommand: "Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None; " +
                         "function prompt { '> ' }"
         ),
 
@@ -92,7 +92,7 @@ public class ShellConfiguration
             displayName: "Windows PowerShell",
             promptPattern: @">\s*$",
             commandLineArgs: ["-NoLogo", "-NoExit", "-NoProfile", "-Command"],
-            initCommand: "Set-PSReadLineOption -HistorySaveStyle SaveNothing; " +
+            initCommand: "Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None; " +
                         "function prompt { '> ' }"
         ),
 

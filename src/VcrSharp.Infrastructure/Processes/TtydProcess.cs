@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using VcrSharp.Core.Logging;
+using VcrSharp.Core.Session;
 
 namespace VcrSharp.Infrastructure.Processes;
 
@@ -16,6 +17,7 @@ public class TtydProcess : IDisposable
     private readonly string? _workingDirectory;
     private readonly Dictionary<string, string> _environmentVariables;
     private readonly TimeSpan _execStartDelay;
+    private readonly ShellConfiguration _shellConfig;
     private bool _disposed;
 
     /// <summary>
@@ -23,6 +25,7 @@ public class TtydProcess : IDisposable
     /// </summary>
     /// <param name="shellCommand">The complete shell command including executable and all arguments.
     /// First element is the shell executable, remaining elements are its arguments.</param>
+    /// <param name="shellConfig">The shell configuration for execution flags and interactive mode.</param>
     /// <param name="execCommands">Optional list of commands to execute at startup (for Exec command support).</param>
     /// <param name="workingDirectory">Optional working directory for the terminal session.
     /// If not specified, defaults to the current directory.</param>
@@ -32,6 +35,7 @@ public class TtydProcess : IDisposable
     /// If not specified, defaults to 3.5 seconds.</param>
     public TtydProcess(
         List<string> shellCommand,
+        ShellConfiguration shellConfig,
         List<string>? execCommands = null,
         string? workingDirectory = null,
         Dictionary<string, string>? environmentVariables = null,
@@ -41,6 +45,7 @@ public class TtydProcess : IDisposable
             throw new ArgumentException("Shell command cannot be null or empty", nameof(shellCommand));
 
         _shellCommand = shellCommand;
+        _shellConfig = shellConfig ?? throw new ArgumentNullException(nameof(shellConfig));
         _execCommands = execCommands ?? [];
         _workingDirectory = workingDirectory;
         _environmentVariables = environmentVariables ?? new Dictionary<string, string>();
@@ -87,12 +92,25 @@ public class TtydProcess : IDisposable
         // If we have exec commands, modify the shell command to run them first
         if (_execCommands.Count > 0)
         {
-            // Build a script that executes all commands then starts an interactive shell
-            // Format: bash -c "sleep 1 && cmd1; cmd2; cmd3; exec bash"
-            // The 'exec bash' replaces the script process with an interactive shell
+            // Build a script that executes all commands then returns to interactive shell
+            // Format varies by shell:
+            //   bash -c "sleep 1; cmd1; cmd2; export PS1='> '; exec bash --noprofile --norc"
+            //   cmd /k "timeout /t 1 /nobreak >nul & cmd1 & cmd2 & prompt $G$S"
+            //   pwsh -NoExit -Command "Start-Sleep 1; cmd1; cmd2; function prompt { '> ' }"
             var script = BuildStartupScript();
-            args.Add(_shellCommand[0]); // Shell executable (e.g., "bash", "pwsh")
-            args.Add("-c");
+            var shellName = Path.GetFileNameWithoutExtension(_shellCommand[0]).ToLowerInvariant();
+
+            args.Add(_shellCommand[0]); // Shell executable (e.g., "bash", "pwsh", "cmd")
+
+            // PowerShell needs -NoExit to stay interactive after -Command
+            if (shellName is "pwsh" or "powershell")
+            {
+                args.Add("-NoLogo");
+                args.Add("-NoProfile");
+                args.Add("-NoExit");
+            }
+
+            args.Add(_shellConfig.ExecutionFlag); // Shell-specific flag (-c, /k, -Command)
             args.Add(script);
         }
         else
@@ -168,24 +186,58 @@ public class TtydProcess : IDisposable
     }
 
     /// <summary>
-    /// Builds a startup script that runs exec commands.
+    /// Builds a startup script that runs exec commands and returns to interactive mode.
     /// </summary>
     private string BuildStartupScript()
     {
-        // Escape single quotes in commands for shell safety
-        var escapedCommands = _execCommands
-            .Select(cmd => cmd.Replace("'", "'\\''"))
-            .ToList();
+        var shellName = Path.GetFileNameWithoutExtension(_shellCommand[0]).ToLowerInvariant();
+        var isCmd = shellName is "cmd" or "cmd.exe";
+        var isPowerShell = shellName is "pwsh" or "powershell";
 
-        // Build script: sleep briefly to let browser connect, then run commands (separated by ;)
-        // Using ; instead of && so that failed commands don't stop the script
-        // Commands run in background while recording proceeds immediately
-        var commandChain = string.Join("; ", escapedCommands);
+        // Command separator varies by shell
+        var separator = isCmd ? " & " : "; ";
+
+        // Escape commands appropriately for the shell
+        List<string> escapedCommands;
+        if (isCmd)
+        {
+            // CMD: No special escaping needed for simple commands
+            escapedCommands = _execCommands.ToList();
+        }
+        else
+        {
+            // Unix shells and PowerShell: Escape single quotes
+            escapedCommands = _execCommands
+                .Select(cmd => cmd.Replace("'", "'\\''"))
+                .ToList();
+        }
+
+        // Build command chain
+        var commandChain = string.Join(separator, escapedCommands);
 
         // Generate shell-specific sleep command
         var sleepCommand = GetShellSpecificSleepCommand(_execStartDelay.TotalSeconds);
 
-        return $"{sleepCommand}; {commandChain}";
+        // Build the full script
+        var script = $"{sleepCommand}{separator}{commandChain}";
+
+        // Append interactive return command if needed
+        if (!string.IsNullOrEmpty(_shellConfig.InteractiveReturnCommand))
+        {
+            script += $"{separator}{_shellConfig.InteractiveReturnCommand}";
+        }
+        else if (isCmd)
+        {
+            // CMD with /k stays interactive but needs prompt setup
+            script += " & prompt $G$S";
+        }
+        else if (isPowerShell)
+        {
+            // PowerShell with -NoExit stays interactive, add prompt function
+            script += "; Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None; function prompt { '> ' }";
+        }
+
+        return script;
     }
 
     /// <summary>
@@ -200,10 +252,15 @@ public class TtydProcess : IDisposable
         // Extract shell name from path (e.g., "/bin/bash" -> "bash")
         shellName = Path.GetFileNameWithoutExtension(shellName).ToLowerInvariant();
 
+        // Round up to nearest integer for commands that need whole seconds
+        var wholeSeconds = (int)Math.Ceiling(seconds);
+
         return shellName switch
         {
             "pwsh" or "powershell" => $"Start-Sleep -Seconds {seconds}",
-            "cmd" or "cmd.exe" => $"timeout /t {(int)Math.Ceiling(seconds)} /nobreak >nul",
+            // Use ping for CMD delay - more reliable than timeout which can conflict with Git Bash
+            // ping -n N waits (N-1) seconds between pings, so use N+1 for N seconds delay
+            "cmd" or "cmd.exe" => $"ping -n {wholeSeconds + 1} 127.0.0.1 >nul",
             _ => $"sleep {seconds}" // Bash, Zsh, Fish, sh
         };
     }

@@ -34,6 +34,17 @@ public class ShellConfiguration
     private readonly string? _initCommand;
 
     /// <summary>
+    /// The flag used to execute a command string (e.g., "-c" for bash, "/c" for cmd).
+    /// </summary>
+    public string ExecutionFlag { get; }
+
+    /// <summary>
+    /// Command to return to an interactive shell after Exec commands complete.
+    /// Includes prompt setup. Null if shell stays interactive automatically.
+    /// </summary>
+    public string? InteractiveReturnCommand { get; }
+
+    /// <summary>
     /// Environment variables to set for this shell.
     /// </summary>
     public Dictionary<string, string> Environment { get; }
@@ -44,7 +55,9 @@ public class ShellConfiguration
         string promptPattern,
         List<string>? commandLineArgs = null,
         string? initCommand = null,
-        Dictionary<string, string>? environment = null)
+        Dictionary<string, string>? environment = null,
+        string executionFlag = "-c",
+        string? interactiveReturnCommand = null)
     {
         Name = name;
         DisplayName = displayName;
@@ -52,6 +65,8 @@ public class ShellConfiguration
         _commandLineArgs = commandLineArgs ?? [];
         _initCommand = initCommand;
         Environment = environment ?? new Dictionary<string, string>();
+        ExecutionFlag = executionFlag;
+        InteractiveReturnCommand = interactiveReturnCommand;
     }
 
     /// <summary>
@@ -83,7 +98,10 @@ public class ShellConfiguration
             promptPattern: @">\s*$",  // PowerShell prompts end with "> " (with space)
             commandLineArgs: ["-Login", "-NoLogo", "-NoExit", "-NoProfile", "-Command"],
             initCommand: "Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None; " +
-                        "function prompt { '> ' }"
+                        "function prompt { '> ' }",
+            executionFlag: "-Command",
+            // pwsh -NoExit keeps shell running after command execution
+            interactiveReturnCommand: null  // Use -NoExit flag instead
         ),
 
         // Windows PowerShell (powershell)
@@ -93,7 +111,9 @@ public class ShellConfiguration
             promptPattern: @">\s*$",
             commandLineArgs: ["-NoLogo", "-NoExit", "-NoProfile", "-Command"],
             initCommand: "Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None; " +
-                        "function prompt { '> ' }"
+                        "function prompt { '> ' }",
+            executionFlag: "-Command",
+            interactiveReturnCommand: null  // Use -NoExit flag instead
         ),
 
         // Bash
@@ -103,7 +123,9 @@ public class ShellConfiguration
             promptPattern: @">\s*$",
             commandLineArgs: ["--noprofile", "--norc", "-c"],
             initCommand: "export PS1='> '; export BASH_SILENCE_DEPRECATION_WARNING=1; exec bash --noprofile --norc",
-            environment: new Dictionary<string, string>()
+            environment: new Dictionary<string, string>(),
+            executionFlag: "-c",
+            interactiveReturnCommand: "export PS1='> '; exec bash --noprofile --norc"
         ),
 
         // Bourne Shell
@@ -112,7 +134,9 @@ public class ShellConfiguration
             displayName: "Bourne Shell",
             promptPattern: @">\s*$",
             commandLineArgs: ["-c"],
-            initCommand: "PS1='> ' exec sh"
+            initCommand: "PS1='> ' exec sh",
+            executionFlag: "-c",
+            interactiveReturnCommand: "PS1='> ' exec sh"
         ),
 
         // Zsh
@@ -125,7 +149,9 @@ public class ShellConfiguration
             environment: new Dictionary<string, string>
             {
                 ["PROMPT"] = "> "
-            }
+            },
+            executionFlag: "-c",
+            interactiveReturnCommand: "PROMPT='> ' exec zsh --histnostore --no-rcs"
         ),
 
         // Fish
@@ -140,22 +166,29 @@ public class ShellConfiguration
                 "-C", "function fish_greeting; end",
                 "-C", "function fish_prompt; echo -n '> '; end"
             ],
-            initCommand: null
+            initCommand: null,
+            executionFlag: "-c",
+            interactiveReturnCommand: "exec fish --no-config --private -C 'function fish_greeting; end' -C 'function fish_prompt; echo -n \"> \"; end'"
         ),
 
         // CMD (Windows Command Prompt)
+        // CMD uses /k to run command and remain interactive
         ["cmd"] = new ShellConfiguration(
             name: "cmd",
             displayName: "Command Prompt",
             promptPattern: @">\s*$",
-            commandLineArgs: ["/k", "prompt=$G$S"]  // Set prompt to "> " ($G = >, $S = space)
+            commandLineArgs: ["/k", "prompt=$G$S"],  // Set prompt to "> " ($G = >, $S = space)
+            executionFlag: "/k",  // /k runs command and stays open
+            interactiveReturnCommand: null  // /k keeps shell running
         ),
 
         ["cmd.exe"] = new ShellConfiguration(
             name: "cmd",  // Use "cmd" not "cmd.exe" as executable
             displayName: "Command Prompt",
             promptPattern: @">\s*$",
-            commandLineArgs: ["/k", "prompt=$G$S"]
+            commandLineArgs: ["/k", "prompt=$G$S"],
+            executionFlag: "/k",
+            interactiveReturnCommand: null
         ),
     };
 
@@ -169,7 +202,9 @@ public class ShellConfiguration
         displayName: "Default Shell",
         promptPattern: @">\s*$",
         commandLineArgs: ["-c"],
-        initCommand: "PS1='> '"  // Set prompt to "> "
+        initCommand: "PS1='> '",  // Set prompt to "> "
+        executionFlag: "-c",
+        interactiveReturnCommand: "PS1='> ' exec bash"
     );
 
     /// <summary>

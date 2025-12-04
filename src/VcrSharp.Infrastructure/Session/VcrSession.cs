@@ -77,6 +77,7 @@ public class VcrSession : IAsyncDisposable
 
             _ttydProcess = new TtydProcess(
                 shellCommand,
+                shellConfig,
                 execCommands.Select(cmd => cmd.Command).ToList(),
                 _options.WorkingDirectory,
                 environmentVariables,

@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using VcrSharp.Core.Rendering;
@@ -7,8 +8,14 @@ using VcrSharp.Core.Session;
 namespace VcrSharp.Infrastructure.Rendering;
 
 /// <summary>
-/// Shared SVG rendering functionality for both animated recordings and static screenshots.
-/// Provides text-based SVG generation with terminal styling support.
+/// SVG renderer for terminal content. Supports both static screenshots and animated recordings.
+/// For animations, uses SMIL visibility animations with partial updates:
+/// 1. Diffs consecutive frames to find changed rows
+/// 2. Renders each unique row state once
+/// 3. Uses SMIL &lt;set&gt; elements to toggle visibility at appropriate times
+/// 4. Animates cursor position separately
+///
+/// This can significantly reduce file size when only small portions of the screen change.
 /// </summary>
 public class SvgRenderer
 {
@@ -51,10 +58,10 @@ public class SvgRenderer
         await xml.WriteStartElementAsync(null, "svg", "http://www.w3.org/2000/svg");
         await xml.WriteAttributeStringAsync(null, "viewBox", null, $"0 0 {_options.Width} {_options.Height}");
 
-        // Styles (no animations for static SVG)
-        await WriteStaticStylesAsync(xml);
+        // Styles
+        await WriteStylesAsync(xml);
 
-        // Clip path definition for terminal content area (Safari has issues with nested SVGs)
+        // Clip path definition for terminal content area
         await xml.WriteStartElementAsync(null, "defs", null);
         await xml.WriteStartElementAsync(null, "clipPath", null);
         await xml.WriteAttributeStringAsync(null, "id", null, "terminal-clip");
@@ -75,7 +82,7 @@ public class SvgRenderer
             await xml.WriteEndElementAsync();
         }
 
-        // Terminal content group (replaces nested SVG for better Safari compatibility)
+        // Terminal content group
         await xml.WriteStartElementAsync(null, "g", null);
         await xml.WriteAttributeStringAsync(null, "transform", null, $"translate({FormatNumber(_options.Padding)},{FormatNumber(_options.Padding)})");
         await xml.WriteAttributeStringAsync(null, "clip-path", null, "url(#terminal-clip)");
@@ -87,7 +94,8 @@ public class SvgRenderer
         // Render each line
         for (var row = 0; row < content.Rows; row++)
         {
-            await RenderLineAsync(xml, content, row, isCursorIdle: false);
+            var y = row * _charHeight;
+            await RenderRowContentAsync(xml, content.Cells[row], y);
         }
 
         await xml.WriteEndElementAsync(); // g (content)
@@ -98,7 +106,7 @@ public class SvgRenderer
     }
 
     /// <summary>
-    /// Renders multiple terminal states as an animated SVG.
+    /// Renders multiple terminal states as an animated SVG using SMIL animations.
     /// </summary>
     public async Task RenderAnimatedAsync(
         string outputPath,
@@ -106,12 +114,21 @@ public class SvgRenderer
         double totalDurationSeconds,
         CancellationToken cancellationToken = default)
     {
+        if (states.Count == 0)
+            throw new ArgumentException("No states to render", nameof(states));
+
         // Ensure output directory exists
         var directory = Path.GetDirectoryName(outputPath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }
+
+        // Build the row timeline - tracks when each unique row content appears/disappears
+        var rowTimeline = BuildRowTimeline(states, totalDurationSeconds);
+
+        // Build cursor timeline
+        var cursorTimeline = BuildCursorTimeline(states, totalDurationSeconds);
 
         await using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
         await using var xml = XmlWriter.Create(writer, new XmlWriterSettings
@@ -122,12 +139,12 @@ public class SvgRenderer
             Encoding = Encoding.UTF8
         });
 
-        // Outer SVG with viewBox for responsive scaling
+        // Outer SVG
         await xml.WriteStartElementAsync(null, "svg", "http://www.w3.org/2000/svg");
         await xml.WriteAttributeStringAsync(null, "viewBox", null, $"0 0 {_options.Width} {_options.Height}");
 
-        // Styles and animations
-        await WriteAnimatedStylesAsync(xml, states, totalDurationSeconds);
+        // Styles (minimal - no keyframe animations needed)
+        await WriteStylesAsync(xml);
 
         // Clip path definition for terminal content area (Safari has issues with nested SVGs)
         await xml.WriteStartElementAsync(null, "defs", null);
@@ -140,7 +157,7 @@ public class SvgRenderer
         await xml.WriteEndElementAsync(); // clipPath
         await xml.WriteEndElementAsync(); // defs
 
-        // Background (skip if transparent background is enabled)
+        // Background
         if (!_options.TransparentBackground)
         {
             await xml.WriteStartElementAsync(null, "rect", null);
@@ -155,20 +172,20 @@ public class SvgRenderer
         await xml.WriteAttributeStringAsync(null, "transform", null, $"translate({FormatNumber(_options.Padding)},{FormatNumber(_options.Padding)})");
         await xml.WriteAttributeStringAsync(null, "clip-path", null, "url(#terminal-clip)");
 
-        // Animation container with translateX
+        // Content group
         await xml.WriteStartElementAsync(null, "g", null);
-        await xml.WriteAttributeStringAsync(null, "class", null, "animation-container");
+        await xml.WriteAttributeStringAsync("xml", "space", "http://www.w3.org/XML/1998/namespace", "preserve");
 
-        // Render each unique state
-        for (var i = 0; i < states.Count; i++)
+        // Render each unique row state with SMIL visibility animations
+        await RenderRowsWithSmilAsync(xml, rowTimeline, totalDurationSeconds);
+
+        // Render cursor with SMIL position animation
+        if (!_options.DisableCursor)
         {
-            var state = states[i];
-            var xOffset = i * _frameWidth;
-
-            await RenderTerminalStateAsync(xml, state.Content, xOffset, state.IsCursorIdle);
+            await RenderCursorWithSmilAsync(xml, cursorTimeline, totalDurationSeconds);
         }
 
-        await xml.WriteEndElementAsync(); // g animation-container
+        await xml.WriteEndElementAsync(); // g (content)
         await xml.WriteEndElementAsync(); // g (terminal)
         await xml.WriteEndElementAsync(); // svg outer
 
@@ -176,121 +193,389 @@ public class SvgRenderer
     }
 
     /// <summary>
-    /// Calculates character and frame dimensions based on session options.
+    /// Builds a timeline of row states - when each unique row content appears and disappears.
     /// </summary>
-    private void CalculateDimensions()
+    private RowTimeline BuildRowTimeline(IReadOnlyList<TerminalStateWithTime> states, double totalDuration)
     {
-        // Use actual measured cell dimensions from xterm.js if available,
-        // otherwise fall back to estimation based on font size
-        // Note: 0.55 multiplier matches VHS implementation to prevent cursor drift
-        _charWidth = _options.ActualCellWidth ?? _options.FontSize * 0.55;
-        _charHeight = _options.ActualCellHeight ?? _options.FontSize * 1.2;
+        var timeline = new RowTimeline();
+        var rows = states[0].Content.Rows;
 
-        // Frame dimensions (terminal area without padding)
-        _frameWidth = _options.Width - 2 * _options.Padding;
-        _frameHeight = _options.Height - 2 * _options.Padding;
-    }
-
-    /// <summary>
-    /// Writes CSS styles for static SVG (no animations).
-    /// </summary>
-    private async Task WriteStaticStylesAsync(XmlWriter xml)
-    {
-        await xml.WriteStartElementAsync(null, "style", null);
-
-        var css = new StringBuilder();
-
-        // Base styles (minified - no newlines between rules)
-        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:hanging}}");
-        css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
-
-        // ANSI color classes
-        AppendAnsiColorStyles(css);
-
-        // Style flags (minified)
-        css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}");
-
-        // Cursor styles (minified, no animation for static)
-        if (!_options.DisableCursor)
+        for (var row = 0; row < rows; row++)
         {
-            css.Append($".cursor-block{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
-        }
+            var rowStates = new List<RowStateInterval>();
+            string? currentHash = null;
+            TerminalCell[]? currentCells = null;
+            double intervalStart = 0;
 
-        await xml.WriteStringAsync(css.ToString());
-        await xml.WriteEndElementAsync(); // style
-    }
-
-    /// <summary>
-    /// Writes CSS styles and keyframe animations for animated SVG.
-    /// </summary>
-    private async Task WriteAnimatedStylesAsync(
-        XmlWriter xml,
-        IReadOnlyList<TerminalStateWithTime> states,
-        double totalDurationSeconds)
-    {
-        await xml.WriteStartElementAsync(null, "style", null);
-
-        var css = new StringBuilder();
-
-        // Base styles (minified - no newlines between rules)
-        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none;dominant-baseline:hanging}}");
-        css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
-
-        // ANSI color classes
-        AppendAnsiColorStyles(css);
-
-        // Style flags (minified)
-        css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}");
-
-        // Cursor styles (minified)
-        if (!_options.DisableCursor)
-        {
-            css.Append("@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}");
-            css.Append(".cursor-idle{animation:blink 1s steps(1) infinite}");
-            css.Append($".cursor-block{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
-        }
-
-        // Slide animation keyframes
-        if (states.Count > 0)
-        {
-            css.AppendLine("@keyframes slide{");
-
-            int? lastStateIndex = null;
             for (var i = 0; i < states.Count; i++)
             {
                 var state = states[i];
+                var cells = state.Content.Cells[row];
+                var hash = ComputeRowHash(cells);
+                var timestamp = state.TimestampSeconds;
 
-                // Skip consecutive duplicate states to reduce file size
-                if (lastStateIndex.HasValue && i == lastStateIndex.Value)
-                    continue;
+                if (hash != currentHash)
+                {
+                    // Row content changed - close previous interval if any
+                    if (currentHash != null && currentCells != null)
+                    {
+                        rowStates.Add(new RowStateInterval
+                        {
+                            Cells = currentCells,
+                            Hash = currentHash,
+                            StartTime = intervalStart,
+                            EndTime = timestamp
+                        });
+                    }
 
-                var percentage = state.TimestampSeconds / totalDurationSeconds * 100.0;
-                var offset = -1 * i * _frameWidth;
-
-                // Use adaptive precision (reduced from 4 to 3 for file size)
-                var precision = states.Count < 100 ? 1 : states.Count < 1000 ? 2 : 3;
-                var percentStr = percentage.ToString("F" + precision, CultureInfo.InvariantCulture);
-
-                // Omit 'px' unit for zero values to reduce file size
-                var offsetStr = offset == 0 ? "0" : $"{offset}px";
-                css.AppendLine($"{percentStr}%{{transform:translateX({offsetStr});}}");
-                lastStateIndex = i;
+                    // Start new interval
+                    currentHash = hash;
+                    currentCells = cells;
+                    intervalStart = timestamp;
+                }
             }
 
-            css.AppendLine("}");
+            // Close final interval
+            if (currentHash != null && currentCells != null)
+            {
+                rowStates.Add(new RowStateInterval
+                {
+                    Cells = currentCells,
+                    Hash = currentHash,
+                    StartTime = intervalStart,
+                    EndTime = totalDuration
+                });
+            }
 
-            // Apply animation to container (minified)
-            var loopOffset = _options.LoopOffset;
-            css.Append($".animation-container{{animation:slide {totalDurationSeconds}s step-end {loopOffset}s infinite}}");
+            timeline.Rows[row] = rowStates;
         }
 
-        await xml.WriteStringAsync(css.ToString());
-        await xml.WriteEndElementAsync(); // style
+        return timeline;
     }
 
     /// <summary>
-    /// Appends ANSI color styles to CSS builder.
+    /// Builds a timeline of cursor positions.
     /// </summary>
+    private List<CursorKeyframe> BuildCursorTimeline(IReadOnlyList<TerminalStateWithTime> states, double totalDuration)
+    {
+        var keyframes = new List<CursorKeyframe>();
+        int? lastX = null;
+        int? lastY = null;
+        bool? lastVisible = null;
+
+        foreach (var state in states)
+        {
+            var content = state.Content;
+
+            // Only add keyframe if position or visibility changed
+            if (content.CursorX != lastX || content.CursorY != lastY || content.CursorVisible != lastVisible)
+            {
+                keyframes.Add(new CursorKeyframe
+                {
+                    X = content.CursorX,
+                    Y = content.CursorY,
+                    Visible = content.CursorVisible,
+                    Timestamp = state.TimestampSeconds
+                });
+
+                lastX = content.CursorX;
+                lastY = content.CursorY;
+                lastVisible = content.CursorVisible;
+            }
+        }
+
+        return keyframes;
+    }
+
+    /// <summary>
+    /// Renders rows using SMIL visibility animations.
+    /// Uses &lt;animate&gt; with keyTimes for proper looping instead of &lt;set&gt; with dur.
+    /// </summary>
+    private async Task RenderRowsWithSmilAsync(XmlWriter xml, RowTimeline timeline, double totalDuration)
+    {
+        foreach (var (row, intervals) in timeline.Rows)
+        {
+            var y = row * _charHeight;
+
+            // Group unique row states by hash to avoid rendering duplicates
+            var uniqueStates = new Dictionary<string, (TerminalCell[] Cells, List<(double Start, double End)> Intervals)>();
+
+            foreach (var interval in intervals)
+            {
+                if (!uniqueStates.TryGetValue(interval.Hash, out var existing))
+                {
+                    existing = (interval.Cells, new List<(double, double)>());
+                    uniqueStates[interval.Hash] = existing;
+                }
+                existing.Intervals.Add((interval.StartTime, interval.EndTime));
+            }
+
+            // Render each unique row state with visibility animations
+            foreach (var (hash, (cells, intervalList)) in uniqueStates)
+            {
+                // Skip empty rows
+                var rowText = string.Concat(cells.Select(c => c.Character)).TrimEnd();
+                if (string.IsNullOrWhiteSpace(rowText) && !cells.Any(c => c.BackgroundColor != null))
+                    continue;
+
+                // Determine if this state needs animation or is always visible
+                var isAlwaysVisible = intervalList.Count == 1 &&
+                                      Math.Abs(intervalList[0].Start) < 0.001 &&
+                                      Math.Abs(intervalList[0].End - totalDuration) < 0.001;
+
+                await xml.WriteStartElementAsync(null, "g", null);
+
+                if (!isAlwaysVisible)
+                {
+                    // Build keyTimes animation for looping visibility
+                    // This uses <animate> instead of <set> so it properly loops
+                    var (values, keyTimes) = BuildVisibilityAnimation(intervalList, totalDuration);
+
+                    await xml.WriteStartElementAsync(null, "animate", null);
+                    await xml.WriteAttributeStringAsync(null, "attributeName", null, "visibility");
+                    await xml.WriteAttributeStringAsync(null, "values", null, values);
+                    await xml.WriteAttributeStringAsync(null, "keyTimes", null, keyTimes);
+                    await xml.WriteAttributeStringAsync(null, "dur", null, $"{FormatTime(totalDuration)}s");
+                    await xml.WriteAttributeStringAsync(null, "calcMode", null, "discrete");
+                    await xml.WriteAttributeStringAsync(null, "repeatCount", null, "indefinite");
+                    await xml.WriteEndElementAsync();
+                }
+
+                // Render the row content
+                await RenderRowContentAsync(xml, cells, y);
+
+                await xml.WriteEndElementAsync(); // g
+            }
+        }
+    }
+
+    /// <summary>
+    /// Builds visibility animation values and keyTimes for a set of intervals.
+    /// Creates a "hidden;visible;hidden;visible;..." pattern with corresponding keyTimes.
+    /// </summary>
+    private static (string Values, string KeyTimes) BuildVisibilityAnimation(
+        List<(double Start, double End)> intervals,
+        double totalDuration)
+    {
+        // Sort intervals by start time
+        var sorted = intervals.OrderBy(i => i.Start).ToList();
+
+        var values = new List<string>();
+        var keyTimes = new List<double>();
+
+        // Start hidden at time 0 (unless first interval starts at 0)
+        if (sorted[0].Start > 0.001)
+        {
+            values.Add("hidden");
+            keyTimes.Add(0);
+        }
+
+        foreach (var (start, end) in sorted)
+        {
+            // Visible at start
+            values.Add("visible");
+            keyTimes.Add(start / totalDuration);
+
+            // Hidden at end (unless it extends to the total duration)
+            if (end < totalDuration - 0.001)
+            {
+                values.Add("hidden");
+                keyTimes.Add(end / totalDuration);
+            }
+        }
+
+        // Safari requires keyTimes to explicitly end at 1.0 for proper looping.
+        // Add a final keyframe at 1.0 with the same value as the last keyframe.
+        if (keyTimes.Count > 0 && keyTimes[^1] < 0.999)
+        {
+            values.Add(values[^1]); // Repeat last visibility state
+            keyTimes.Add(1.0);
+        }
+
+        // Format output
+        var valuesStr = string.Join(";", values);
+        var keyTimesStr = string.Join(";", keyTimes.Select(kt => FormatTime(Math.Min(kt, 1.0))));
+
+        return (valuesStr, keyTimesStr);
+    }
+
+    /// <summary>
+    /// Renders a single row's content (backgrounds and text).
+    /// Uses cell widths for proper positioning with wide characters.
+    /// </summary>
+    private async Task RenderRowContentAsync(XmlWriter xml, TerminalCell[] cells, double y)
+    {
+        // Build style runs
+        var runs = BuildStyleRuns(cells);
+        if (runs.Count == 0) return;
+
+        // Render backgrounds using cell widths for positioning
+        var cellCol = 0;
+        foreach (var run in runs)
+        {
+            if (run.BackgroundColor != null)
+            {
+                var x = cellCol * _charWidth;
+                var width = run.CellWidth * _charWidth;
+
+                await xml.WriteStartElementAsync(null, "rect", null);
+                await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
+                await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
+                await xml.WriteAttributeStringAsync(null, "width", null, FormatNumber(width));
+                await xml.WriteAttributeStringAsync(null, "height", null, FormatNumber(_charHeight));
+                await xml.WriteAttributeStringAsync(null, "fill", null, ConvertColorToHex(run.BackgroundColor));
+                await xml.WriteEndElementAsync();
+            }
+            cellCol += run.CellWidth;
+        }
+
+        // Render each run as a separate <text> element with explicit positioning and textLength.
+        // Using <text> instead of <tspan> because Firefox supports textLength on <text> but not <tspan>.
+        // y offset (0.9em) is pre-calculated for cross-browser baseline handling since Safari
+        // doesn't properly support dominant-baseline:hanging and clips text at y=0
+        var yWithBaseline = y + _options.FontSize * 0.9;
+        var cumulativeCellWidth = 0;
+        foreach (var run in runs)
+        {
+            var x = cumulativeCellWidth * _charWidth;
+            var runLength = run.CellWidth * _charWidth;
+
+            await xml.WriteStartElementAsync(null, "text", null);
+            await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
+            await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(yWithBaseline));
+            await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(runLength));
+
+            // Box-drawing and block characters need spacingAndGlyphs to connect seamlessly.
+            // Regular text is fine with default spacing adjustment.
+            if (run.Text.Any(c => (c >= 0x2500 && c <= 0x257F) || (c >= 0x2580 && c <= 0x259F)))
+            {
+                await xml.WriteAttributeStringAsync(null, "lengthAdjust", null, "spacingAndGlyphs");
+            }
+
+            var classes = BuildCssClasses(run);
+            if (!string.IsNullOrEmpty(classes))
+            {
+                await xml.WriteAttributeStringAsync(null, "class", null, classes);
+            }
+
+            // Inline color for RGB colors
+            if (run.ForegroundColor != null && run.ForegroundColor.StartsWith('#'))
+            {
+                await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(run.ForegroundColor));
+            }
+            else if (run.ForegroundColor != null && int.TryParse(run.ForegroundColor, out var idx) && idx >= 16)
+            {
+                var rgb = PaletteIndexToRgb(idx);
+                if (rgb != null)
+                    await xml.WriteAttributeStringAsync(null, "fill", null, rgb);
+            }
+
+            await xml.WriteStringAsync(run.Text);
+            await xml.WriteEndElementAsync(); // text
+
+            cumulativeCellWidth += run.CellWidth;
+        }
+    }
+
+    /// <summary>
+    /// Renders cursor with SMIL position animation.
+    /// </summary>
+    private async Task RenderCursorWithSmilAsync(XmlWriter xml, List<CursorKeyframe> keyframes, double totalDuration)
+    {
+        if (keyframes.Count == 0) return;
+
+        var first = keyframes[0];
+        var x = first.X * _charWidth;
+        var y = first.Y * _charHeight;
+
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "class", null, "cursor-block");
+        await xml.WriteAttributeStringAsync(null, "width", null, FormatNumber(_charWidth));
+        await xml.WriteAttributeStringAsync(null, "height", null, FormatNumber(_charHeight));
+        await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
+        await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
+
+        // X position animation
+        if (keyframes.Count > 1)
+        {
+            // Build keyTimes list, ensuring it ends at 1.0 for Safari looping compatibility
+            var keyTimesList = keyframes.Select(k => k.Timestamp / totalDuration).ToList();
+            var xValuesList = keyframes.Select(k => FormatNumber(k.X * _charWidth)).ToList();
+            var yValuesList = keyframes.Select(k => FormatNumber(k.Y * _charHeight)).ToList();
+
+            // Safari requires keyTimes to explicitly end at 1.0 for proper looping
+            if (keyTimesList[^1] < 0.999)
+            {
+                keyTimesList.Add(1.0);
+                xValuesList.Add(xValuesList[^1]); // Repeat last position
+                yValuesList.Add(yValuesList[^1]);
+            }
+
+            var keyTimes = string.Join(";", keyTimesList.Select(FormatTime));
+            var xValues = string.Join(";", xValuesList);
+            var yValues = string.Join(";", yValuesList);
+
+            await xml.WriteStartElementAsync(null, "animate", null);
+            await xml.WriteAttributeStringAsync(null, "attributeName", null, "x");
+            await xml.WriteAttributeStringAsync(null, "values", null, xValues);
+            await xml.WriteAttributeStringAsync(null, "keyTimes", null, keyTimes);
+            await xml.WriteAttributeStringAsync(null, "dur", null, $"{FormatTime(totalDuration)}s");
+            await xml.WriteAttributeStringAsync(null, "calcMode", null, "discrete");
+            await xml.WriteAttributeStringAsync(null, "repeatCount", null, "indefinite");
+            await xml.WriteEndElementAsync();
+
+            // Y position animation
+            await xml.WriteStartElementAsync(null, "animate", null);
+            await xml.WriteAttributeStringAsync(null, "attributeName", null, "y");
+            await xml.WriteAttributeStringAsync(null, "values", null, yValues);
+            await xml.WriteAttributeStringAsync(null, "keyTimes", null, keyTimes);
+            await xml.WriteAttributeStringAsync(null, "dur", null, $"{FormatTime(totalDuration)}s");
+            await xml.WriteAttributeStringAsync(null, "calcMode", null, "discrete");
+            await xml.WriteAttributeStringAsync(null, "repeatCount", null, "indefinite");
+            await xml.WriteEndElementAsync();
+        }
+
+        // Cursor blink animation
+        await xml.WriteStartElementAsync(null, "animate", null);
+        await xml.WriteAttributeStringAsync(null, "attributeName", null, "opacity");
+        await xml.WriteAttributeStringAsync(null, "values", null, "1;0;1");
+        await xml.WriteAttributeStringAsync(null, "keyTimes", null, "0;0.5;1");
+        await xml.WriteAttributeStringAsync(null, "dur", null, "1s");
+        await xml.WriteAttributeStringAsync(null, "repeatCount", null, "indefinite");
+        await xml.WriteEndElementAsync();
+
+        await xml.WriteEndElementAsync(); // rect
+    }
+
+    /// <summary>
+    /// Writes CSS styles (minimal - SMIL handles animations).
+    /// </summary>
+    private async Task WriteStylesAsync(XmlWriter xml)
+    {
+        await xml.WriteStartElementAsync(null, "style", null);
+
+        var css = new StringBuilder();
+
+        // Base text styles (baseline is pre-calculated into y position for cross-browser compatibility)
+        css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none}}");
+        css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
+
+        // ANSI color classes
+        AppendAnsiColorStyles(css);
+
+        // Style flags
+        css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}");
+
+        // Cursor
+        if (!_options.DisableCursor)
+        {
+            css.Append($".cursor-block{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
+        }
+
+        await xml.WriteStringAsync(css.ToString());
+        await xml.WriteEndElementAsync();
+    }
+
     private void AppendAnsiColorStyles(StringBuilder css)
     {
         var colors = new Dictionary<string, string>
@@ -319,195 +604,29 @@ public class SvgRenderer
         }
     }
 
-    /// <summary>
-    /// Renders a single terminal state as SVG.
-    /// </summary>
-    private async Task RenderTerminalStateAsync(
-        XmlWriter xml,
-        TerminalContent content,
-        int xOffset,
-        bool isCursorIdle)
+    private void CalculateDimensions()
     {
-        // State group with xml:space to avoid repeating on every text element
-        await xml.WriteStartElementAsync(null, "g", null);
-        await xml.WriteAttributeStringAsync(null, "transform", null, $"translate({xOffset},0)");
-        await xml.WriteAttributeStringAsync("xml", "space", "http://www.w3.org/XML/1998/namespace", "preserve");
-
-        // Render each line
-        for (var row = 0; row < content.Rows; row++)
-        {
-            await RenderLineAsync(xml, content, row, isCursorIdle);
-        }
-
-        await xml.WriteEndElementAsync(); // g state
+        _charWidth = _options.ActualCellWidth ?? _options.FontSize * 0.55;
+        _charHeight = _options.ActualCellHeight ?? _options.FontSize * 1.2;
+        _frameWidth = _options.Width - 2 * _options.Padding;
+        _frameHeight = _options.Height - 2 * _options.Padding;
     }
 
-    /// <summary>
-    /// Renders a single line of terminal content.
-    /// </summary>
-    private async Task RenderLineAsync(XmlWriter xml, TerminalContent content, int row, bool isCursorIdle)
+    private static string ComputeRowHash(TerminalCell[] cells)
     {
-        var y = row * _charHeight; // Top edge position (text-before-edge)
-
-        // Group consecutive cells with same styling
-        var runs = BuildStyleRuns(content.Cells[row], row, content.CursorY, content.CursorX, isCursorIdle);
-
-        if (runs.Count == 0)
-            return;
-
-        // Skip completely empty lines (no text, no background, no cursor) to reduce file size
-        if (runs.Count == 1 && string.IsNullOrWhiteSpace(runs[0].Text) &&
-            runs[0].BackgroundColor == null && !runs[0].IsCursor)
-            return;
-
-        // Render backgrounds first (if any)
-        await RenderBackgroundsAsync(xml, runs, row);
-
-        // Render text with explicit x positioning per tspan (prevents drift from wide characters)
-        // Note: dy="0.9em" provides cross-browser hanging baseline behavior since Safari
-        // doesn't properly support dominant-baseline:hanging and clips text at y=0
-        await xml.WriteStartElementAsync(null, "text", null);
-        await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
-        await xml.WriteAttributeStringAsync(null, "dy", null, "0.9em");
-
-        var cumulativeCellWidth = 0;
-        for (var i = 0; i < runs.Count; i++)
+        var sb = new StringBuilder();
+        foreach (var cell in cells)
         {
-            var run = runs[i];
-            await xml.WriteStartElementAsync(null, "tspan", null);
-
-            // Every tspan gets explicit x position and textLength based on cell width
-            var x = cumulativeCellWidth * _charWidth;
-            await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
-            var runLength = run.CellWidth * _charWidth;
-            await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(runLength));
-
-            // Apply styling
-            var classes = BuildCssClasses(run, _options.DisableCursor);
-            if (!string.IsNullOrEmpty(classes))
-            {
-                await xml.WriteAttributeStringAsync(null, "class", null, classes);
-            }
-
-            // Inline color if not using class
-            if (run.ForegroundColor != null)
-            {
-                string? inlineColor = null;
-
-                // RGB colors (start with #)
-                if (run.ForegroundColor.StartsWith('#'))
-                {
-                    inlineColor = OptimizeHexColor(run.ForegroundColor);
-                }
-                // Extended palette colors (16-255) - convert to RGB
-                else if (int.TryParse(run.ForegroundColor, out var paletteIndex) && paletteIndex >= 16)
-                {
-                    inlineColor = PaletteIndexToRgb(paletteIndex);
-                }
-
-                if (inlineColor != null)
-                {
-                    await xml.WriteAttributeStringAsync(null, "fill", null, inlineColor);
-                }
-            }
-
-            await xml.WriteStringAsync(run.Text);
-            await xml.WriteEndElementAsync(); // tspan
-
-            cumulativeCellWidth += run.CellWidth;
+            sb.Append(cell.Character);
+            sb.Append(cell.ForegroundColor ?? "");
+            sb.Append(cell.BackgroundColor ?? "");
+            sb.Append(cell.IsBold ? "b" : "");
+            sb.Append(cell.IsItalic ? "i" : "");
+            sb.Append(cell.IsUnderline ? "u" : "");
         }
-
-        await xml.WriteEndElementAsync(); // text
-    }
-
-    /// <summary>
-    /// Renders background rectangles for cells with background colors or cursor.
-    /// Consolidates consecutive cells with the same background color into single wider rectangles.
-    /// Uses cell widths for proper positioning with wide characters.
-    /// </summary>
-    private async Task RenderBackgroundsAsync(XmlWriter xml, List<StyleRun> runs, int row)
-    {
-        var cellCol = 0; // Track position in cell widths, not character count
-        string? lastBgColor = null;
-        var bgStartCol = 0;
-        var bgCellWidth = 0;
-
-        foreach (var run in runs)
-        {
-            // Handle background color consolidation
-            if (run.BackgroundColor != null)
-            {
-                if (run.BackgroundColor == lastBgColor)
-                {
-                    // Same background color - extend the current run
-                    bgCellWidth += run.CellWidth;
-                }
-                else
-                {
-                    // Different background color - render accumulated background if any
-                    if (lastBgColor != null)
-                    {
-                        await RenderBackgroundRectAsync(xml, row, bgStartCol, bgCellWidth, lastBgColor);
-                    }
-
-                    // Start new background run
-                    lastBgColor = run.BackgroundColor;
-                    bgStartCol = cellCol;
-                    bgCellWidth = run.CellWidth;
-                }
-            }
-            else
-            {
-                // No background - render accumulated background if any
-                if (lastBgColor != null)
-                {
-                    await RenderBackgroundRectAsync(xml, row, bgStartCol, bgCellWidth, lastBgColor);
-                    lastBgColor = null;
-                }
-            }
-
-            // Render cursor background (only when cursor is active/visible and not disabled)
-            if (!_options.DisableCursor && run is { IsCursor: true, IsCursorIdle: false })
-            {
-                var x = cellCol * _charWidth;
-                var y = row * _charHeight; // Top edge position (aligned with text-before-edge)
-                var width = _charWidth; // Cursor is always 1 cell wide
-
-                await xml.WriteStartElementAsync(null, "rect", null);
-                await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
-                await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
-                await xml.WriteAttributeStringAsync(null, "width", null, FormatNumber(width));
-                await xml.WriteAttributeStringAsync(null, "height", null, FormatNumber(_charHeight));
-                await xml.WriteAttributeStringAsync(null, "class", null, "cursor-block");
-                await xml.WriteEndElementAsync();
-            }
-
-            cellCol += run.CellWidth; // Advance by cell width, not character count
-        }
-
-        // Render any remaining background at end of line
-        if (lastBgColor != null)
-        {
-            await RenderBackgroundRectAsync(xml, row, bgStartCol, bgCellWidth, lastBgColor);
-        }
-    }
-
-    /// <summary>
-    /// Renders a background rectangle for a range of cells.
-    /// </summary>
-    private async Task RenderBackgroundRectAsync(XmlWriter xml, int row, int startCol, int cellWidth, string color)
-    {
-        var x = startCol * _charWidth;
-        var y = row * _charHeight; // Top edge position (aligned with text-before-edge)
-        var width = cellWidth * _charWidth;
-
-        await xml.WriteStartElementAsync(null, "rect", null);
-        await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
-        await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
-        await xml.WriteAttributeStringAsync(null, "width", null, FormatNumber(width));
-        await xml.WriteAttributeStringAsync(null, "height", null, FormatNumber(_charHeight));
-        await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(color));
-        await xml.WriteEndElementAsync();
+        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
+        var hash = MD5.HashData(bytes);
+        return Convert.ToHexString(hash);
     }
 
     /// <summary>
@@ -515,30 +634,23 @@ public class SvgRenderer
     /// Skips continuation cells (width 0) which are placeholders after wide characters.
     /// Tracks cell width for proper SVG text positioning.
     /// </summary>
-    private static List<StyleRun> BuildStyleRuns(TerminalCell[] cells, int row, int cursorY, int cursorX, bool isCursorIdle)
+    private static List<StyleRun> BuildStyleRuns(TerminalCell[] cells)
     {
         var runs = new List<StyleRun>();
         var currentRun = new StyleRun();
 
-        for (var col = 0; col < cells.Length; col++)
+        foreach (var cell in cells)
         {
-            var cell = cells[col];
-
             // Skip continuation cells (width 0) - these are placeholders after wide characters
             if (cell.Width == 0)
                 continue;
 
-            var isCursor = row == cursorY && col == cursorX;
-
-            // Check if we need to start a new run
             var needNewRun = currentRun.Text.Length > 0 && (
                 cell.ForegroundColor != currentRun.ForegroundColor ||
                 cell.BackgroundColor != currentRun.BackgroundColor ||
                 cell.IsBold != currentRun.IsBold ||
                 cell.IsItalic != currentRun.IsItalic ||
-                cell.IsUnderline != currentRun.IsUnderline ||
-                isCursor != currentRun.IsCursor ||
-                (isCursor && isCursorIdle != currentRun.IsCursorIdle)
+                cell.IsUnderline != currentRun.IsUnderline
             );
 
             if (needNewRun)
@@ -547,7 +659,6 @@ public class SvgRenderer
                 currentRun = new StyleRun();
             }
 
-            // Initialize or append
             if (currentRun.Text.Length == 0)
             {
                 currentRun.ForegroundColor = cell.ForegroundColor;
@@ -555,8 +666,6 @@ public class SvgRenderer
                 currentRun.IsBold = cell.IsBold;
                 currentRun.IsItalic = cell.IsItalic;
                 currentRun.IsUnderline = cell.IsUnderline;
-                currentRun.IsCursor = isCursor;
-                currentRun.IsCursorIdle = isCursor && isCursorIdle;
             }
 
             currentRun.Text += cell.Character;
@@ -568,7 +677,7 @@ public class SvgRenderer
             runs.Add(currentRun);
         }
 
-        // Trim trailing spaces from last run (and adjust cell width accordingly)
+        // Trim trailing spaces (and adjust cell width accordingly)
         if (runs.Count > 0)
         {
             var lastRun = runs[^1];
@@ -578,7 +687,6 @@ public class SvgRenderer
             lastRun.CellWidth -= (originalLength - lastRun.Text.Length);
         }
 
-        // Remove trailing empty runs to reduce file size
         while (runs.Count > 0 && string.IsNullOrWhiteSpace(runs[^1].Text))
         {
             runs.RemoveAt(runs.Count - 1);
@@ -587,99 +695,42 @@ public class SvgRenderer
         return runs;
     }
 
-    /// <summary>
-    /// Builds CSS class string for a style run.
-    /// </summary>
-    private static string BuildCssClasses(StyleRun run, bool disableCursor)
+    private static string BuildCssClasses(StyleRun run)
     {
         var classes = new List<string>();
 
-        // Foreground color class (only for basic ANSI colors 0-15)
-        // Extended colors (16-255) are handled as inline RGB in WriteTspanAsync
-        if (run.ForegroundColor != null && IsAnsiColor(run.ForegroundColor))
+        if (run.ForegroundColor != null && !run.ForegroundColor.StartsWith('#'))
         {
-            if (int.TryParse(run.ForegroundColor, out var paletteIndex) && paletteIndex < 16)
+            if (int.TryParse(run.ForegroundColor, out var idx) && idx < 16)
             {
-                classes.Add(GetAnsiColorClass(run.ForegroundColor));
+                classes.Add(GetAnsiColorClass(idx));
             }
-            // Extended palette colors will be rendered as inline fill attributes
         }
         else if (run.ForegroundColor == null)
         {
             classes.Add("fg");
         }
 
-        // Style flags
         if (run.IsBold) classes.Add("bold");
         if (run.IsItalic) classes.Add("italic");
         if (run.IsUnderline) classes.Add("underline");
 
-        // Cursor (only add class if cursor is not disabled)
-        if (!disableCursor && run is { IsCursor: true, IsCursorIdle: true })
-        {
-            classes.Add("cursor-idle");
-        }
-
         return string.Join(" ", classes);
     }
 
-    /// <summary>
-    /// Checks if a color is an ANSI palette color (0-255 index).
-    /// </summary>
-    private static bool IsAnsiColor(string color)
+    private static string GetAnsiColorClass(int index) => index switch
     {
-        // Palette colors are passed as numeric strings ("0", "1", etc.)
-        // RGB colors start with "#"
-        return !color.StartsWith('#');
-    }
+        0 => "k", 1 => "r", 2 => "g", 3 => "y",
+        4 => "b", 5 => "m", 6 => "c", 7 => "w",
+        8 => "K", 9 => "R", 10 => "G", 11 => "Y",
+        12 => "B", 13 => "M", 14 => "C", 15 => "W",
+        _ => "fg"
+    };
 
-    /// <summary>
-    /// Gets the CSS class name for an ANSI palette color index.
-    /// Maps palette indices 0-15 to VHS-style CSS classes.
-    /// For extended colors (16-255), converts to RGB hex.
-    /// </summary>
-    private static string GetAnsiColorClass(string color)
-    {
-        // Try to parse as palette index
-        if (!int.TryParse(color, out var paletteIndex))
-        {
-            return "fg"; // Default fallback
-        }
-
-        // Map standard ANSI colors (0-15) to CSS classes
-        // VHS uses: k, r, g, y, b, m, c, w (normal) and K, R, G, Y, B, M, C, W (bright)
-        return paletteIndex switch
-        {
-            0 => "k",  // Black
-            1 => "r",  // Red
-            2 => "g",  // Green
-            3 => "y",  // Yellow
-            4 => "b",  // Blue
-            5 => "m",  // Magenta
-            6 => "c",  // Cyan
-            7 => "w",  // White
-            8 => "K",  // Bright Black (Grey)
-            9 => "R",  // Bright Red
-            10 => "G", // Bright Green
-            11 => "Y", // Bright Yellow
-            12 => "B", // Bright Blue
-            13 => "M", // Bright Magenta
-            14 => "C", // Bright Cyan
-            15 => "W", // Bright White
-            // For extended palette (16-255), convert to RGB
-            _ => "fg"
-        };
-    }
-
-    /// <summary>
-    /// Converts an xterm 256-color palette index to RGB hex color.
-    /// Returns null if the index is out of range or is a basic color (0-15).
-    /// </summary>
     private static string? PaletteIndexToRgb(int index)
     {
         if (index is < 16 or > 255) return null;
 
-        // Colors 16-231: 216-color cube (6x6x6)
         if (index < 232)
         {
             var i = index - 16;
@@ -689,28 +740,24 @@ public class SvgRenderer
             return $"#{r:X2}{g:X2}{b:X2}";
         }
 
-        // Colors 232-255: grayscale ramp
         var gray = 8 + (index - 232) * 10;
         return $"#{gray:X2}{gray:X2}{gray:X2}";
     }
 
-    /// <summary>
-    /// Formats a number efficiently - integers without decimals, fractional values with one decimal place.
-    /// </summary>
     private static string FormatNumber(double value)
     {
-        // If integer, skip decimals entirely to reduce file size
         if (Math.Abs(value % 1) < 0.001)
             return ((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture);
         return value.ToString("F1", CultureInfo.InvariantCulture);
     }
 
-    /// <summary>
-    /// Optimizes hex color codes by shortening them where possible (#ffffff → #fff).
-    /// </summary>
+    private static string FormatTime(double seconds)
+    {
+        return seconds.ToString("F3", CultureInfo.InvariantCulture);
+    }
+
     private static string OptimizeHexColor(string color)
     {
-        // Check if it's a 7-character hex code where pairs are identical
         if (color.Length == 7 && color[0] == '#' &&
             color[1] == color[2] &&
             color[3] == color[4] &&
@@ -722,8 +769,82 @@ public class SvgRenderer
     }
 
     /// <summary>
-    /// Represents a run of characters with the same styling.
+    /// Converts any color format (hex or palette index) to a hex color string.
+    /// Handles RGB hex colors, basic ANSI colors (0-15), and extended palette (16-255).
     /// </summary>
+    private string ConvertColorToHex(string color)
+    {
+        // Already a hex color
+        if (color.StartsWith('#'))
+        {
+            return OptimizeHexColor(color);
+        }
+
+        // Palette index
+        if (int.TryParse(color, out var paletteIndex))
+        {
+            // Basic ANSI colors (0-15) - use theme colors
+            var themeColor = paletteIndex switch
+            {
+                0 => _options.Theme.Black,
+                1 => _options.Theme.Red,
+                2 => _options.Theme.Green,
+                3 => _options.Theme.Yellow,
+                4 => _options.Theme.Blue,
+                5 => _options.Theme.Magenta,
+                6 => _options.Theme.Cyan,
+                7 => _options.Theme.White,
+                8 => _options.Theme.BrightBlack,
+                9 => _options.Theme.BrightRed,
+                10 => _options.Theme.BrightGreen,
+                11 => _options.Theme.BrightYellow,
+                12 => _options.Theme.BrightBlue,
+                13 => _options.Theme.BrightMagenta,
+                14 => _options.Theme.BrightCyan,
+                15 => _options.Theme.BrightWhite,
+                _ => null
+            };
+
+            if (themeColor != null)
+            {
+                return OptimizeHexColor(themeColor);
+            }
+
+            // Extended palette (16-255)
+            var rgb = PaletteIndexToRgb(paletteIndex);
+            if (rgb != null)
+            {
+                return rgb;
+            }
+        }
+
+        // Fallback - return as-is (shouldn't happen)
+        return color;
+    }
+
+    // Internal data structures
+
+    private sealed class RowTimeline
+    {
+        public Dictionary<int, List<RowStateInterval>> Rows { get; } = new();
+    }
+
+    private sealed class RowStateInterval
+    {
+        public required TerminalCell[] Cells { get; init; }
+        public required string Hash { get; init; }
+        public required double StartTime { get; init; }
+        public required double EndTime { get; init; }
+    }
+
+    private sealed class CursorKeyframe
+    {
+        public int X { get; init; }
+        public int Y { get; init; }
+        public bool Visible { get; init; }
+        public double Timestamp { get; init; }
+    }
+
     private sealed class StyleRun
     {
         public string Text { get; set; } = "";
@@ -732,21 +853,9 @@ public class SvgRenderer
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public bool IsUnderline { get; set; }
-        public bool IsCursor { get; set; }
-        public bool IsCursorIdle { get; set; }
         /// <summary>
         /// Total cell width of this run (accounts for wide characters taking 2 cells).
         /// </summary>
         public int CellWidth { get; set; }
     }
-}
-
-/// <summary>
-/// Represents a terminal state with timestamp for animated SVG.
-/// </summary>
-public sealed class TerminalStateWithTime
-{
-    public required TerminalContent Content { get; init; }
-    public required double TimestampSeconds { get; init; }
-    public bool IsCursorIdle { get; init; }
 }

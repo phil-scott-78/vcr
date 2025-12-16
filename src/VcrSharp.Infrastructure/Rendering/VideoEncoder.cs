@@ -29,8 +29,6 @@ public class VideoEncoder
         // Register all available encoders
         // Note: Order matters - more specific patterns must come before general ones
         // - FramesEncoder handles directory paths (checked first)
-        // - SvgEncoder (legacy) matches .legacy.svg
-        // - SmilSvgEncoder matches .svg (default, uses SMIL animations)
         _encoders =
         [
             new FramesEncoder(options, storage),
@@ -38,8 +36,7 @@ public class VideoEncoder
             new Mp4Encoder(options, storage),
             new WebMEncoder(options, storage),
             new PngEncoder(options, storage),
-            new SvgEncoder(options, storage),      // .legacy.svg (CSS filmstrip)
-            new SmilSvgEncoder(options, storage)   // .svg (SMIL, default)
+            new SvgEncoder(options, storage)
         ];
     }
 

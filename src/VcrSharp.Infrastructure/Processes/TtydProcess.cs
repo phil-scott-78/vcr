@@ -19,6 +19,7 @@ public class TtydProcess : IDisposable
     private readonly TimeSpan _execStartDelay;
     private readonly ShellConfiguration _shellConfig;
     private bool _disposed;
+    private string? _startupScriptPath;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TtydProcess"/> class.
@@ -102,16 +103,21 @@ public class TtydProcess : IDisposable
 
             args.Add(_shellCommand[0]); // Shell executable (e.g., "bash", "pwsh", "cmd")
 
-            // PowerShell needs -NoExit to stay interactive after -Command
+            // PowerShell: use script file to avoid command line length limits
             if (shellName is "pwsh" or "powershell")
             {
                 args.Add("-NoLogo");
                 args.Add("-NoProfile");
                 args.Add("-NoExit");
+                _startupScriptPath = CreateStartupScriptFile(script, shellName);
+                args.Add("-File");
+                args.Add(_startupScriptPath);
             }
-
-            args.Add(_shellConfig.ExecutionFlag); // Shell-specific flag (-c, /k, -Command)
-            args.Add(script);
+            else
+            {
+                args.Add(_shellConfig.ExecutionFlag); // Shell-specific flag (-c, /k)
+                args.Add(script);
+            }
         }
         else
         {
@@ -127,6 +133,16 @@ public class TtydProcess : IDisposable
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        // Log startup details
+        VcrLogger.Logger.Debug("Starting ttyd on port {Port} with working directory: {WorkingDirectory}", Port, workingDir);
+        VcrLogger.Logger.Debug("ttyd arguments: {Arguments}", string.Join(" ", args));
+
+        if (_environmentVariables.Count > 0)
+        {
+            VcrLogger.Logger.Debug("Custom environment variables: {EnvVars}",
+                string.Join(", ", _environmentVariables.Keys));
+        }
 
         // Add arguments
         foreach (var arg in args)
@@ -157,6 +173,8 @@ public class TtydProcess : IDisposable
 
         if (_process == null)
             throw new InvalidOperationException("Failed to start ttyd process");
+
+        VcrLogger.Logger.Debug("ttyd process started with PID {ProcessId}", _process.Id);
 
         // Start async tasks to read stdout/stderr to prevent blocking
         _ = Task.Run(() => ReadProcessOutputAsync(_process.StandardOutput));
@@ -194,8 +212,11 @@ public class TtydProcess : IDisposable
         var isCmd = shellName is "cmd" or "cmd.exe";
         var isPowerShell = shellName is "pwsh" or "powershell";
 
-        // Command separator varies by shell
-        var separator = isCmd ? " & " : "; ";
+        // Command/line separator varies by shell
+        // PowerShell uses newlines since we execute via -File (script file)
+        // CMD uses & for inline commands
+        // Unix shells use ; for inline commands
+        var separator = isPowerShell ? "\n" : (isCmd ? " & " : "; ");
 
         // Escape commands appropriately for the shell
         List<string> escapedCommands;
@@ -204,9 +225,14 @@ public class TtydProcess : IDisposable
             // CMD: No special escaping needed for simple commands
             escapedCommands = _execCommands.ToList();
         }
+        else if (isPowerShell)
+        {
+            // PowerShell via -File: No escaping needed, commands run as-is
+            escapedCommands = _execCommands.ToList();
+        }
         else
         {
-            // Unix shells and PowerShell: Escape single quotes
+            // Unix shells: Escape single quotes for -c inline execution
             escapedCommands = _execCommands
                 .Select(cmd => cmd.Replace("'", "'\\''"))
                 .ToList();
@@ -218,10 +244,11 @@ public class TtydProcess : IDisposable
         // Generate shell-specific sleep command
         var sleepCommand = GetShellSpecificSleepCommand(_execStartDelay.TotalSeconds);
 
-        // Build the full script
-        var script = $"{sleepCommand}{separator}{commandChain}";
+        // Build the full script: sleep → prompt setup → exec commands
+        // Exec commands must be LAST as they are the content being recorded
+        var script = sleepCommand;
 
-        // Append interactive return command if needed
+        // Add prompt setup BEFORE exec commands
         if (!string.IsNullOrEmpty(_shellConfig.InteractiveReturnCommand))
         {
             script += $"{separator}{_shellConfig.InteractiveReturnCommand}";
@@ -229,13 +256,17 @@ public class TtydProcess : IDisposable
         else if (isCmd)
         {
             // CMD with /k stays interactive but needs prompt setup
-            script += " & prompt $G$S";
+            script += $"{separator}prompt $G$S";
         }
         else if (isPowerShell)
         {
             // PowerShell with -NoExit stays interactive, add prompt function
-            script += "; Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None; function prompt { '> ' }";
+            script += $"{separator}Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None";
+            script += $"{separator}function prompt {{ '> ' }}";
         }
+
+        // Exec commands run LAST (the content being recorded)
+        script += $"{separator}{commandChain}";
 
         return script;
     }
@@ -263,6 +294,28 @@ public class TtydProcess : IDisposable
             "cmd" or "cmd.exe" => $"ping -n {wholeSeconds + 1} 127.0.0.1 >nul",
             _ => $"sleep {seconds}" // Bash, Zsh, Fish, sh
         };
+    }
+
+    /// <summary>
+    /// Creates a temporary script file with the startup commands.
+    /// This avoids command line length limits and argument parsing issues.
+    /// </summary>
+    /// <param name="script">The script content to write.</param>
+    /// <param name="shellName">The shell name to determine file extension.</param>
+    /// <returns>The path to the created script file.</returns>
+    private static string CreateStartupScriptFile(string script, string shellName)
+    {
+        var extension = shellName switch
+        {
+            "cmd" or "cmd.exe" => ".bat",
+            "pwsh" or "powershell" => ".ps1",
+            _ => ".sh"
+        };
+
+        var tempPath = Path.Combine(Path.GetTempPath(), $"vcrsharp-startup-{Guid.NewGuid():N}{extension}");
+        File.WriteAllText(tempPath, script);
+        VcrLogger.Logger.Debug("Created startup script file: {ScriptPath}", tempPath);
+        return tempPath;
     }
 
     /// <summary>
@@ -325,6 +378,24 @@ public class TtydProcess : IDisposable
             _process.WaitForExit(5000);
             _process.Dispose();
             _process = null;
+        }
+
+        // Clean up temp script file
+        if (_startupScriptPath != null)
+        {
+            try
+            {
+                if (File.Exists(_startupScriptPath))
+                {
+                    File.Delete(_startupScriptPath);
+                    VcrLogger.Logger.Debug("Deleted startup script file: {ScriptPath}", _startupScriptPath);
+                }
+            }
+            catch (Exception ex)
+            {
+                VcrLogger.Logger.Warning(ex, "Failed to delete startup script file: {ScriptPath}", _startupScriptPath);
+            }
+            _startupScriptPath = null;
         }
     }
 

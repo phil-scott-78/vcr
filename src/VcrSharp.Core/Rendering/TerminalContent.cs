@@ -44,3 +44,24 @@ public sealed class TerminalContent
     [JsonPropertyName("cursorVisible")]
     public bool CursorVisible { get; set; }
 }
+
+/// <summary>
+/// Represents a terminal state at a specific point in time for animated rendering.
+/// </summary>
+public sealed class TerminalStateWithTime
+{
+    /// <summary>
+    /// The terminal content at this point in time.
+    /// </summary>
+    public required TerminalContent Content { get; init; }
+
+    /// <summary>
+    /// The timestamp in seconds from the start of the recording.
+    /// </summary>
+    public required double TimestampSeconds { get; init; }
+
+    /// <summary>
+    /// Whether the cursor is idle (not blinking) at this point.
+    /// </summary>
+    public bool IsCursorIdle { get; init; }
+}

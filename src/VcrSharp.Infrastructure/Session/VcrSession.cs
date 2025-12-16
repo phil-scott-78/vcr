@@ -451,8 +451,15 @@ public class VcrSession : IAsyncDisposable
                 if (inactiveDuration >= inactivityTimeout)
                 {
                     // Terminal has been inactive long enough
-                    VcrLogger.Logger.Debug("Terminal inactive for {InactiveDuration}s, waiting end buffer",
+                    VcrLogger.Logger.Debug("Terminal inactive for {InactiveDuration}s, stopping activity monitor before end buffer",
                         inactiveDuration.TotalSeconds);
+
+                    // Stop activity monitor NOW to lock in the last activity frame
+                    // This prevents the prompt from being counted as activity during EndBuffer wait
+                    if (_activityMonitor != null)
+                    {
+                        await _activityMonitor.StopAsync();
+                    }
 
                     // Wait end buffer to capture final frames
                     await Task.Delay(_options.EndBuffer, cancellationToken);

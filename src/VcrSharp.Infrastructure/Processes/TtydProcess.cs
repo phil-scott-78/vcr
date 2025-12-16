@@ -104,18 +104,20 @@ public class TtydProcess : IDisposable
             args.Add(_shellCommand[0]); // Shell executable (e.g., "bash", "pwsh", "cmd")
 
             // PowerShell: use script file to avoid command line length limits
+            // Don't use -NoExit when we have Exec commands - shell should exit after commands complete
             if (shellName is "pwsh" or "powershell")
             {
                 args.Add("-NoLogo");
                 args.Add("-NoProfile");
-                args.Add("-NoExit");
                 _startupScriptPath = CreateStartupScriptFile(script, shellName);
                 args.Add("-File");
                 args.Add(_startupScriptPath);
             }
             else
             {
-                args.Add(_shellConfig.ExecutionFlag); // Shell-specific flag (-c, /k)
+                // For CMD, use /c (run and exit) instead of /k (run and remain) with Exec commands
+                var execFlag = (shellName is "cmd" or "cmd.exe") ? "/c" : _shellConfig.ExecutionFlag;
+                args.Add(execFlag);
                 args.Add(script);
             }
         }
@@ -244,28 +246,11 @@ public class TtydProcess : IDisposable
         // Generate shell-specific sleep command
         var sleepCommand = GetShellSpecificSleepCommand(_execStartDelay.TotalSeconds);
 
-        // Build the full script: sleep → prompt setup → exec commands
-        // Exec commands must be LAST as they are the content being recorded
+        // Build the full script: sleep → exec commands
+        // Shell exits after commands complete (no return to interactive mode)
         var script = sleepCommand;
 
-        // Add prompt setup BEFORE exec commands
-        if (!string.IsNullOrEmpty(_shellConfig.InteractiveReturnCommand))
-        {
-            script += $"{separator}{_shellConfig.InteractiveReturnCommand}";
-        }
-        else if (isCmd)
-        {
-            // CMD with /k stays interactive but needs prompt setup
-            script += $"{separator}prompt $G$S";
-        }
-        else if (isPowerShell)
-        {
-            // PowerShell with -NoExit stays interactive, add prompt function
-            script += $"{separator}Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None";
-            script += $"{separator}function prompt {{ '> ' }}";
-        }
-
-        // Exec commands run LAST (the content being recorded)
+        // Exec commands run and then shell exits
         script += $"{separator}{commandChain}";
 
         return script;

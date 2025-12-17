@@ -61,8 +61,10 @@ public class SvgRenderer
         // Styles
         await WriteStylesAsync(xml);
 
-        // Clip path definition for terminal content area
+        // Defs section with clip path and shade patterns
         await xml.WriteStartElementAsync(null, "defs", null);
+
+        // Clip path for terminal content area
         await xml.WriteStartElementAsync(null, "clipPath", null);
         await xml.WriteAttributeStringAsync(null, "id", null, "terminal-clip");
         await xml.WriteStartElementAsync(null, "rect", null);
@@ -70,6 +72,10 @@ public class SvgRenderer
         await xml.WriteAttributeStringAsync(null, "height", null, _frameHeight.ToString(CultureInfo.InvariantCulture));
         await xml.WriteEndElementAsync(); // rect
         await xml.WriteEndElementAsync(); // clipPath
+
+        // Shade patterns for block elements
+        await WriteShadePatternDefsAsync(xml);
+
         await xml.WriteEndElementAsync(); // defs
 
         // Background (skip if transparent background is enabled)
@@ -146,8 +152,10 @@ public class SvgRenderer
         // Styles (minimal - no keyframe animations needed)
         await WriteStylesAsync(xml);
 
-        // Clip path definition for terminal content area (Safari has issues with nested SVGs)
+        // Defs section with clip path and shade patterns (Safari has issues with nested SVGs)
         await xml.WriteStartElementAsync(null, "defs", null);
+
+        // Clip path for terminal content area
         await xml.WriteStartElementAsync(null, "clipPath", null);
         await xml.WriteAttributeStringAsync(null, "id", null, "terminal-clip");
         await xml.WriteStartElementAsync(null, "rect", null);
@@ -155,6 +163,10 @@ public class SvgRenderer
         await xml.WriteAttributeStringAsync(null, "height", null, _frameHeight.ToString(CultureInfo.InvariantCulture));
         await xml.WriteEndElementAsync(); // rect
         await xml.WriteEndElementAsync(); // clipPath
+
+        // Shade patterns for block elements
+        await WriteShadePatternDefsAsync(xml);
+
         await xml.WriteEndElementAsync(); // defs
 
         // Background
@@ -402,79 +414,229 @@ public class SvgRenderer
     /// <summary>
     /// Renders a single row's content (backgrounds and text).
     /// Uses cell widths for proper positioning with wide characters.
+    /// Custom glyphs (box drawing, block elements, powerline) are rendered as SVG paths
+    /// instead of text for pixel-perfect alignment.
     /// </summary>
     private async Task RenderRowContentAsync(XmlWriter xml, TerminalCell[] cells, double y)
     {
-        // Build style runs
-        var runs = BuildStyleRuns(cells);
-        if (runs.Count == 0) return;
+        // Build style runs, splitting at custom glyph boundaries
+        var segments = BuildRenderSegments(cells);
+        if (segments.Count == 0) return;
 
-        // Render backgrounds using cell widths for positioning
+        // Calculate stroke widths for box-drawing characters
+        var lightStroke = Math.Max(1, _charHeight * 0.08);
+        var heavyStroke = Math.Max(2, _charHeight * 0.16);
+
+        // Render backgrounds for text segments (custom glyph backgrounds are handled in RenderGlyph)
         var cellCol = 0;
-        foreach (var run in runs)
+        foreach (var segment in segments)
         {
-            if (run.BackgroundColor != null)
+            if (!segment.IsCustomGlyph && segment.BackgroundColor != null)
             {
                 var x = cellCol * _charWidth;
-                var width = run.CellWidth * _charWidth;
+                var width = segment.CellWidth * _charWidth;
 
                 await xml.WriteStartElementAsync(null, "rect", null);
                 await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
                 await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
                 await xml.WriteAttributeStringAsync(null, "width", null, FormatNumber(width));
                 await xml.WriteAttributeStringAsync(null, "height", null, FormatNumber(_charHeight));
-                await xml.WriteAttributeStringAsync(null, "fill", null, ConvertColorToHex(run.BackgroundColor));
+                await xml.WriteAttributeStringAsync(null, "fill", null, ConvertColorToHex(segment.BackgroundColor));
                 await xml.WriteEndElementAsync();
             }
-            cellCol += run.CellWidth;
+            cellCol += segment.CellWidth;
         }
 
-        // Render each run as a separate <text> element with explicit positioning and textLength.
-        // Using <text> instead of <tspan> because Firefox supports textLength on <text> but not <tspan>.
-        // y offset (0.9em) is pre-calculated for cross-browser baseline handling since Safari
-        // doesn't properly support dominant-baseline:hanging and clips text at y=0
+        // Render each segment
         var yWithBaseline = y + _options.FontSize * 0.9;
         var cumulativeCellWidth = 0;
-        foreach (var run in runs)
+        foreach (var segment in segments)
         {
             var x = cumulativeCellWidth * _charWidth;
-            var runLength = run.CellWidth * _charWidth;
 
-            await xml.WriteStartElementAsync(null, "text", null);
-            await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
-            await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(yWithBaseline));
-            await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(runLength));
-
-            // Box-drawing and block characters need spacingAndGlyphs to connect seamlessly.
-            // Regular text is fine with default spacing adjustment.
-            if (run.Text.Any(c => (c >= 0x2500 && c <= 0x257F) || (c >= 0x2580 && c <= 0x259F)))
+            if (segment.IsCustomGlyph)
             {
-                await xml.WriteAttributeStringAsync(null, "lengthAdjust", null, "spacingAndGlyphs");
+                // Render custom glyph characters one by one
+                var glyphX = x;
+                foreach (var ch in segment.Text)
+                {
+                    var fgColor = GetForegroundColorHex(segment);
+                    var bgColor = segment.BackgroundColor != null ? ConvertColorToHex(segment.BackgroundColor) : null;
+
+                    var glyphSvg = CustomGlyphRenderer.RenderGlyph(
+                        ch, glyphX, y, _charWidth, _charHeight,
+                        fgColor, bgColor, lightStroke, heavyStroke);
+
+                    if (glyphSvg != null)
+                    {
+                        await xml.WriteRawAsync(glyphSvg);
+                    }
+
+                    glyphX += _charWidth; // All custom glyphs are single-width
+                }
+            }
+            else
+            {
+                // Render text using existing approach
+                var runLength = segment.CellWidth * _charWidth;
+
+                await xml.WriteStartElementAsync(null, "text", null);
+                await xml.WriteAttributeStringAsync(null, "x", null, FormatNumber(x));
+                await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(yWithBaseline));
+                await xml.WriteAttributeStringAsync(null, "textLength", null, FormatNumber(runLength));
+
+                var classes = BuildCssClasses(segment);
+                if (!string.IsNullOrEmpty(classes))
+                {
+                    await xml.WriteAttributeStringAsync(null, "class", null, classes);
+                }
+
+                // Inline color for RGB colors
+                if (segment.ForegroundColor != null && segment.ForegroundColor.StartsWith('#'))
+                {
+                    await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(segment.ForegroundColor));
+                }
+                else if (segment.ForegroundColor != null && int.TryParse(segment.ForegroundColor, out var idx) && idx >= 16)
+                {
+                    var rgb = PaletteIndexToRgb(idx);
+                    if (rgb != null)
+                        await xml.WriteAttributeStringAsync(null, "fill", null, rgb);
+                }
+
+                await xml.WriteStringAsync(segment.Text);
+                await xml.WriteEndElementAsync(); // text
             }
 
-            var classes = BuildCssClasses(run);
-            if (!string.IsNullOrEmpty(classes))
-            {
-                await xml.WriteAttributeStringAsync(null, "class", null, classes);
-            }
-
-            // Inline color for RGB colors
-            if (run.ForegroundColor != null && run.ForegroundColor.StartsWith('#'))
-            {
-                await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(run.ForegroundColor));
-            }
-            else if (run.ForegroundColor != null && int.TryParse(run.ForegroundColor, out var idx) && idx >= 16)
-            {
-                var rgb = PaletteIndexToRgb(idx);
-                if (rgb != null)
-                    await xml.WriteAttributeStringAsync(null, "fill", null, rgb);
-            }
-
-            await xml.WriteStringAsync(run.Text);
-            await xml.WriteEndElementAsync(); // text
-
-            cumulativeCellWidth += run.CellWidth;
+            cumulativeCellWidth += segment.CellWidth;
         }
+    }
+
+    /// <summary>
+    /// Gets the foreground color as a hex string for custom glyph rendering.
+    /// </summary>
+    private string GetForegroundColorHex(StyleRun run)
+    {
+        if (run.ForegroundColor == null)
+        {
+            return OptimizeHexColor(_options.Theme.Foreground);
+        }
+
+        if (run.ForegroundColor.StartsWith('#'))
+        {
+            return OptimizeHexColor(run.ForegroundColor);
+        }
+
+        if (int.TryParse(run.ForegroundColor, out var idx))
+        {
+            if (idx < 16)
+            {
+                // Basic ANSI colors - use theme colors
+                var themeColor = idx switch
+                {
+                    0 => _options.Theme.Black,
+                    1 => _options.Theme.Red,
+                    2 => _options.Theme.Green,
+                    3 => _options.Theme.Yellow,
+                    4 => _options.Theme.Blue,
+                    5 => _options.Theme.Magenta,
+                    6 => _options.Theme.Cyan,
+                    7 => _options.Theme.White,
+                    8 => _options.Theme.BrightBlack,
+                    9 => _options.Theme.BrightRed,
+                    10 => _options.Theme.BrightGreen,
+                    11 => _options.Theme.BrightYellow,
+                    12 => _options.Theme.BrightBlue,
+                    13 => _options.Theme.BrightMagenta,
+                    14 => _options.Theme.BrightCyan,
+                    15 => _options.Theme.BrightWhite,
+                    _ => _options.Theme.Foreground
+                };
+                return OptimizeHexColor(themeColor);
+            }
+
+            // Extended palette
+            var rgb = PaletteIndexToRgb(idx);
+            if (rgb != null) return rgb;
+        }
+
+        return OptimizeHexColor(_options.Theme.Foreground);
+    }
+
+    /// <summary>
+    /// Builds render segments from a row of cells, splitting at custom glyph boundaries.
+    /// This ensures custom glyphs are rendered separately from regular text.
+    /// </summary>
+    private static List<StyleRun> BuildRenderSegments(TerminalCell[] cells)
+    {
+        var segments = new List<StyleRun>();
+        var currentRun = new StyleRun();
+        bool? currentIsGlyph = null;
+
+        foreach (var cell in cells)
+        {
+            // Skip continuation cells (width 0) - these are placeholders after wide characters
+            if (cell.Width == 0)
+                continue;
+
+            var isGlyph = CustomGlyphRenderer.IsCustomGlyph(cell.Character);
+
+            // Start new segment if:
+            // 1. Glyph type changed (text vs custom glyph)
+            // 2. Style changed (foreground, background, bold, etc.)
+            var needNewSegment = currentRun.Text.Length > 0 && (
+                isGlyph != currentIsGlyph ||
+                cell.ForegroundColor != currentRun.ForegroundColor ||
+                cell.BackgroundColor != currentRun.BackgroundColor ||
+                cell.IsBold != currentRun.IsBold ||
+                cell.IsItalic != currentRun.IsItalic ||
+                cell.IsUnderline != currentRun.IsUnderline
+            );
+
+            if (needNewSegment)
+            {
+                segments.Add(currentRun);
+                currentRun = new StyleRun();
+            }
+
+            if (currentRun.Text.Length == 0)
+            {
+                currentRun.ForegroundColor = cell.ForegroundColor;
+                currentRun.BackgroundColor = cell.BackgroundColor;
+                currentRun.IsBold = cell.IsBold;
+                currentRun.IsItalic = cell.IsItalic;
+                currentRun.IsUnderline = cell.IsUnderline;
+                currentRun.IsCustomGlyph = isGlyph;
+                currentIsGlyph = isGlyph;
+            }
+
+            currentRun.Text += cell.Character;
+            currentRun.CellWidth += cell.Width;
+        }
+
+        if (currentRun.Text.Length > 0)
+        {
+            segments.Add(currentRun);
+        }
+
+        // Trim trailing spaces from text segments (not from custom glyph segments)
+        if (segments.Count > 0)
+        {
+            var lastRun = segments[^1];
+            if (!lastRun.IsCustomGlyph)
+            {
+                var originalLength = lastRun.Text.Length;
+                lastRun.Text = lastRun.Text.TrimEnd();
+                lastRun.CellWidth -= (originalLength - lastRun.Text.Length);
+            }
+        }
+
+        // Remove empty segments
+        while (segments.Count > 0 && string.IsNullOrWhiteSpace(segments[^1].Text))
+        {
+            segments.RemoveAt(segments.Count - 1);
+        }
+
+        return segments;
     }
 
     /// <summary>
@@ -576,6 +738,67 @@ public class SvgRenderer
         await xml.WriteEndElementAsync();
     }
 
+    /// <summary>
+    /// Writes pattern definitions for shade block elements (░▒▓).
+    /// </summary>
+    private async Task WriteShadePatternDefsAsync(XmlWriter xml)
+    {
+        var fg = OptimizeHexColor(_options.Theme.Foreground);
+
+        // Light shade ░ - sparse dots (25% coverage)
+        await xml.WriteStartElementAsync(null, "pattern", null);
+        await xml.WriteAttributeStringAsync(null, "id", null, "shade-light");
+        await xml.WriteAttributeStringAsync(null, "width", null, "4");
+        await xml.WriteAttributeStringAsync(null, "height", null, "4");
+        await xml.WriteAttributeStringAsync(null, "patternUnits", null, "userSpaceOnUse");
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "width", null, "1");
+        await xml.WriteAttributeStringAsync(null, "height", null, "1");
+        await xml.WriteAttributeStringAsync(null, "fill", null, fg);
+        await xml.WriteEndElementAsync(); // rect
+        await xml.WriteEndElementAsync(); // pattern
+
+        // Medium shade ▒ - checkerboard (50% coverage)
+        await xml.WriteStartElementAsync(null, "pattern", null);
+        await xml.WriteAttributeStringAsync(null, "id", null, "shade-medium");
+        await xml.WriteAttributeStringAsync(null, "width", null, "2");
+        await xml.WriteAttributeStringAsync(null, "height", null, "2");
+        await xml.WriteAttributeStringAsync(null, "patternUnits", null, "userSpaceOnUse");
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "width", null, "1");
+        await xml.WriteAttributeStringAsync(null, "height", null, "1");
+        await xml.WriteAttributeStringAsync(null, "fill", null, fg);
+        await xml.WriteEndElementAsync(); // rect
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "x", null, "1");
+        await xml.WriteAttributeStringAsync(null, "y", null, "1");
+        await xml.WriteAttributeStringAsync(null, "width", null, "1");
+        await xml.WriteAttributeStringAsync(null, "height", null, "1");
+        await xml.WriteAttributeStringAsync(null, "fill", null, fg);
+        await xml.WriteEndElementAsync(); // rect
+        await xml.WriteEndElementAsync(); // pattern
+
+        // Dark shade ▓ - dense pattern (75% coverage)
+        await xml.WriteStartElementAsync(null, "pattern", null);
+        await xml.WriteAttributeStringAsync(null, "id", null, "shade-dark");
+        await xml.WriteAttributeStringAsync(null, "width", null, "2");
+        await xml.WriteAttributeStringAsync(null, "height", null, "2");
+        await xml.WriteAttributeStringAsync(null, "patternUnits", null, "userSpaceOnUse");
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "width", null, "2");
+        await xml.WriteAttributeStringAsync(null, "height", null, "2");
+        await xml.WriteAttributeStringAsync(null, "fill", null, fg);
+        await xml.WriteEndElementAsync(); // rect
+        await xml.WriteStartElementAsync(null, "rect", null);
+        await xml.WriteAttributeStringAsync(null, "x", null, "1");
+        await xml.WriteAttributeStringAsync(null, "y", null, "1");
+        await xml.WriteAttributeStringAsync(null, "width", null, "1");
+        await xml.WriteAttributeStringAsync(null, "height", null, "1");
+        await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(_options.Theme.Background));
+        await xml.WriteEndElementAsync(); // rect
+        await xml.WriteEndElementAsync(); // pattern
+    }
+
     private void AppendAnsiColorStyles(StringBuilder css)
     {
         var colors = new Dictionary<string, string>
@@ -627,72 +850,6 @@ public class SvgRenderer
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var hash = MD5.HashData(bytes);
         return Convert.ToHexString(hash);
-    }
-
-    /// <summary>
-    /// Builds style runs from a row of cells.
-    /// Skips continuation cells (width 0) which are placeholders after wide characters.
-    /// Tracks cell width for proper SVG text positioning.
-    /// </summary>
-    private static List<StyleRun> BuildStyleRuns(TerminalCell[] cells)
-    {
-        var runs = new List<StyleRun>();
-        var currentRun = new StyleRun();
-
-        foreach (var cell in cells)
-        {
-            // Skip continuation cells (width 0) - these are placeholders after wide characters
-            if (cell.Width == 0)
-                continue;
-
-            var needNewRun = currentRun.Text.Length > 0 && (
-                cell.ForegroundColor != currentRun.ForegroundColor ||
-                cell.BackgroundColor != currentRun.BackgroundColor ||
-                cell.IsBold != currentRun.IsBold ||
-                cell.IsItalic != currentRun.IsItalic ||
-                cell.IsUnderline != currentRun.IsUnderline
-            );
-
-            if (needNewRun)
-            {
-                runs.Add(currentRun);
-                currentRun = new StyleRun();
-            }
-
-            if (currentRun.Text.Length == 0)
-            {
-                currentRun.ForegroundColor = cell.ForegroundColor;
-                currentRun.BackgroundColor = cell.BackgroundColor;
-                currentRun.IsBold = cell.IsBold;
-                currentRun.IsItalic = cell.IsItalic;
-                currentRun.IsUnderline = cell.IsUnderline;
-            }
-
-            currentRun.Text += cell.Character;
-            currentRun.CellWidth += cell.Width; // Track actual cell width (1 or 2)
-        }
-
-        if (currentRun.Text.Length > 0)
-        {
-            runs.Add(currentRun);
-        }
-
-        // Trim trailing spaces (and adjust cell width accordingly)
-        if (runs.Count > 0)
-        {
-            var lastRun = runs[^1];
-            var originalLength = lastRun.Text.Length;
-            lastRun.Text = lastRun.Text.TrimEnd();
-            // Spaces are always width 1, so subtract the difference
-            lastRun.CellWidth -= (originalLength - lastRun.Text.Length);
-        }
-
-        while (runs.Count > 0 && string.IsNullOrWhiteSpace(runs[^1].Text))
-        {
-            runs.RemoveAt(runs.Count - 1);
-        }
-
-        return runs;
     }
 
     private static string BuildCssClasses(StyleRun run)
@@ -857,5 +1014,9 @@ public class SvgRenderer
         /// Total cell width of this run (accounts for wide characters taking 2 cells).
         /// </summary>
         public int CellWidth { get; set; }
+        /// <summary>
+        /// Whether this run contains custom glyph characters (box drawing, block elements, powerline).
+        /// </summary>
+        public bool IsCustomGlyph { get; set; }
     }
 }

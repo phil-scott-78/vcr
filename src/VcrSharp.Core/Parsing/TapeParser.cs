@@ -542,8 +542,19 @@ public class TapeParser
                 column = ex.ErrorPosition.Column;
             }
 
-            // Use Superpower's error message as-is for better context
+            // Strip redundant position info from Superpower's message
+            // Format: "Syntax error (line X, column Y): <message> at line X, column Y"
             var errorMessage = ex.Message;
+
+            // Remove "Syntax error (line X, column Y): " prefix
+            var prefixMatch = Regex.Match(errorMessage, @"^Syntax error \(line \d+, column \d+\): ");
+            if (prefixMatch.Success)
+            {
+                errorMessage = errorMessage.Substring(prefixMatch.Length);
+            }
+
+            // Remove " at line X, column Y" suffix
+            errorMessage = Regex.Replace(errorMessage, @" at line \d+, column \d+\.?$", "");
 
             throw new TapeParseException(
                 errorMessage,

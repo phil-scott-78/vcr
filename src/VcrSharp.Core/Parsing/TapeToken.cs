@@ -131,28 +131,28 @@ public enum TapeToken
     Plus,
 
     // Literals
-    [Token(Category = "string", Example = "\"hello world\"")]
+    [Token(Category = "string", Example = "\"hello world\"", Description = "string")]
     String,
 
-    [Token(Category = "string", Example = "'literal string'")]
+    [Token(Category = "string", Example = "'literal string'", Description = "string literal")]
     StringLiteral,
 
-    [Token(Category = "number", Example = "123.45")]
+    [Token(Category = "number", Example = "123.45", Description = "number")]
     Number,
 
-    [Token(Category = "duration", Example = "500ms")]
+    [Token(Category = "duration", Example = "500ms", Description = "duration")]
     Duration,
 
-    [Token(Category = "pattern", Example = "/regex/")]
+    [Token(Category = "pattern", Example = "/regex/", Description = "regex pattern")]
     Regex,
 
     [Token(Category = "identifier", Description = "identifier")]
     Identifier,
 
-    [Token(Category = "path", Example = "output.gif")]
+    [Token(Category = "path", Example = "output.gif", Description = "file path")]
     FilePath,
 
-    [Token(Category = "character", Example = "C")]
+    [Token(Category = "character", Example = "C", Description = "character")]
     Character,
 
     // Structural

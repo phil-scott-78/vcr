@@ -1027,6 +1027,9 @@ public class TerminalPage : ITerminalPage
                                         } else if (isPalette) {
                                             // Palette color (0-255) - pass as string for SVG mapping
                                             fgColor = fg.toString();
+                                        } else {
+                                            // Fallback: color is set but mode not detected, treat as palette index
+                                            fgColor = fg.toString();
                                         }
                                     }
 
@@ -1038,6 +1041,9 @@ public class TerminalPage : ITerminalPage
                                             bgColor = '#' + ('000000' + bg.toString(16)).slice(-6);
                                         } else if (cell.isBgPalette && cell.isBgPalette()) {
                                             // Palette color (0-255) - pass as string for SVG mapping
+                                            bgColor = bg.toString();
+                                        } else {
+                                            // Fallback: color is set but mode not detected, treat as palette index
                                             bgColor = bg.toString();
                                         }
                                     }
@@ -1079,6 +1085,33 @@ public class TerminalPage : ITerminalPage
             {
                 VcrLogger.Logger.Warning("Terminal content JSON is null or empty");
                 return new Core.Rendering.TerminalContent();
+            }
+
+            // DEBUG: Extract and log color samples before deserializing
+            try
+            {
+                using var doc = JsonDocument.Parse(contentJson);
+                if (doc.RootElement.TryGetProperty("debugColorSamples", out var samples) && samples.GetArrayLength() > 0)
+                {
+                    VcrLogger.Logger.Information("DEBUG: Color samples from xterm.js:");
+                    foreach (var sample in samples.EnumerateArray())
+                    {
+                        VcrLogger.Logger.Information("  Cell[{Row},{Col}] char='{Char}' fg={Fg} bg={Bg} isFgRGB={IsFgRGB} isFgPalette={IsFgPalette} isBgRGB={IsBgRGB} isBgPalette={IsBgPalette}",
+                            sample.GetProperty("row").GetInt32(),
+                            sample.GetProperty("col").GetInt32(),
+                            sample.GetProperty("char").GetString(),
+                            sample.GetProperty("fg").ToString(),
+                            sample.GetProperty("bg").ToString(),
+                            sample.GetProperty("isFgRGB").ToString(),
+                            sample.GetProperty("isFgPalette").ToString(),
+                            sample.GetProperty("isBgRGB").ToString(),
+                            sample.GetProperty("isBgPalette").ToString());
+                    }
+                }
+            }
+            catch (Exception debugEx)
+            {
+                VcrLogger.Logger.Warning(debugEx, "Failed to extract debug color samples");
             }
 
             // Deserialize the JSON result

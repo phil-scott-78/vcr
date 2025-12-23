@@ -619,10 +619,11 @@ public class SvgRenderer
         }
 
         // Trim trailing spaces from text segments (not from custom glyph segments)
+        // But don't trim if the segment has a background color (Canvas uses colored spaces)
         if (segments.Count > 0)
         {
             var lastRun = segments[^1];
-            if (!lastRun.IsCustomGlyph)
+            if (!lastRun.IsCustomGlyph && lastRun.BackgroundColor == null)
             {
                 var originalLength = lastRun.Text.Length;
                 lastRun.Text = lastRun.Text.TrimEnd();
@@ -630,8 +631,10 @@ public class SvgRenderer
             }
         }
 
-        // Remove empty segments
-        while (segments.Count > 0 && string.IsNullOrWhiteSpace(segments[^1].Text))
+        // Remove empty segments (but keep segments with background colors - they render colored spaces)
+        while (segments.Count > 0 &&
+               string.IsNullOrWhiteSpace(segments[^1].Text) &&
+               segments[^1].BackgroundColor == null)
         {
             segments.RemoveAt(segments.Count - 1);
         }

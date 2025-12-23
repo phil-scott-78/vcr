@@ -249,7 +249,7 @@ public static class CustomGlyphRenderer
 
     /// <summary>
     /// Renders double-line T-junctions (╠ ╣ ╦ ╩) with proper geometry.
-    /// The double line continues through, with a single line branching off.
+    /// All lines are double (two parallel lines) including the branch.
     /// </summary>
     private static void RenderDoubleTJunction(StringBuilder sb, char c, double x, double y,
         double w, double h, string color, double stroke, double gap)
@@ -268,29 +268,33 @@ public static class CustomGlyphRenderer
 
         var pathData = c switch
         {
-            '\u2560' => // ╠ - double vertical, single right
+            '\u2560' => // ╠ - double vertical and double right
                 $"M{F(outerV)} {F(top)}V{F(bottom)}" + // left vertical line (full)
                 $"M{F(innerV)} {F(top)}V{F(outerH)}" + // right vertical line (top portion)
                 $"M{F(innerV)} {F(innerH)}V{F(bottom)}" + // right vertical line (bottom portion)
-                $"M{F(innerV)} {F(cy)}H{F(right)}", // horizontal branch to right
+                $"M{F(innerV)} {F(outerH)}H{F(right)}" + // top horizontal line to right
+                $"M{F(innerV)} {F(innerH)}H{F(right)}", // bottom horizontal line to right
 
-            '\u2563' => // ╣ - double vertical, single left
+            '\u2563' => // ╣ - double vertical and double left
                 $"M{F(innerV)} {F(top)}V{F(bottom)}" + // right vertical line (full)
                 $"M{F(outerV)} {F(top)}V{F(outerH)}" + // left vertical line (top portion)
                 $"M{F(outerV)} {F(innerH)}V{F(bottom)}" + // left vertical line (bottom portion)
-                $"M{F(outerV)} {F(cy)}H{F(left)}", // horizontal branch to left
+                $"M{F(outerV)} {F(outerH)}H{F(left)}" + // top horizontal line to left
+                $"M{F(outerV)} {F(innerH)}H{F(left)}", // bottom horizontal line to left
 
-            '\u2566' => // ╦ - double horizontal, single down
+            '\u2566' => // ╦ - double horizontal and double down
                 $"M{F(left)} {F(outerH)}H{F(right)}" + // top horizontal line (full)
                 $"M{F(left)} {F(innerH)}H{F(outerV)}" + // bottom horizontal line (left portion)
                 $"M{F(innerV)} {F(innerH)}H{F(right)}" + // bottom horizontal line (right portion)
-                $"M{F(cx)} {F(innerH)}V{F(bottom)}", // vertical branch down
+                $"M{F(outerV)} {F(innerH)}V{F(bottom)}" + // left vertical line down
+                $"M{F(innerV)} {F(innerH)}V{F(bottom)}", // right vertical line down
 
-            '\u2569' => // ╩ - double horizontal, single up
+            '\u2569' => // ╩ - double horizontal and double up
                 $"M{F(left)} {F(innerH)}H{F(right)}" + // bottom horizontal line (full)
                 $"M{F(left)} {F(outerH)}H{F(outerV)}" + // top horizontal line (left portion)
                 $"M{F(innerV)} {F(outerH)}H{F(right)}" + // top horizontal line (right portion)
-                $"M{F(cx)} {F(outerH)}V{F(top)}", // vertical branch up
+                $"M{F(outerV)} {F(outerH)}V{F(top)}" + // left vertical line up
+                $"M{F(innerV)} {F(outerH)}V{F(top)}", // right vertical line up
 
             _ => ""
         };
@@ -459,10 +463,10 @@ public static class CustomGlyphRenderer
         '\u2557' => BoxSegments.DoubleHorizontal | BoxSegments.DoubleVertical, // ╗
         '\u255A' => BoxSegments.DoubleHorizontal | BoxSegments.DoubleVertical, // ╚
         '\u255D' => BoxSegments.DoubleHorizontal | BoxSegments.DoubleVertical, // ╝
-        '\u2560' => BoxSegments.DoubleVertical | BoxSegments.LightRight, // ╠ (double vertical, single right)
-        '\u2563' => BoxSegments.DoubleVertical | BoxSegments.LightLeft, // ╣
-        '\u2566' => BoxSegments.DoubleHorizontal | BoxSegments.LightDown, // ╦
-        '\u2569' => BoxSegments.DoubleHorizontal | BoxSegments.LightUp, // ╩
+        '\u2560' => BoxSegments.DoubleVertical, // ╠ (handled specially by RenderDoubleTJunction)
+        '\u2563' => BoxSegments.DoubleVertical, // ╣ (handled specially by RenderDoubleTJunction)
+        '\u2566' => BoxSegments.DoubleHorizontal, // ╦ (handled specially by RenderDoubleTJunction)
+        '\u2569' => BoxSegments.DoubleHorizontal, // ╩ (handled specially by RenderDoubleTJunction)
         '\u256C' => BoxSegments.DoubleHorizontal | BoxSegments.DoubleVertical, // ╬
 
         // Single/double combinations

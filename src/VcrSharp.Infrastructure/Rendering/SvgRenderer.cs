@@ -191,8 +191,8 @@ public class SvgRenderer
         // Render each unique row state with SMIL visibility animations
         await RenderRowsWithSmilAsync(xml, rowTimeline, totalDurationSeconds);
 
-        // Render cursor with SMIL position animation
-        if (!_options.DisableCursor)
+        // Render cursor with SMIL position animation (skip if cursor is disabled or not blinking)
+        if (!_options.DisableCursor && _options.CursorBlink)
         {
             await RenderCursorWithSmilAsync(xml, cursorTimeline, totalDurationSeconds);
         }
@@ -700,14 +700,17 @@ public class SvgRenderer
             await xml.WriteEndElementAsync();
         }
 
-        // Cursor blink animation
-        await xml.WriteStartElementAsync(null, "animate", null);
-        await xml.WriteAttributeStringAsync(null, "attributeName", null, "opacity");
-        await xml.WriteAttributeStringAsync(null, "values", null, "1;0;1");
-        await xml.WriteAttributeStringAsync(null, "keyTimes", null, "0;0.5;1");
-        await xml.WriteAttributeStringAsync(null, "dur", null, "1s");
-        await xml.WriteAttributeStringAsync(null, "repeatCount", null, "indefinite");
-        await xml.WriteEndElementAsync();
+        // Cursor blink animation (only if enabled)
+        if (_options.CursorBlink)
+        {
+            await xml.WriteStartElementAsync(null, "animate", null);
+            await xml.WriteAttributeStringAsync(null, "attributeName", null, "opacity");
+            await xml.WriteAttributeStringAsync(null, "values", null, "1;0;1");
+            await xml.WriteAttributeStringAsync(null, "keyTimes", null, "0;0.5;1");
+            await xml.WriteAttributeStringAsync(null, "dur", null, "1s");
+            await xml.WriteAttributeStringAsync(null, "repeatCount", null, "indefinite");
+            await xml.WriteEndElementAsync();
+        }
 
         await xml.WriteEndElementAsync(); // rect
     }

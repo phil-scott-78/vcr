@@ -54,14 +54,14 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
     /// <summary>
     /// Executes the record command asynchronously.
     /// </summary>
-    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    public override async Task<int> ExecuteAsync(CommandContext context, RecordCommand.Settings settings, CancellationToken cancellationToken)
     {
         // Configure logging based on verbose flag
         VcrLogger.Configure(settings.Verbose);
 
         try
         {
-            WriteLogo();
+            Logo.WriteLogo();
 
             // Validate dependencies
             var missing = DependencyValidator.ValidateDependencies();
@@ -191,7 +191,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
     /// CLI SET commands override tape file SET commands.
     /// CLI Output commands are appended to tape file Output commands.
     /// </summary>
-    private static List<Core.Parsing.Ast.ICommand> ApplyCliOverrides(List<Core.Parsing.Ast.ICommand> tapeCommands, Settings settings)
+    private static List<Core.Parsing.Ast.ICommand> ApplyCliOverrides(List<Core.Parsing.Ast.ICommand> tapeCommands, RecordCommand.Settings settings)
     {
         var result = new List<Core.Parsing.Ast.ICommand>(tapeCommands);
 
@@ -252,16 +252,5 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         }
 
         return result;
-    }
-
-    private static void WriteLogo()
-    {
-        var font = FigletFont.Parse(FigletFonts.Ascii3d);
-        var colors = new[] { Color.Blue, Color.Aqua };
-        var figlet = new FigletText(font, "VCR#");
-        var figletWithGradient = new Gradient(figlet, colors, GradientDirection.BottomLeftToTopRight);
-        var padded = new Padder(figletWithGradient, new Padding(1));
-        AnsiConsole.Write(padded);
-        AnsiConsole.WriteLine();
     }
 }

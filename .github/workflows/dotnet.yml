@@ -20,7 +20,7 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Install .NET 9
+    - name: Install .NET 10
       uses: actions/setup-dotnet@v5
       with:
         global-json-file: global.json
@@ -29,7 +29,7 @@ jobs:
       run: dotnet build -c Debug
 
     - name: Install Playwright Browsers
-      run: pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net9.0/playwright.ps1 install chromium --no-shell
+      run: pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net10.0/playwright.ps1 install chromium --no-shell
 
     - name: Test (Debug)
       run: dotnet test -c Debug --no-build

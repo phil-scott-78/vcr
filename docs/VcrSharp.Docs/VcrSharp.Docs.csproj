@@ -7,7 +7,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="MyLittleContentEngine.DocSite" Version="0.0.0-alpha.0.277" />
+    <PackageReference Include="Pennington.DocSite" Version="0.1.0-alpha.0.248" />
   </ItemGroup>
 
 </Project>

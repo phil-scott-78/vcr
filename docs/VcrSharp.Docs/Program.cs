@@ -1,13 +1,12 @@
 using Mdazor;
-using MonorailCss.Theme;
-using MyLittleContentEngine.DocSite;
-using MyLittleContentEngine.MonorailCss;
+using Pennington.DocSite;
+using Pennington.MonorailCss;
 using VcrSharp.Docs;
 using VcrSharp.Docs.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddDocSite(_ => new DocSiteOptions()
+builder.Services.AddDocSite(() => new DocSiteOptions
 {
     SiteTitle = "VCR#",
     Description = "A CLI Screen Recorder",
@@ -15,31 +14,48 @@ builder.Services.AddDocSite(_ => new DocSiteOptions()
     ColorScheme = new AlgorithmicColorScheme
     {
         PrimaryHue = 220,
-        ColorSchemeGenerator = i => (i + 120, i - 60, i + 60),
-        BaseColorName = ColorNames.Slate
+        Scheme = CoordinatingScheme.Triadic,
     },
     GitHubUrl = "https://github.com/phil-scott-78/vcr",
     CanonicalBaseUrl = Environment.GetEnvironmentVariable("CanonicalBaseUrl") ?? "https://phil-scott-78.github.io/vcr/",
-    HeaderIcon = """
-                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="transition-all h-5 w-5 text-primary-600 dark:text-primary-400" color="currentColor" fill="none">
-                     <path d="M19 16V14C19 11.1716 19 9.75736 18.1213 8.87868C17.2426 8 15.8284 8 13 8H11C8.17157 8 6.75736 8 5.87868 8.87868C5 9.75736 5 11.1716 5 14V16C5 18.8284 5 20.2426 5.87868 21.1213C6.75736 22 8.17157 22 11 22H13C15.8284 22 17.2426 22 18.1213 21.1213C19 20.2426 19 18.8284 19 16Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path>
-                     <path d="M19 18C20.4142 18 21.1213 18 21.5607 17.5607C22 17.1213 22 16.4142 22 15C22 13.5858 22 12.8787 21.5607 12.4393C21.1213 12 20.4142 12 19 12" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path>
-                     <path d="M5 18C3.58579 18 2.87868 18 2.43934 17.5607C2 17.1213 2 16.4142 2 15C2 13.5858 2 12.8787 2.43934 12.4393C2.87868 12 3.58579 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path>
-                     <path d="M13.5 3.5C13.5 4.32843 12.8284 5 12 5C11.1716 5 10.5 4.32843 10.5 3.5C10.5 2.67157 11.1716 2 12 2C12.8284 2 13.5 2.67157 13.5 3.5Z" stroke="currentColor" stroke-width="1.5"></path>
-                     <path d="M12 5V8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                     <path d="M9 13V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                     <path d="M15 13V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
-                     <path d="M10 17.5C10 17.5 10.6667 18 12 18C13.3333 18 14 17.5 14 17.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
-                 </svg>
-                 """,
 
-    ConfigureTextMate = registry =>
+    // HeaderIcon is an image URL in Pennington, so the inline SVG logo + wordmark
+    // is rendered through HeaderContent instead (matches the canonical DocSite pattern).
+    HeaderIcon = "",
+    HeaderContent = """
+                    <a href="/" class="flex items-center gap-2 font-bold text-lg text-base-900 dark:text-base-100">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="transition-all h-5 w-5 text-primary-600 dark:text-primary-400" color="currentColor" fill="none">
+                            <path d="M19 16V14C19 11.1716 19 9.75736 18.1213 8.87868C17.2426 8 15.8284 8 13 8H11C8.17157 8 6.75736 8 5.87868 8.87868C5 9.75736 5 11.1716 5 14V16C5 18.8284 5 20.2426 5.87868 21.1213C6.75736 22 8.17157 22 11 22H13C15.8284 22 17.2426 22 18.1213 21.1213C19 20.2426 19 18.8284 19 16Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path>
+                            <path d="M19 18C20.4142 18 21.1213 18 21.5607 17.5607C22 17.1213 22 16.4142 22 15C22 13.5858 22 12.8787 21.5607 12.4393C21.1213 12 20.4142 12 19 12" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path>
+                            <path d="M5 18C3.58579 18 2.87868 18 2.43934 17.5607C2 17.1213 2 16.4142 2 15C2 13.5858 2 12.8787 2.43934 12.4393C2.87868 12 3.58579 12 5 12" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"></path>
+                            <path d="M13.5 3.5C13.5 4.32843 12.8284 5 12 5C11.1716 5 10.5 4.32843 10.5 3.5C10.5 2.67157 11.1716 2 12 2C12.8284 2 13.5 2.67157 13.5 3.5Z" stroke="currentColor" stroke-width="1.5"></path>
+                            <path d="M12 5V8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <path d="M9 13V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <path d="M15 13V14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <path d="M10 17.5C10 17.5 10.6667 18 12 18C13.3333 18 14 17.5 14 17.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"></path>
+                        </svg>
+                        <span>VCR#</span>
+                    </a>
+                    """,
+
+    // Slugs match the existing top-level Content/ folders, so all page URLs and the
+    // relative cross-links between them are preserved.
+    Areas =
+    [
+        new ContentArea("Tutorials", "tutorials"),
+        new ContentArea("How-To", "how--to"),
+        new ContentArea("Explanation", "explanation"),
+        new ContentArea("Reference", "reference"),
+    ],
+
+    // ConfigureTextMate moved out of DocSiteOptions; register the custom `tape`
+    // grammar through the Pennington highlighting escape hatch instead.
+    ConfigurePennington = pennington =>
     {
-        registry.AddGrammarFromJson("tape", TapeTextmateGrammar.Grammar);
-    }
+        pennington.Highlighting.AddHighlighter(new TapeHighlighter());
+    },
 });
 
-builder.Services.AddMdazor();
 builder.Services.AddMdazorComponent<VcrTape>();
 
 var app = builder.Build();

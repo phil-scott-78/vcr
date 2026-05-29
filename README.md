@@ -67,6 +67,7 @@ vcr demo.tape
 | Command                | What it does                                                   |
 |------------------------|----------------------------------------------------------------|
 | `vcr <tape>`           | Record a tape file to its declared `Output` target(s).         |
+| `vcr record [tape]`    | Record a live shell session into a `.tape` file as you type — works in any shell. |
 | `vcr validate <tape>`  | Parse a tape file and report syntax errors without recording.  |
 | `vcr themes`           | List the 10 built-in themes with their background/foreground colors. |
 | `vcr snap <command>`   | One-shot SVG screenshot of running `<command>` — no tape file. |
@@ -84,8 +85,8 @@ Full docs, tutorials, and reference: **https://phil-scott-78.github.io/vcr/**
 ## Attribution
 
 This project is heavily inspired by [VHS](https://github.com/charmbracelet/vhs) by [Charm Bracelet](https://charm.sh/).
-VcrSharp adds better Windows support and the ability to execute real commands via the `Exec` command, but VHS is still
-much more feature rich.
+VcrSharp adds better Windows support, the ability to execute real commands via the `Exec` command, and an interactive
+`record` mode that works across shells (VHS's is bash-only) — but VHS is still much more feature rich.
 
 ## License
 

@@ -18,6 +18,7 @@ public class TtydProcess : IDisposable
     private readonly Dictionary<string, string> _environmentVariables;
     private readonly TimeSpan _execStartDelay;
     private readonly ShellConfiguration _shellConfig;
+    private readonly bool _once;
     private bool _disposed;
     private string? _startupScriptPath;
 
@@ -34,13 +35,17 @@ public class TtydProcess : IDisposable
     /// These are merged with system environment variables.</param>
     /// <param name="execStartDelay">Optional delay before executing Exec commands at startup.
     /// If not specified, defaults to 3.5 seconds.</param>
+    /// <param name="once">When true, passes <c>--once</c> so ttyd accepts a single client and exits
+    /// when that client disconnects (i.e. the shell exits or the window closes). Used by interactive
+    /// record mode to detect end-of-session via <see cref="IsRunning"/>.</param>
     public TtydProcess(
         List<string> shellCommand,
         ShellConfiguration shellConfig,
         List<string>? execCommands = null,
         string? workingDirectory = null,
         Dictionary<string, string>? environmentVariables = null,
-        TimeSpan? execStartDelay = null)
+        TimeSpan? execStartDelay = null,
+        bool once = false)
     {
         if (shellCommand == null || shellCommand.Count == 0)
             throw new ArgumentException("Shell command cannot be null or empty", nameof(shellCommand));
@@ -51,6 +56,7 @@ public class TtydProcess : IDisposable
         _workingDirectory = workingDirectory;
         _environmentVariables = environmentVariables ?? new Dictionary<string, string>();
         _execStartDelay = execStartDelay ?? TimeSpan.FromSeconds(3.5);
+        _once = once;
     }
 
     /// <summary>
@@ -89,6 +95,13 @@ public class TtydProcess : IDisposable
             "-t", "customGlyphs=true",
             "--writable"  // CRITICAL: Enable keyboard input
         };
+
+        // Interactive record mode: exit when the single client disconnects (shell exit / window close),
+        // which lets the caller detect end-of-session via IsRunning.
+        if (_once)
+        {
+            args.Add("--once");
+        }
 
         // If we have exec commands, modify the shell command to run them first
         if (_execCommands.Count > 0)

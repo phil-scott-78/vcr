@@ -23,6 +23,11 @@ app.Configure(config =>
         .WithDescription("Capture an animated SVG recording of a command's output")
         .WithExample(new[] { "capture", "\"npm install\"", "-o", "install.svg" })
         .WithExample(new[] { "capture", "\"git status\"", "--cols", "80", "--rows", "24" });
+
+    config.AddCommand<RecordInteractiveCommand>("record")
+        .WithDescription("Interactively record keystrokes in a real shell and generate a .tape file")
+        .WithExample(new[] { "record", "demo.tape" })
+        .WithExample(new[] { "record", "demo.tape", "--shell", "bash" });
 });
 
 return await app.RunAsync(args);

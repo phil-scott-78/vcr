@@ -6,6 +6,7 @@ using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using VcrSharp.Core.Logging;
+using VcrSharp.Core.Recording;
 using VcrSharp.Core.Session;
 
 namespace VcrSharp.Infrastructure.Playwright;
@@ -53,6 +54,19 @@ internal sealed class ViewportInfo
 }
 
 /// <summary>
+/// Raw shape of a captured input event as serialized by the in-browser onData hook
+/// (<c>{ d: string, t: number }</c>). Mapped to <see cref="InputEvent"/> after deserialization.
+/// </summary>
+internal sealed class RawInputEvent
+{
+    [JsonPropertyName("d")]
+    public string? D { get; set; }
+
+    [JsonPropertyName("t")]
+    public double T { get; set; }
+}
+
+/// <summary>
 /// JSON serialization context for trim-safe serialization.
 /// </summary>
 [JsonSourceGenerationOptions(WriteIndented = false)]
@@ -66,6 +80,7 @@ internal sealed class ViewportInfo
 [JsonSerializable(typeof(TerminalDimensions))]
 [JsonSerializable(typeof(CellDimensions))]
 [JsonSerializable(typeof(ViewportInfo))]
+[JsonSerializable(typeof(List<RawInputEvent>))]
 internal partial class TerminalPageJsonContext : JsonSerializerContext
 {
 }
@@ -1140,5 +1155,75 @@ public class TerminalPage : ITerminalPage
             VcrLogger.Logger.Error(ex, "Error capturing terminal content with styles");
             return new Core.Rendering.TerminalContent();
         }
+    }
+
+    /// <summary>
+    /// Registers an xterm.js <c>onData</c> hook that records every chunk the user types, each tagged
+    /// with a high-resolution timestamp (milliseconds from capture start). The data is exactly what the
+    /// terminal would send to the backend (e.g. "a", "\r" for Enter, ESC[A for Up), so it is identical
+    /// across shells. Used by interactive record mode. Idempotent.
+    /// </summary>
+    public async Task StartInputCaptureAsync()
+    {
+        await _page.EvaluateAsync("""
+                                  () => {
+                                      if (window.__vcrInputHooked) return;
+                                      window.__vcrInput = [];
+                                      window.__vcrStart = performance.now();
+                                      window.term.onData(d => window.__vcrInput.push({ d: d, t: performance.now() - window.__vcrStart }));
+                                      window.__vcrInputHooked = true;
+                                  }
+                                  """);
+    }
+
+    /// <summary>
+    /// Drains and clears the captured input buffer, returning all events in arrival order.
+    /// Returns an empty list if the page is gone (e.g. the shell already exited).
+    /// </summary>
+    public async Task<IReadOnlyList<InputEvent>> DrainInputCaptureAsync()
+    {
+        try
+        {
+            var json = await _page.EvaluateAsync<string>("""
+                                                         () => {
+                                                             const events = window.__vcrInput || [];
+                                                             window.__vcrInput = [];
+                                                             return JSON.stringify(events);
+                                                         }
+                                                         """);
+
+            if (string.IsNullOrEmpty(json))
+            {
+                return [];
+            }
+
+            var raw = JsonSerializer.Deserialize(json, TerminalPageJsonContext.Default.ListRawInputEvent);
+            if (raw == null)
+            {
+                return [];
+            }
+
+            var events = new List<InputEvent>(raw.Count);
+            foreach (var e in raw)
+            {
+                events.Add(new InputEvent(e.D ?? string.Empty, TimeSpan.FromMilliseconds(e.T)));
+            }
+
+            return events;
+        }
+        catch (Exception ex)
+        {
+            VcrLogger.Logger.Debug(ex, "Failed to drain input capture buffer (page may have closed)");
+            return [];
+        }
+    }
+
+    /// <summary>
+    /// Brings the browser window to the foreground so the user can type into it.
+    /// Used by interactive record mode where the browser runs headed.
+    /// </summary>
+    public async Task FocusWindowAsync()
+    {
+        await _page.BringToFrontAsync();
     }
 }

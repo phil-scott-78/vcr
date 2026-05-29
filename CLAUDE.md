@@ -20,6 +20,9 @@ dotnet build VcrSharp.sln
 # Record a tape file
 dotnet run --project src/VcrSharp.Cli -- demo.tape
 
+# Interactively record a live shell session into a .tape file (opens a terminal window)
+dotnet run --project src/VcrSharp.Cli -- record demo.tape
+
 # Validate a tape file without recording
 dotnet run --project src/VcrSharp.Cli -- validate demo.tape
 
@@ -55,6 +58,7 @@ pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net10.0/playwright.ps1 install c
    - AST representation of commands (all implement `ICommand` interface)
    - Session state management and configuration (SessionState, SessionOptions)
    - Theme definitions (BuiltinThemes, Theme)
+   - Interactive recording: captured input → tape conversion (Recording/InputToTapeConverter, InputEvent)
 
 2. **VcrSharp.Infrastructure** - External integrations
    - Playwright browser automation (PlaywrightBrowser, TerminalPage)
@@ -64,7 +68,7 @@ pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net10.0/playwright.ps1 install c
    - Activity monitoring and inactivity detection (ActivityMonitor)
 
 3. **VcrSharp.Cli** - CLI application
-   - Commands: RecordCommand, ValidateCommand, ThemesCommand, SnapCommand, CaptureCommand
+   - Commands: RecordCommand, RecordInteractiveCommand, ValidateCommand, ThemesCommand, SnapCommand, CaptureCommand
    - User interface with Spectre.Console
 
 ### Recording Flow
@@ -75,6 +79,18 @@ pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net10.0/playwright.ps1 install c
 4. **Capture**: FrameCapture takes screenshots during execution, FrameStorage manages them
 5. **Trim**: FrameTrimmer removes blank frames at start/end
 6. **Encode**: VideoEncoder routes to format-specific encoders (GIF/MP4/WebM via FFmpeg, raw Frames, or SVG)
+
+### Interactive Recording Flow (`vcr record`)
+
+A separate path (`VcrSession.RecordInteractiveAsync`, invoked by `RecordInteractiveCommand`) authors a `.tape` file from a live session instead of playing one back:
+
+1. **ttyd interactive**: starts ttyd with no Exec commands (interactive shell) and `--once` (so ttyd exits when the client disconnects, signaling end-of-session)
+2. **Headed browser**: launches Playwright non-headless with a window size and `noViewport` so the user types into a real, resizable terminal window (ttyd re-fits the terminal natively)
+3. **Capture**: `TerminalPage.StartInputCaptureAsync` injects an xterm.js `onData` hook recording every keystroke (raw input byte-stream) with a timestamp; the loop drains periodically until the shell exits / window closes
+4. **Convert**: `InputToTapeConverter.Convert` (Core) turns the captured `InputEvent` stream into tape text — coalescing `Type`, mapping keys/modifiers, inserting `Sleep` from real pauses, stripping the trailing `exit`
+5. **Write**: the tape is written to disk (no `Output`/encoding — this mode produces a tape file only)
+
+This works in any shell because it captures *input* (shell-agnostic), not shell output. No FrameCapture/encoding is involved.
 
 ### Command Architecture
 
@@ -102,7 +118,9 @@ Command types in `VcrSharp.Core/Parsing/Ast/`:
 
 **VcrSession** (Infrastructure): Main orchestrator that manages the entire recording lifecycle - ttyd, browser, terminal, frame capture, command execution, and video encoding.
 
-**TerminalPage** (Infrastructure): Playwright-based terminal interface that wraps browser automation for xterm.js. Handles keyboard input, screen scraping, and waiting for output patterns.
+**TerminalPage** (Infrastructure): Playwright-based terminal interface that wraps browser automation for xterm.js. Handles keyboard input, screen scraping, and waiting for output patterns. For interactive record mode it also installs an xterm.js `onData` capture hook (`StartInputCaptureAsync`/`DrainInputCaptureAsync`).
+
+**InputToTapeConverter** (Core, `Recording/`): Pure function that converts a captured `InputEvent` stream (timestamped keystrokes) into `.tape` text. Shell-agnostic (operates on the input byte-stream), with the full byte/escape-sequence → tape-command mapping, `Type` coalescing, key-repeat grouping, timestamp-based `Sleep` insertion, and trailing-`exit` stripping. Fully unit-tested in `tests/VcrSharp.Core.Tests/Recording/`.
 
 **ExecCommand** (Core): Passes shell commands to ttyd as startup script arguments. Commands execute in background while recording captures output. Does not execute during tape playback (ExecuteAsync is a no-op).
 

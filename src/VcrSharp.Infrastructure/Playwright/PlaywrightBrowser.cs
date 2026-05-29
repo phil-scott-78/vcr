@@ -319,8 +319,10 @@ public class PlaywrightBrowser : IDisposable
     /// </summary>
     /// <param name="headless">Whether to run in headless mode (default: true).</param>
     /// <param name="slowMo">Slows down operations by specified milliseconds (for debugging).</param>
+    /// <param name="windowSize">Optional initial window size (width, height) for headed mode.
+    /// Used by interactive record mode so the visible terminal window opens at a comfortable size.</param>
     /// <returns>A task representing the async operation.</returns>
-    public async Task LaunchAsync(bool headless = true, float slowMo = 0)
+    public async Task LaunchAsync(bool headless = true, float slowMo = 0, (int Width, int Height)? windowSize = null)
     {
         if (_browser != null)
         {
@@ -329,18 +331,25 @@ public class PlaywrightBrowser : IDisposable
 
         _playwright = await Microsoft.Playwright.Playwright.CreateAsync();
 
+        var args = new List<string>
+        {
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-web-security" // Allow CORS for local ttyd
+        };
+
+        if (windowSize is { } size)
+        {
+            args.Add($"--window-size={size.Width},{size.Height}");
+        }
+
         _browser = await _playwright.Chromium.LaunchAsync(new BrowserTypeLaunchOptions
         {
             Headless = headless,
             Channel = "chromium",
             SlowMo = slowMo,
-            Args =
-            [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-web-security" // Allow CORS for local ttyd
-            ]
+            Args = args.ToArray()
         });
     }
 
@@ -355,8 +364,11 @@ public class PlaywrightBrowser : IDisposable
     /// <param name="cols">Optional terminal columns. If specified, viewport width will be auto-calculated.</param>
     /// <param name="rows">Optional terminal rows. If specified, viewport height will be auto-calculated.</param>
     /// <param name="fontSize">Font size in pixels, used to estimate initial viewport for cols/rows.</param>
+    /// <param name="noViewport">When true, the page uses no fixed viewport so it tracks the actual
+    /// browser window size — required for interactive record mode where the user resizes the window
+    /// and ttyd should re-fit the terminal to match.</param>
     /// <returns>A new IPage instance.</returns>
-    public async Task<IPage> NewPageAsync(string url, int width = 1200, int height = 600, int padding = 0, int? cols = null, int? rows = null, int fontSize = 22)
+    public async Task<IPage> NewPageAsync(string url, int width = 1200, int height = 600, int padding = 0, int? cols = null, int? rows = null, int fontSize = 22, bool noViewport = false)
     {
         if (_browser == null)
         {
@@ -367,40 +379,58 @@ public class PlaywrightBrowser : IDisposable
         // Context provides isolated session with proper input event handling
         if (_context == null)
         {
-            int viewportWidth;
-            int viewportHeight;
+            BrowserNewContextOptions contextOptions;
 
-            // If Cols/Rows specified, estimate initial viewport based on fontSize
-            // Use fontSize * 0.6 for width (typical monospace ratio) and fontSize * 1.2 for height
-            // This will be refined after measuring actual cell dimensions
-            if (cols.HasValue || rows.HasValue)
+            if (noViewport)
             {
-                // Estimate cell dimensions from fontSize
-                // Typical monospace fonts: width ≈ 0.6 * fontSize, height ≈ 1.2 * fontSize
-                var estimatedCellWidth = fontSize * 0.6;
-                var estimatedCellHeight = fontSize * 1.2;
-
-                viewportWidth = cols.HasValue ? (int)Math.Ceiling(cols.Value * estimatedCellWidth) : width;
-                viewportHeight = rows.HasValue ? (int)Math.Ceiling(rows.Value * estimatedCellHeight) : height;
+                // No fixed viewport: the page follows the real window size, so window resizes
+                // propagate to ttyd which re-fits the terminal (and the bottom line renders fully).
+                contextOptions = new BrowserNewContextOptions
+                {
+                    ViewportSize = ViewportSize.NoViewport,
+                    IgnoreHTTPSErrors = true,
+                    Permissions = ["clipboard-read", "clipboard-write"]
+                };
             }
             else
             {
-                // Subtract padding from viewport dimensions (padding will be added back during FFmpeg rendering)
-                // This matches VHS behavior: smaller terminal is captured, then padding is added in post-processing
-                viewportWidth = width - 2 * padding;
-                viewportHeight = height - 2 * padding;
+                int viewportWidth;
+                int viewportHeight;
+
+                // If Cols/Rows specified, estimate initial viewport based on fontSize
+                // Use fontSize * 0.6 for width (typical monospace ratio) and fontSize * 1.2 for height
+                // This will be refined after measuring actual cell dimensions
+                if (cols.HasValue || rows.HasValue)
+                {
+                    // Estimate cell dimensions from fontSize
+                    // Typical monospace fonts: width ≈ 0.6 * fontSize, height ≈ 1.2 * fontSize
+                    var estimatedCellWidth = fontSize * 0.6;
+                    var estimatedCellHeight = fontSize * 1.2;
+
+                    viewportWidth = cols.HasValue ? (int)Math.Ceiling(cols.Value * estimatedCellWidth) : width;
+                    viewportHeight = rows.HasValue ? (int)Math.Ceiling(rows.Value * estimatedCellHeight) : height;
+                }
+                else
+                {
+                    // Subtract padding from viewport dimensions (padding will be added back during FFmpeg rendering)
+                    // This matches VHS behavior: smaller terminal is captured, then padding is added in post-processing
+                    viewportWidth = width - 2 * padding;
+                    viewportHeight = height - 2 * padding;
+                }
+
+                contextOptions = new BrowserNewContextOptions
+                {
+                    ViewportSize = new ViewportSize
+                    {
+                        Width = viewportWidth,
+                        Height = viewportHeight
+                    },
+                    IgnoreHTTPSErrors = true,
+                    Permissions = ["clipboard-read", "clipboard-write"]
+                };
             }
 
-            _context = await _browser.NewContextAsync(new BrowserNewContextOptions
-            {
-                ViewportSize = new ViewportSize
-                {
-                    Width = viewportWidth,
-                    Height = viewportHeight
-                },
-                IgnoreHTTPSErrors = true,
-                Permissions = ["clipboard-read", "clipboard-write"]
-            });
+            _context = await _browser.NewContextAsync(contextOptions);
         }
 
         // Create page from context instead of directly from browser

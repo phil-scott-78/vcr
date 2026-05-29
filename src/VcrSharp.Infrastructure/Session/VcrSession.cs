@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using VcrSharp.Core.Logging;
 using VcrSharp.Core.Parsing.Ast;
+using VcrSharp.Core.Recording;
 using VcrSharp.Core.Session;
 using VcrSharp.Infrastructure.Playwright;
 using VcrSharp.Infrastructure.Processes;
@@ -234,6 +235,134 @@ public class VcrSession : IAsyncDisposable
     }
 
     /// <summary>
+    /// Records an interactive shell session by capturing the user's keystrokes and writing them out as
+    /// a <c>.tape</c> file. Opens a headed browser terminal window the user types into; the session ends
+    /// when the user exits the shell (e.g. <c>exit</c> / Ctrl+D) or closes the window.
+    /// </summary>
+    /// <param name="outputTapePath">Path to write the generated tape file.</param>
+    /// <param name="progress">Optional progress reporter for status updates.</param>
+    /// <param name="cancellationToken">Cancellation token. On cancellation, a best-effort partial tape is still written.</param>
+    /// <returns>Recording result with the generated tape file path.</returns>
+    public async Task<RecordingResult> RecordInteractiveAsync(
+        string outputTapePath,
+        IProgress<string>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var stopwatch = Stopwatch.StartNew();
+
+        try
+        {
+            progress?.Report("Starting interactive recording session...");
+
+            // 1. Start ttyd with an interactive shell. An empty Exec list triggers ttyd's interactive
+            //    branch (pwsh -NoExit, cmd /k, exec bash, ...). "once: true" makes ttyd exit when the
+            //    single client disconnects, so we can detect end-of-session via IsRunning.
+            var shellConfig = ShellConfiguration.GetConfiguration(_options.Shell);
+            var shellCommand = shellConfig.BuildTtydCommand();
+
+            var environmentVariables = new Dictionary<string, string>(shellConfig.Environment);
+            foreach (var (key, value) in _options.Environment)
+            {
+                environmentVariables[key] = value;
+            }
+            if (_options.Cols.HasValue)
+            {
+                environmentVariables["COLUMNS"] = _options.Cols.Value.ToString();
+            }
+            if (_options.Rows.HasValue)
+            {
+                environmentVariables["LINES"] = _options.Rows.Value.ToString();
+            }
+
+            _ttydProcess = new TtydProcess(
+                shellCommand,
+                shellConfig,
+                execCommands: [],
+                _options.WorkingDirectory,
+                environmentVariables,
+                _options.StartupDelay,
+                once: true);
+            await _ttydProcess.StartAsync();
+
+            // 2. Launch the browser HEADED at a comfortable window size so the user can type into the
+            //    terminal window and freely resize it.
+            _browser = new PlaywrightBrowser();
+            await _browser.LaunchAsync(headless: false, windowSize: (_options.Width, _options.Height));
+
+            // 3. Create page and navigate to ttyd. noViewport lets the page track the real window size,
+            //    so resizing the window propagates to ttyd, which re-fits the terminal (and the bottom
+            //    line renders fully). We deliberately do NOT pin a viewport or fixed cols/rows here.
+            var url = $"http://localhost:{_ttydProcess.Port}";
+            var page = await _browser.NewPageAsync(url, noViewport: true);
+            _terminalPage = new TerminalPage(page);
+
+            // 4. Wait for terminal init, then apply theme colors only (no font/size changes — see method).
+            await _terminalPage.WaitForTerminalReadyAsync();
+            await ConfigureInteractiveTerminalAsync();
+
+            // 5. Bring the window forward and focus the terminal so keystrokes reach the shell.
+            await _terminalPage.FocusWindowAsync();
+            await _terminalPage.ClickTerminalAsync();
+            await _terminalPage.WaitForBufferContentAsync();
+
+            // 7. Start capturing the user's keystrokes (this marks t = 0 for timestamps).
+            await _terminalPage.StartInputCaptureAsync();
+
+            progress?.Report("Recording — type in the terminal window. Type `exit` (or Ctrl+D) to finish.");
+
+            // 8. Drain periodically while the session is live so closing the window loses minimal input.
+            //    Timestamps are relative to a single in-browser origin, so they stay consistent across drains.
+            var captured = new List<InputEvent>();
+            try
+            {
+                while (!cancellationToken.IsCancellationRequested && _ttydProcess.IsRunning)
+                {
+                    await Task.Delay(250, cancellationToken);
+                    captured.AddRange(await _terminalPage.DrainInputCaptureAsync());
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                _state.IsCancelled = true;
+            }
+
+            // 9. Final drain (best effort; the page may already be gone if the window was closed).
+            captured.AddRange(await _terminalPage.DrainInputCaptureAsync());
+
+            // 10. Convert to tape text and write the file.
+            progress?.Report("Writing tape file...");
+            var converterOptions = new InputToTapeOptions
+            {
+                Shell = _options.Shell,
+                DefaultShell = new SessionOptions().Shell,
+                Header = _options
+            };
+            var tape = InputToTapeConverter.Convert(captured, converterOptions);
+
+            var directory = Path.GetDirectoryName(Path.GetFullPath(outputTapePath));
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            // Write without the cancellation token so a cancelled session still saves its partial tape.
+            await File.WriteAllTextAsync(outputTapePath, tape);
+
+            stopwatch.Stop();
+
+            return new RecordingResult
+            {
+                TapeFile = outputTapePath,
+                Duration = stopwatch.Elapsed
+            };
+        }
+        catch (Exception ex)
+        {
+            throw new VcrSessionException($"Interactive recording failed: {ex.Message}", ex);
+        }
+    }
+
+    /// <summary>
     /// Configures the terminal with theme and visual settings.
     /// </summary>
     private async Task ConfigureTerminalAsync()
@@ -248,31 +377,7 @@ public class VcrSession : IAsyncDisposable
         }
 
         // Set theme colors
-        var themeColors = new Dictionary<string, string>
-        {
-            ["background"] = _options.TransparentBackground ? "rgba(0,0,0,0)" : _options.Theme.Background,
-            ["foreground"] = _options.Theme.Foreground,
-            ["cursor"] = _options.Theme.Cursor,
-            ["selectionBackground"] = _options.Theme.SelectionBackground,
-            ["black"] = _options.Theme.Black,
-            ["red"] = _options.Theme.Red,
-            ["green"] = _options.Theme.Green,
-            ["yellow"] = _options.Theme.Yellow,
-            ["blue"] = _options.Theme.Blue,
-            ["magenta"] = _options.Theme.Magenta,
-            ["cyan"] = _options.Theme.Cyan,
-            ["white"] = _options.Theme.White,
-            ["brightBlack"] = _options.Theme.BrightBlack,
-            ["brightRed"] = _options.Theme.BrightRed,
-            ["brightGreen"] = _options.Theme.BrightGreen,
-            ["brightYellow"] = _options.Theme.BrightYellow,
-            ["brightBlue"] = _options.Theme.BrightBlue,
-            ["brightMagenta"] = _options.Theme.BrightMagenta,
-            ["brightCyan"] = _options.Theme.BrightCyan,
-            ["brightWhite"] = _options.Theme.BrightWhite
-        };
-
-        await _terminalPage.SetThemeAsync(themeColors);
+        await _terminalPage.SetThemeAsync(BuildThemeColors());
 
         // Set terminal options
         var terminalOptions = new Dictionary<string, object>
@@ -297,6 +402,47 @@ public class VcrSession : IAsyncDisposable
         {
             await _terminalPage.HideCursorAsync();
         }
+    }
+
+    /// <summary>
+    /// Builds the xterm theme color dictionary from the session theme.
+    /// </summary>
+    private Dictionary<string, string> BuildThemeColors() => new()
+    {
+        ["background"] = _options.TransparentBackground ? "rgba(0,0,0,0)" : _options.Theme.Background,
+        ["foreground"] = _options.Theme.Foreground,
+        ["cursor"] = _options.Theme.Cursor,
+        ["selectionBackground"] = _options.Theme.SelectionBackground,
+        ["black"] = _options.Theme.Black,
+        ["red"] = _options.Theme.Red,
+        ["green"] = _options.Theme.Green,
+        ["yellow"] = _options.Theme.Yellow,
+        ["blue"] = _options.Theme.Blue,
+        ["magenta"] = _options.Theme.Magenta,
+        ["cyan"] = _options.Theme.Cyan,
+        ["white"] = _options.Theme.White,
+        ["brightBlack"] = _options.Theme.BrightBlack,
+        ["brightRed"] = _options.Theme.BrightRed,
+        ["brightGreen"] = _options.Theme.BrightGreen,
+        ["brightYellow"] = _options.Theme.BrightYellow,
+        ["brightBlue"] = _options.Theme.BrightBlue,
+        ["brightMagenta"] = _options.Theme.BrightMagenta,
+        ["brightCyan"] = _options.Theme.BrightCyan,
+        ["brightWhite"] = _options.Theme.BrightWhite
+    };
+
+    /// <summary>
+    /// Lightweight terminal configuration for interactive record mode: applies theme colors only.
+    /// Deliberately skips font-size/family changes and fixed dimensions — the interactive window is
+    /// only for the user to type into (it does not affect the captured tape), so letting ttyd render
+    /// and fit natively keeps the bottom line fully visible and the window freely resizable.
+    /// </summary>
+    private async Task ConfigureInteractiveTerminalAsync()
+    {
+        if (_terminalPage == null)
+            throw new InvalidOperationException("Terminal page not initialized");
+
+        await _terminalPage.SetThemeAsync(BuildThemeColors());
     }
 
     /// <summary>
@@ -550,6 +696,11 @@ public class RecordingResult
     public TimeSpan Duration { get; set; }
     public List<string> OutputFiles { get; set; } = new();
     public List<string> ScreenshotFiles { get; set; } = new();
+
+    /// <summary>
+    /// Path to the generated tape file (interactive record mode). Empty for normal recordings.
+    /// </summary>
+    public string TapeFile { get; set; } = string.Empty;
 }
 
 /// <summary>

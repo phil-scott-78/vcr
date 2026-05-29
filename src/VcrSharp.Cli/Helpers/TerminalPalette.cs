@@ -52,6 +52,15 @@ public static class TerminalPalette
     {
         var results = new Dictionary<ConsoleColor, (byte R, byte G, byte B)?>();
 
+        if (Console.IsInputRedirected)
+        {
+            for (var ansiIndex = 0; ansiIndex < 16; ansiIndex++)
+            {
+                results[AnsiToConsoleColor[ansiIndex]] = null;
+            }
+            return results;
+        }
+
         var inputHandle = GetStdHandle(STD_INPUT_HANDLE);
         var gotMode = GetConsoleMode(inputHandle, out var originalMode);
 
@@ -83,7 +92,7 @@ public static class TerminalPalette
     public static (byte R, byte G, byte B)? Query(ConsoleColor color, int timeoutMs = 100)
     {
         var ansiIndex = Array.IndexOf(AnsiToConsoleColor, color);
-        if (ansiIndex < 0)
+        if (ansiIndex < 0 || Console.IsInputRedirected)
         {
             return null;
         }
@@ -131,6 +140,11 @@ public static class TerminalPalette
 
     private static (byte R, byte G, byte B)? QueryOscColor(int oscCode, int timeoutMs)
     {
+        if (Console.IsInputRedirected)
+        {
+            return null;
+        }
+
         var inputHandle = GetStdHandle(STD_INPUT_HANDLE);
         var gotMode = GetConsoleMode(inputHandle, out var originalMode);
 

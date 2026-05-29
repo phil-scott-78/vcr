@@ -14,7 +14,7 @@ By the end, you'll have a working animated GIF showing "Hello, VCR#!" appearing 
 
 You'll need:
 
-- .NET 9 SDK installed
+- .NET 10 SDK installed
 - Windows, macOS, or Linux
 - A terminal/command prompt
 
@@ -79,8 +79,8 @@ dotnet tool install --global vcr
 Confirm all dependencies are installed correctly:
 
 ```bash
-# Check VCR#
-vcr --version
+# Check VCR# (lists the built-in themes)
+vcr themes
 
 # Check FFmpeg
 ffmpeg -version
@@ -89,7 +89,7 @@ ffmpeg -version
 ttyd --version
 ```
 
-All three commands should display version information. If any command fails, revisit the Prerequisites section above.
+`vcr themes` should print a table of built-in themes, and the other two commands should display version information. If any command isn't found, revisit the Prerequisites section above.
 
 ## Your First Recording
 
@@ -102,7 +102,7 @@ Output hello.gif
 
 Set Cols 80
 Set Rows 20
-Set Theme Dracula
+Set Theme "Dracula"
 
 Type "echo 'Hello, VCR#!'"
 Enter
@@ -128,11 +128,13 @@ vcr hello.tape
 
 You'll see VCR# start a browser, execute your commands, and encode the video. This takes 10-20 seconds.
 
-Watch for the message: `✓ Recording complete: hello.gif`
+When it finishes, VCR# prints `✓ Recording complete`, followed by a `✓ Videos rendered:` list showing `hello.gif` and its file size.
 
 ### View Your Output
 
-Open `hello.gif` in your browser or image viewer. You should see:
+Open `hello.gif` in your browser or image viewer. You should see something like this — an SVG recording produced by the same tape file rendering through VCR#'s SVG encoder:
+
+<VcrTape src="../demos/hello-world.svg" />
 
 1. An empty terminal appears
 2. Text is typed: `echo 'Hello, VCR#!'`

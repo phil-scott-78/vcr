@@ -47,7 +47,7 @@ Output git-workflow.gif
 
 Set Cols 100
 Set Rows 30
-Set Theme Dracula
+Set Theme "Dracula"
 Set Shell "bash"
 ```
 
@@ -68,11 +68,15 @@ Run the recording:
 vcr git-workflow.tape
 ```
 
-Open the GIF. Notice something different from the typing demo: the output appeared instantly, and it shows the actual
-git status output from your repository.
+Open the GIF. Notice something different from the typing demo: nothing is "typed" — the real `git status` output from
+your repository simply appears.
 
-The `Exec` command runs the actual program and captures its real output. VCR# waits for the command to finish before
-continuing to the next line.
+Unlike `Type`, which simulates keystrokes, `Exec` runs a real program and captures its actual output. All `Exec`
+commands in a tape run together as a startup script when the shell launches, and their output is recorded as it appears.
+After the tape's commands finish, VCR# waits for the terminal output to settle (controlled by `InactivityTimeout`)
+before ending the recording. Here's a simple example using `dotnet --version`:
+
+<VcrTape src="../demos/exec-real-command.svg" />
 
 ## Step 3: Chain Multiple Commands
 
@@ -83,7 +87,7 @@ Output git-workflow.gif
 
 Set Cols 100
 Set Rows 30
-Set Theme Dracula
+Set Theme "Dracula"
 Set Shell "bash"
 
 Exec "git status"
@@ -108,11 +112,13 @@ Run the recording again:
 vcr git-workflow.tape
 ```
 
-Watch the GIF. You'll see each command execute in sequence with their real output: the file is created, staged,
-committed, and the commit appears in the log. Each `Sleep` command creates a pause so viewers can read the output.
+Watch the GIF. The commands run in order within the shell — the file is created, staged, committed, and the commit
+appears in the log — while VCR# records the real output. The `Sleep` commands between them pace the *recording*, holding
+each result on screen long enough for viewers to read it.
 
-Notice how VCR# waits for each command to complete before moving to the next one. You don't have to guess how long
-commands will take.
+Because the `Exec` commands run as a single startup script rather than being typed one at a time, the `Sleep` durations
+control the recording timeline, not the commands themselves. If you need to hold the recording until specific output
+appears, use a `Wait /pattern/` command (covered next) instead of guessing with `Sleep`.
 
 ## Step 4: Wait for Specific Output
 
@@ -123,7 +129,7 @@ Output git-workflow.gif
 
 Set Cols 100
 Set Rows 30
-Set Theme Dracula
+Set Theme "Dracula"
 Set Shell "bash"
 
 Exec "git status"
@@ -136,15 +142,16 @@ Exec "git add README.md"
 Sleep 500ms
 
 Exec "git commit -m 'Add README'"
-Wait "Add README"
+Wait /Add README/
 Sleep 500ms
 
 Exec "git log --oneline -n 1"
 Sleep 2s
 ```
 
-Notice the `Wait "Add README"` line. This tells VCR# to pause until it sees "Add README" in the terminal output before
-continuing. This is more reliable than using fixed delays when output timing varies.
+Notice the `Wait /Add README/` line. `Wait` takes a regular expression between slashes (not a quoted string), and it
+pauses the recording until that pattern appears in the terminal output. This is more reliable than a fixed `Sleep` when
+output timing varies. (Regex matching is case-sensitive, so the pattern must match the text exactly.)
 
 Run the recording:
 
@@ -175,7 +182,7 @@ Output git-workflow.gif
 
 Set Cols 100
 Set Rows 30
-Set Theme Dracula
+Set Theme "Dracula"
 Set Shell "bash"
 
 Exec "git status"
@@ -188,7 +195,7 @@ Exec "git add README.md"
 Sleep 500ms
 
 Exec "git commit -m 'Add README'"
-Wait "Add README"
+Wait /Add README/
 Sleep 500ms
 
 Exec "git log --oneline -n 1"

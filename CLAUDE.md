@@ -43,7 +43,7 @@ dotnet test --filter "FullyQualifiedName~TapeParserTests"
 ### Integration Test Setup
 Integration tests require Playwright browsers. Install them after building:
 ```bash
-pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net9.0/playwright.ps1 install chromium --no-shell
+pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net10.0/playwright.ps1 install chromium --no-shell
 ```
 
 ## Architecture
@@ -51,7 +51,7 @@ pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net9.0/playwright.ps1 install ch
 ### Three-Layer Architecture
 
 1. **VcrSharp.Core** - Domain logic and parsing
-   - `.tape` file parsing using Sprache parser combinators (TapeParser, TapeLexer)
+   - `.tape` file parsing using Superpower parser combinators (TapeParser, TapeTokenizer)
    - AST representation of commands (all implement `ICommand` interface)
    - Session state management and configuration (SessionState, SessionOptions)
    - Theme definitions (BuiltinThemes, Theme)
@@ -64,7 +64,7 @@ pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net9.0/playwright.ps1 install ch
    - Activity monitoring and inactivity detection (ActivityMonitor)
 
 3. **VcrSharp.Cli** - CLI application
-   - Commands: RecordCommand, ValidateCommand, ThemesCommand
+   - Commands: RecordCommand, ValidateCommand, ThemesCommand, SnapCommand, CaptureCommand
    - User interface with Spectre.Console
 
 ### Recording Flow
@@ -98,7 +98,7 @@ Command types in `VcrSharp.Core/Parsing/Ast/`:
 
 ### Key Components
 
-**TapeParser** (Core): Sprache-based parser that transforms `.tape` syntax into `ICommand` AST nodes.
+**TapeParser** (Core): Superpower-based parser that transforms `.tape` syntax into `ICommand` AST nodes.
 
 **VcrSession** (Infrastructure): Main orchestrator that manages the entire recording lifecycle - ttyd, browser, terminal, frame capture, command execution, and video encoding.
 
@@ -117,7 +117,7 @@ Command types in `VcrSharp.Core/Parsing/Ast/`:
 ## Dependencies
 
 ### Runtime Requirements
-- .NET 9 SDK
+- .NET 10 SDK
 - ttyd >= 1.7.2 (terminal server)
 - FFmpeg (video encoding)
 - Playwright browsers (auto-installed on first run)
@@ -126,10 +126,11 @@ Command types in `VcrSharp.Core/Parsing/Ast/`:
   - Previous versions only included drivers for the build platform, causing installation failures on other platforms
 
 ### Key NuGet Packages
-- Sprache (parser combinators)
-- Playwright (browser automation)
-- Spectre.Console (CLI UI)
-- SkiaSharp (image processing)
+- Superpower (parser combinators)
+- Microsoft.Playwright (browser automation)
+- Spectre.Console / Spectre.Console.Cli (CLI UI)
+- SixLabors.ImageSharp (image processing)
+- FFMpegCore (FFmpeg video encoding)
 
 ## Project Structure
 
@@ -147,7 +148,7 @@ tests/
 ## Important Implementation Details
 
 ### Parser Implementation
-Uses Sprache parser combinators for `.tape` file parsing. TapeParser defines grammar rules that build ICommand objects. Parser is recursive-descent and supports comments, quoted strings, duration literals (e.g., "500ms", "2s"), and regex patterns for Wait commands.
+Uses Superpower parser combinators for `.tape` file parsing. TapeTokenizer produces a token stream and TapeParser defines grammar rules that build ICommand objects. Supports comments, quoted strings, duration literals (e.g., "500ms", "2s"), and regex patterns for Wait commands.
 
 ### Wait Command Scopes
 Wait command has three scopes for pattern matching:
@@ -255,10 +256,11 @@ Run integration tests locally with caution - they create actual browser instance
 4. Add tests in `VcrSharp.Core.Tests/Parsing/Ast/`
 
 ### Adding New Settings
-1. Add property to `SessionState` in `VcrSharp.Core/Session/SessionState.cs`
-2. Add parser case in `SetCommand.cs`
-3. Update command execution logic to use new setting
-4. Add parser tests
+1. Add property (with default) to `SessionOptions` in `VcrSharp.Core/Session/SessionOptions.cs`
+2. Add the setting name to `ValidSettingNames` in `TapeParser.cs`
+3. Add an apply case in `SessionOptions.ApplySetting`
+4. Add validation in `SessionOptions.Validate` if needed
+5. Add parser tests
 
 ### Working with Playwright Terminal
 TerminalPage wraps xterm.js terminal in browser. Key methods:

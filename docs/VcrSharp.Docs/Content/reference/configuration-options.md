@@ -18,10 +18,12 @@ ways:
 
 2. **Via CLI flags** using `--set`:
    ```bash
-   vcr-sharp demo.tape --set Theme=Nord --set FontSize=24
+   vcr demo.tape --set Theme=Nord --set FontSize=24
    ```
 
 CLI flags override tape file settings, allowing quick adjustments without modifying the tape file.
+
+> **Ordering rules (tape files).** Each setting may be set only once, and all `Set` commands must appear before any action command (`Type`, key presses, `Sleep`, `Wait`, `Exec`, etc.). Settings cannot be changed mid-recording — a duplicate `Set`, or a `Set` after an action, is a parse error. (CLI `--set` overrides are exempt from these rules.)
 
 ## Terminal Settings
 
@@ -191,14 +193,14 @@ Set MaxColors 256    # Maximum quality
 - `Dracula`
 - `Monokai`
 - `Nord`
-- `SolarizedDark`
-- `SolarizedLight`
-- `OneDark`
-- `GruvboxDark`
-- `TokyoNight`
-- `CatppuccinMocha`
+- `Solarized Dark`
+- `Solarized Light`
+- `One Dark`
+- `Gruvbox Dark`
+- `Tokyo Night`
+- `Catppuccin Mocha`
 
-**Description:** Color theme for the terminal.
+**Description:** Color theme for the terminal. Names are matched case-insensitively, but spaces are significant — use the exact names above (e.g. `Set Theme "One Dark"`). An unrecognized name silently falls back to `Default`.
 
 **Example:**
 
@@ -291,6 +293,18 @@ Set CursorBlink false
 
 ```tape
 Set TransparentBackground true
+```
+
+### DisableCursor
+
+**Type:** Boolean
+**Default:** `false`
+**Description:** Hide the cursor entirely. When `true`, the cursor is not rendered in the browser terminal, screenshots, or SVG output.
+
+**Example:**
+
+```tape
+Set DisableCursor true
 ```
 
 ## Behavior & Timing Settings
@@ -404,7 +418,7 @@ Set StartWaitTimeout 15s
 ### StartBuffer
 
 **Type:** Duration
-**Default:** `500ms`
+**Default:** `0ms`
 **Description:** Amount of blank time to include before the first activity. Frames before (FirstActivity - StartBuffer)
 are trimmed.
 
@@ -459,7 +473,7 @@ Set FontSize 22
 
 ```bash
 # Override theme while keeping FontSize
-vcr-sharp demo.tape --set Theme=Nord
+vcr demo.tape --set Theme=Nord
 ```
 
 ## Complete Example
@@ -496,7 +510,7 @@ Set TypingSpeed 60ms
 Set WaitTimeout 15s
 Set InactivityTimeout 5s
 Set MaxWaitForInactivity 120s
-Set StartBuffer 500ms
+Set StartBuffer 0ms
 Set EndBuffer 100ms
 Set StartupDelay 3.5s
 
@@ -516,11 +530,12 @@ VCR# validates settings and provides clear error messages for invalid values:
 - `MaxColors`: 1-256
 - `Padding`, `Margin`, `BorderRadius`: ≥ 0
 - `Width`, `Height`, `FontSize`, `WindowBarSize`: > 0
-- Durations: Must be positive
+
+Duration settings (e.g. `TypingSpeed`, `WaitTimeout`, `StartBuffer`) are not range-validated.
 
 **Error Example:**
 
 ```
-Error: Framerate must be between 1 and 120 (got: 150)
+Error: Framerate must be between 1 and 120
 Error: WorkingDirectory does not exist: C:\NonExistent
 ```

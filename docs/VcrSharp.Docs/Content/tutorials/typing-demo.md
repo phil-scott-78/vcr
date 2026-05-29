@@ -30,7 +30,7 @@ Output typing-demo.gif
 
 Set Cols 100
 Set Rows 30
-Set Theme Dracula
+Set Theme "Dracula"
 ```
 
 These lines set up the output file and terminal appearance. We'll add commands next.
@@ -63,7 +63,7 @@ Output typing-demo.gif
 
 Set Cols 100
 Set Rows 30
-Set Theme Dracula
+Set Theme "Dracula"
 
 Type "echo 'Helo, World!'"
 Sleep 500ms
@@ -89,12 +89,16 @@ Watch the GIF carefully. You'll see the cursor move back with `Left 9`, delete t
 
 Notice how the `Sleep` commands create natural pauses that make the editing look realistic. A real person pauses to think while navigating and editing.
 
+Here's the rendered result of the tape above:
+
+<VcrTape src="../demos/typing-edits.svg" />
+
 ## Step 4: Customize the Theme
 
 Now let's change the visual appearance. Update the theme line:
 
 ```tape
-Set Theme Monokai
+Set Theme "Monokai"
 ```
 
 Run the recording once more:
@@ -123,7 +127,7 @@ Output typing-demo.gif
 
 Set Cols 100
 Set Rows 30
-Set Theme Monokai
+Set Theme "Monokai"
 
 Type "echo 'Helo, World!'"
 Sleep 500ms

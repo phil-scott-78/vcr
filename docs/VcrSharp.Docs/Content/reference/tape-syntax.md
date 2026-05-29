@@ -44,7 +44,10 @@ Output "path/to/file.webm"
 **Supported Formats:**
 - `.gif` - Animated GIF with palette optimization
 - `.mp4` - H.264 video
-- `.webm` - WebM video
+- `.webm` - WebM video (supports transparency)
+- `.svg` - Animated, text-based SVG (no FFmpeg required)
+- `.png` - Single-frame PNG
+- A directory or extension-less path (e.g. `frames/`) - Raw PNG frames plus a manifest written to that directory
 
 **Multiple Outputs:**
 You can specify multiple Output commands to generate different formats simultaneously:
@@ -66,6 +69,8 @@ Set <SettingName> <Value>
 Set <SettingName> "<StringValue>"
 Set <SettingName> 100ms
 ```
+
+> **Quote string values.** A `Set` value must be a quoted string, a number, a duration (e.g. `100ms`), or `true`/`false`. Bare identifiers do not parse — write `Set Theme "Dracula"`, not `Set Theme Dracula`.
 
 #### Terminal Settings
 
@@ -99,6 +104,7 @@ Set MarginFill "#000000" # Margin fill color or image path
 Set WindowBarSize 30    # Window bar height (pixels)
 Set BorderRadius 8      # Border corner radius (pixels)
 Set CursorBlink true    # Enable/disable cursor blinking
+Set DisableCursor false # Hide the cursor entirely in output
 Set TransparentBackground false
 ```
 
@@ -111,9 +117,11 @@ Set TypingSpeed 60ms                # Delay between keystrokes
 Set WaitTimeout 15s                 # Wait command timeout
 Set WaitPattern />\s*$/             # Regex for prompt detection
 Set InactivityTimeout 5s            # Command completion detection
+Set MaxWaitForInactivity 120s       # Max wait for Exec output to settle
 Set StartWaitTimeout 10s            # Wait for first activity
-Set StartBuffer 500ms               # Time before first activity
+Set StartBuffer 0ms                 # Time before first activity (default 0ms)
 Set EndBuffer 100ms                 # Time after last activity
+Set StartupDelay 3.5s               # Delay before Exec commands run at startup
 ```
 
 ## Input Commands
@@ -322,12 +330,13 @@ Commands execute at the start of the recording session and run in the background
 
 ### Screenshot
 
-Capture a single frame during recording.
+Capture a single frame during recording. The format is chosen by the file extension: `.svg` produces a vector
+screenshot, and any other extension produces a PNG raster image. Only `.png` and `.svg` are meaningful.
 
 **Syntax:**
 ```tape
-Screenshot "output.png"
-Screenshot "capture.jpg"
+Screenshot "output.png"   # PNG raster (any non-.svg extension produces PNG)
+Screenshot "output.svg"   # SVG vector screenshot (scalable, searchable)
 ```
 
 ### Copy
@@ -362,13 +371,13 @@ Env NODE_ENV "production"
 
 ### Require
 
-Verify that required commands or dependencies are available before recording.
+Verify that required commands or dependencies are available before recording. Unlike `Output` and `Source`, the program name is given as a bare identifier (not quoted).
 
 **Syntax:**
 ```tape
-Require "git"
-Require "node"
-Require "dotnet"
+Require git
+Require node
+Require dotnet
 ```
 
 ### Source
@@ -471,7 +480,7 @@ Set WaitPattern /\$\s*$/        # Configure default pattern
 
 ### Syntax
 
-Lines starting with `#` are comments and are ignored during parsing.
+A `#` begins a comment that runs to the end of the line and is ignored during parsing. It can start a line (whole-line comment) or follow a command (trailing comment).
 
 **Example:**
 ```tape
@@ -545,35 +554,41 @@ Duration literals are parsed using the format `<number><unit>`.
 
 ### Command Ordering
 
-Commands execute sequentially in file order from top to bottom. `Set` and `Output` commands can appear anywhere but apply immediately when encountered.
+Commands execute sequentially in file order from top to bottom. All `Set` commands must appear **before** any action command (`Type`, key presses, `Sleep`, `Wait`, `Hide`, `Show`, `Screenshot`, `Copy`, `Paste`, `Exec`), and each setting may be set **only once**. `Output` and `Env` commands are exempt from these ordering rules. Settings cannot be changed mid-recording — a duplicate `Set`, or a `Set` after an action command, is a parse error.
 
 **Example:**
 ```tape
-Set FontSize 20      # Applies before recording starts
-Type "hello"         # Uses FontSize 20
-Set FontSize 24      # Changes font size mid-recording
-Type "world"         # Uses FontSize 24
+# All settings first...
+Set FontSize 24
+Set Theme "Dracula"
+
+# ...then the action commands
+Type "hello"
+Enter
+Wait
 ```
 
 ### Validation Rules
 
 **Parser errors for:**
 - Unknown command names
+- Unknown setting names in `Set` commands (with a "Did you mean...?" suggestion)
+- Setting the same value twice, or a `Set` after an action command
 - Missing required arguments
 - Invalid argument types (string where number expected)
-- Malformed duration literals (`10mss`, `5 s`)
+- Malformed duration literals (e.g. `10mss`)
 - Unclosed string quotes
 - Invalid escape sequences in double-quoted strings
 - Empty regex patterns (`//`)
 - Modifier key combinations without target key (`Ctrl+`)
 
 **Runtime errors for:**
-- Invalid setting names in `Set` commands
-- Invalid theme names
 - Regex patterns that fail to compile
 - File paths that cannot be written (Output, Screenshot)
 - Commands referenced in `Require` that are not found
 - Source files that do not exist or contain syntax errors
+
+An **unknown theme name is not an error** — VCR# silently falls back to the Default theme, so double-check spelling and spaces (`"One Dark"`, not `"OneDark"`).
 
 ### Whitespace Handling
 
@@ -584,7 +599,8 @@ Type "world"         # Uses FontSize 24
 
 ### Case Sensitivity
 
-- Command names are case-insensitive (`Type`, `type`, `TYPE` all valid)
+- Command names are case-sensitive — use the documented casing (`Type`, not `type` or `TYPE`)
 - Setting names are case-insensitive (`Set FontSize`, `Set fontsize` both valid)
-- String values are case-sensitive (`Set Theme "Dracula"` ≠ `Set Theme "dracula"`)
+- The `true`/`false` literals are case-insensitive
+- Theme names are matched case-insensitively (`Set Theme "dracula"` works), but spaces in multi-word names matter (`Set Theme "One Dark"`, not `"OneDark"`)
 - Regex patterns are case-sensitive by default

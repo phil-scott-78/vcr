@@ -32,6 +32,10 @@ To wait for specific output, use a regex pattern in forward slashes:
 Wait /pattern/
 ```
 
+The recording below stops streaming numbers as soon as `line 15` appears in the buffer — even though the script would have kept printing up to 20:
+
+<VcrTape src="../demos/wait-pattern.svg" />
+
 **Common patterns:**
 ```tape
 Wait /Complete/           # Literal word

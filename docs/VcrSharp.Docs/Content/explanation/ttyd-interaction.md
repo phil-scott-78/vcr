@@ -181,11 +181,11 @@ Wait /hello/
 
 **While commands execute, VCR# continuously captures screenshots:**
 
-1. **Background thread** runs a capture loop at 50fps (20ms intervals)
+1. **Background thread** runs a capture loop at the configured framerate (default 50fps / 20ms intervals)
 2. Each iteration: `await page.ScreenshotAsync()`
 3. Playwright captures the browser's canvas elements
 4. Returns PNG bytes
-5. VCR# writes PNG to disk: `frame0001.png`, `frame0002.png`, ...
+5. VCR# writes layered PNGs to disk (a text layer and a cursor layer per frame: `frame-text-00001.png`, `frame-cursor-00001.png`, ...)
 
 This happens **in parallel** with command execution. The capture loop doesn't care what commands are running—it just screenshots at regular intervals. This separation ensures consistent framerate regardless of command timing.
 
@@ -222,7 +222,7 @@ Understanding this architecture explains several VCR# characteristics:
 
 **Why startup takes 2-3 seconds**: VCR# must launch ttyd, wait for port availability, launch browser, wait for xterm.js initialization, and wait for shell prompt. That's unavoidable with this architecture.
 
-**Why VCR# requires dependencies**: ttyd, Chromium (via Playwright), and FFmpeg aren't optional—they're fundamental to how VCR# works.
+**Why VCR# requires dependencies**: ttyd and Chromium (via Playwright) are fundamental to how VCR# works and are always required. FFmpeg is needed only for raster/video output (GIF, MP4, WebM, PNG) — SVG and raw-frame outputs don't use it, which is why the `snap` and `capture` subcommands (SVG only) skip the FFmpeg check entirely.
 
 **Why recordings look identical everywhere**: xterm.js provides consistent rendering across all platforms.
 

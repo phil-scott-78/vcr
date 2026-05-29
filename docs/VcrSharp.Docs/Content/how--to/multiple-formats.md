@@ -7,7 +7,8 @@ order: 2600
 
 ## Overview
 
-Generate GIF, MP4, and WebM files from a single recording.
+Generate multiple output files from a single recording. This guide focuses on the animated raster/video formats —
+GIF, MP4, and WebM — but VCR# also supports SVG, PNG, and a raw frames directory (see [Other Output Formats](#other-output-formats) below).
 
 ## Choosing a Format
 
@@ -40,7 +41,7 @@ VCR# will generate all three files from a single recording.
 
 Use the `--output` or `-o` flag to add outputs without editing the tape file:
 
-```tape
+```bash
 vcr demo.tape -o extra.mp4 -o extra.webm
 ```
 
@@ -80,21 +81,34 @@ Output web.webm             # For website embedding
 
 Set Cols 100
 Set Rows 30
-Set Theme Dracula
+Set Theme "Dracula"
 
 Type "npm install VCR#"
 Enter
 Wait
 ```
 
+## Other Output Formats
+
+Beyond GIF/MP4/WebM, the `Output` command also accepts:
+
+- **`.svg`** — an animated, text-based SVG. Lightweight, scalable, and rendered without FFmpeg.
+- **`.png`** — a single-frame PNG of the terminal.
+- **A directory or extension-less path** (e.g. `Output frames/`) — writes the raw PNG frames plus a manifest into that directory.
+
+```tape
+Output demo.svg     # Animated SVG (no FFmpeg required)
+Output final.png    # Single-frame PNG
+Output frames/      # Raw PNG frames + manifest
+```
+
 ## Format-Specific Settings
 
-**GIF-only settings:**
-- `MaxColors` - Color palette size (default: 256)
-- `LoopOffset` - Delay before loop starts
+**GIF-only setting:**
+- `MaxColors` - Color palette size, 1–256 (default: 256)
 
-**Video-only settings (MP4/WebM):**
-- `Framerate` - Recording frame rate (default: 50)
-- `PlaybackSpeed` - Playback multiplier (default: 1.0)
+**Timing settings (all animated formats — GIF, MP4, WebM, and SVG):**
+- `Framerate` - Recording frame rate, 1–120 (default: 50)
+- `PlaybackSpeed` - Playback speed multiplier (default: 1.0; also affects SVG)
 
-All settings apply to all formats unless noted otherwise.
+All other settings apply to every format unless noted otherwise.

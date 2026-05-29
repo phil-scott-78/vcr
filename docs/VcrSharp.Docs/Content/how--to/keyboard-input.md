@@ -100,7 +100,7 @@ Type "C:\\Users\\Alice\\Documents"    # Double quotes: escape backslashes
 ### To override typing speed for one Type command:
 
 ```tape
-Set TypingSpeed 50ms                  # Default speed
+Set TypingSpeed 50ms                  # Slightly faster than the 60ms default
 
 Type "Normal speed text"
 Enter
@@ -153,12 +153,14 @@ Wait
 
 **Use keyboard shortcuts:**
 ```tape
-Type "ping google.com"
+Type "ping 127.0.0.1"
 Enter
-Sleep 2s
+Sleep 4s
 Ctrl+C          # Interrupt the ping
 Wait
 ```
+
+<VcrTape src="../demos/keyboard-modifiers.svg" />
 
 ## Troubleshooting
 

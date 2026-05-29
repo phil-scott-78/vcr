@@ -63,9 +63,9 @@ CLI outputs are **appended** to any `Output` commands in the tape file.
 Create themed variants without editing files:
 
 ```bash
-for theme in Dracula Monokai Gruvbox Nord
+for theme in Dracula Monokai "Gruvbox Dark" Nord
 do
-  vcr demo.tape --set Theme=$theme -o "demo-$theme.gif"
+  vcr demo.tape --set Theme="$theme" -o "demo-$theme.gif"
 done
 ```
 
@@ -95,4 +95,4 @@ All `Set` commands can be overridden from the CLI. Common examples:
 - `BorderRadius` - Corner rounding
 - `TypingSpeed` - Typing animation speed
 
-For a complete list, see the [Settings Reference](../reference/settings).
+For a complete list, see the [Configuration Options Reference](../reference/configuration-options).

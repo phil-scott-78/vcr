@@ -7,7 +7,7 @@ order: 2100
 
 ## Overview
 
-Capture specific frames as standalone PNG or JPG images during recording.
+Capture specific frames as standalone images during recording.
 
 ## Basic Screenshot Capture
 
@@ -15,7 +15,7 @@ Capture specific frames as standalone PNG or JPG images during recording.
 Screenshot "filename.png"
 ```
 
-Supported formats: `.png`, `.jpg`
+Supported formats: `.png` (raster, pixel-perfect) and `.svg` (vector, lightweight and searchable). Format is auto-detected from the file extension; any extension other than `.svg` is treated as PNG.
 
 ### Example
 
@@ -46,7 +46,13 @@ Wait /tests passed/             # Wait for completion
 Screenshot "test-results.png"
 ```
 
-**Tip:** For lossless quality, use `.png`. For smaller file sizes, use `.jpg`.
+**Tip:** Use `.png` for pixel-perfect raster output. Use `.svg` when you want a small, scalable, text-searchable file (great for embedding in docs).
+
+### Static SVG Screenshot
+
+This is an actual SVG screenshot captured mid-recording with `Screenshot "screenshot-svg.svg"` — text is selectable and the image scales crisply at any size:
+
+<VcrTape src="../demos/screenshot-svg.svg" />
 
 ## Multiple Screenshots
 

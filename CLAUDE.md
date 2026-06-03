@@ -130,7 +130,11 @@ Command types in `VcrSharp.Core/Parsing/Ast/`:
 
 **VideoEncoder** (Infrastructure): Orchestrator that routes encoding requests to format-specific encoders. Uses interface-based architecture with IEncoder implementations for each format (GIF, MP4, WebM, PNG, Frames, SVG).
 
-**SvgRenderer** (Infrastructure): Shared SVG rendering component used by both SvgEncoder (for animated recordings) and FrameCapture (for static screenshots). Renders terminal content as text-based SVG with full styling support.
+**SvgRenderer** (Infrastructure): Shared SVG rendering component used by both SvgEncoder (for animated recordings) and FrameCapture (for static screenshots). Renders terminal content as text-based SVG with full styling support. Embedding-oriented options (all SVG-only): `Set Loop false`/`Set LoopCount N` (finite `repeatCount` + `fill="freeze"` so the reveal plays once/N times and holds); `Set FitToContent true` (crop to measured content extent and relax the clip-path); `Set SvgIntrinsicSize`/`Set SvgMetadata` (explicit `width`/`height` + `data-*` metadata on the root `<svg>`, both default **on**); `Set CssVariables true` (emit `fill:var(--vcr-*,#fallback)` + a `:root` palette block). The SVG path honors `Padding` only — it ignores `Margin`/`MarginFill`/`WindowBarSize`/`BorderRadius` and captures only the visible viewport.
+
+**ContentExtent / ContentAnalysis** (Core, `Rendering/ContentExtent.cs`): Pure helpers shared across the SVG features. `ContentAnalysis` holds the single blank-cell/blank-row/blank-content predicate (matches the renderer's row-skip) plus `TrimBlankLoopRange` (drops leading-blank frames and collapses a trailing static tail so a looping SVG starts on content and doesn't flash). `ContentExtent.Measure`/`Union` compute the cropped extent for `FitToContent` and `data-cols`/`data-rows`.
+
+**BufferStabilizer** (Infrastructure, `Recording/`): Reusable buffer-settle poll extracted from `VcrSession.WaitForInactivityAsync`. Used by `Set ScreenshotWaitForInactivity true` (Screenshot waits for output to settle before capturing) and `Set StaticOutput true` (run Exec, settle, emit a single static SVG/PNG per Output with no frame loop or animation — see `VcrSession.RenderStaticOutputAsync`).
 
 ## Dependencies
 
@@ -279,6 +283,8 @@ Run integration tests locally with caution - they create actual browser instance
 3. Add an apply case in `SessionOptions.ApplySetting`
 4. Add validation in `SessionOptions.Validate` if needed
 5. Add parser tests
+
+Note: setting names may begin with a command keyword (e.g. `WaitTimeout`, `ScreenshotWaitForInactivity`). `TapeTokenizer.Keyword()` guards the right boundary so a keyword is only tokenized when it isn't immediately followed by an identifier character — so such names tokenize as a single identifier. (Boolean and duration values already parse via the existing `Set X value` grammar; no grammar change is needed for new bool/int/duration settings.)
 
 ### Working with Playwright Terminal
 TerminalPage wraps xterm.js terminal in browser. Key methods:

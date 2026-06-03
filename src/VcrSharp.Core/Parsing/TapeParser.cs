@@ -367,22 +367,24 @@ public class TapeParser
     private static readonly HashSet<string> ValidSettingNames = new(StringComparer.OrdinalIgnoreCase)
     {
         // Terminal dimensions
-        "Width", "Height", "Cols", "Rows",
+        "Width", "Height", "Cols", "Rows", "FitToContent",
 
         // Font settings
         "FontSize", "FontFamily", "LetterSpacing", "LineHeight",
 
         // Video settings
-        "Framerate", "PlaybackSpeed", "LoopOffset", "MaxColors",
+        "Framerate", "PlaybackSpeed", "LoopOffset", "MaxColors", "Loop", "LoopCount",
 
         // Styling
         "Theme", "Padding", "Margin", "MarginFill", "WindowBarSize",
         "BorderRadius", "CursorBlink", "DisableCursor", "TransparentBackground",
+        "CssVariables", "SvgIntrinsicSize", "SvgMetadata",
 
         // Behavior
         "Shell", "WorkingDirectory", "TypingSpeed", "WaitTimeout",
         "WaitPattern", "InactivityTimeout", "MaxWaitForInactivity", "StartWaitTimeout",
-        "StartBuffer", "EndBuffer", "StartupDelay"
+        "StartBuffer", "EndBuffer", "StartupDelay",
+        "ScreenshotWaitForInactivity", "ScreenshotInactivityTimeout", "StaticOutput"
     };
 
     /// <summary>

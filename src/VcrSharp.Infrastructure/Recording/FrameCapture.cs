@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using VcrSharp.Core.Logging;
 using VcrSharp.Core.Recording;
+using VcrSharp.Core.Rendering;
 using VcrSharp.Core.Session;
 using VcrSharp.Infrastructure.Playwright;
 using VcrSharp.Infrastructure.Rendering;
@@ -245,6 +246,11 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
             }
 
             var renderer = new SvgRenderer(_options);
+            if (_options.FitToContent)
+            {
+                var extent = ContentExtent.Measure(content);
+                renderer.SetContentExtent(extent.Cols, extent.Rows);
+            }
             await renderer.RenderStaticAsync(path, content);
         }
         else
@@ -257,6 +263,10 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         // Track screenshot file in session state
         _state.ScreenshotFiles.Add(path);
     }
+
+    /// <inheritdoc />
+    public Task WaitForBufferStableAsync(TimeSpan inactivityTimeout, TimeSpan maxWait, CancellationToken cancellationToken = default)
+        => BufferStabilizer.WaitForStableAsync(_terminalPage, inactivityTimeout, maxWait, cancellationToken);
 
     /// <summary>
     /// Disposes resources and ensures all queued frames are written.

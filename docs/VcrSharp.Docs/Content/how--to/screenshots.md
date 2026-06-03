@@ -54,6 +54,50 @@ This is an actual SVG screenshot captured mid-recording with `Screenshot "screen
 
 <VcrTape src="../demos/screenshot-svg.svg" />
 
+## Capturing a Clean Frame After an `Exec` Command
+
+`Exec` runs in the background and the shell may exit (clearing the screen) before a plain `Screenshot` fires, capturing an empty terminal. Two settings fix this:
+
+**Make `Screenshot` wait for the output to settle:**
+
+```tape
+Output "demo.gif"
+Set ScreenshotWaitForInactivity true     # wait for the buffer to stop changing
+Exec "my-tui --render-table"
+Screenshot "table.svg"
+```
+
+**Or produce a single static frame with no animation** (no SMIL, no command echo) — best for a widget you want to embed as a still image:
+
+```tape
+Set StaticOutput true                    # run Exec, settle, emit one static frame
+Output "table.svg"                        # must be .svg or .png
+Exec "my-tui --render-table"
+```
+
+`StaticOutput` skips the frame-capture loop entirely and emits exactly one settled frame per `Output`.
+
+## Static SVG Widgets for Embedding
+
+For SVG widgets embedded in a docs site or README, combine the SVG output settings:
+
+```tape
+Set StaticOutput true        # one clean static frame
+Set FitToContent true        # crop to content — no need to guess Cols/Rows
+Set CssVariables true         # colors follow the page theme via --vcr-* CSS variables
+Set Theme "Dracula"
+Output "widget.svg"
+Exec "my-tui --render-table"
+```
+
+- **`FitToContent`** trims trailing blank rows / right-side blank columns and relaxes the clip-path, so the last row is never shaved — over-provision `Rows` and let the renderer size the SVG.
+- **`SvgMetadata`** and **`SvgIntrinsicSize`** are on by default, so the root `<svg>` carries explicit `width`/`height` plus `data-cols`/`data-rows`/`data-font-size` — an `<img>` embed gets a stable intrinsic size and a consumer can compute exact display size without parsing the `viewBox`.
+- **`CssVariables`** emits `fill:var(--vcr-green,#…)` with a `:root` palette, so the embedding page can recolor or light/dark-swap the inlined SVG with no regeneration. (Each `var()` has a hex fallback, so `<img>` embeds still render.)
+
+For an **animated** widget that mostly shows a static end state, add `Set Loop false` so the reveal plays once and holds the final frame instead of flashing empty → content every loop.
+
+See the [Configuration Options reference](xref:docs.reference.configuration-options#svg-output-settings) for the full list.
+
 ## Multiple Screenshots
 
 Capture different stages of a workflow:
@@ -130,7 +174,10 @@ Screenshot "step-3-running.png"
 ## Troubleshooting
 
 **If Screenshot captures mid-animation or partial output:**
-Add `Sleep 500ms` before the Screenshot command to let output stabilize.
+Add `Sleep 500ms` before the Screenshot command to let output stabilize, or set `Set ScreenshotWaitForInactivity true` to wait for the buffer to settle automatically.
+
+**If Screenshot after an `Exec` command captures an empty screen:**
+The shell exited (clearing the screen) before the Screenshot fired. Use `Set ScreenshotWaitForInactivity true`, or switch to `Set StaticOutput true` to emit a single settled frame.
 
 **If Screenshot shows wrong content:**
 Ensure your `Wait` pattern completed successfully before the Screenshot executes.

@@ -1,6 +1,7 @@
 using Shouldly;
 using VcrSharp.Core.Parsing;
 using VcrSharp.Core.Parsing.Ast;
+using VcrSharp.Core.Session;
 
 namespace VcrSharp.Core.Tests.Parsing.TapeParserTests;
 
@@ -143,6 +144,97 @@ public class SettingCommandTests
         var cmd = commands[0].ShouldBeOfType<SetCommand>();
         cmd.SettingName.ShouldBe("TransparentBackground");
         cmd.Value.ShouldBe("True");
+    }
+
+    [Fact]
+    public void ParseTape_SetCssVariables_ParsesAndApplies()
+    {
+        var parser = new TapeParser();
+
+        var commands = parser.ParseTape("Set CssVariables true");
+        var cmd = commands[0].ShouldBeOfType<SetCommand>();
+        cmd.SettingName.ShouldBe("CssVariables");
+        cmd.Value.ShouldBe("True");
+
+        SessionOptions.FromCommands(commands).CssVariables.ShouldBeTrue();
+        SessionOptions.FromCommands(parser.ParseTape("Set CssVariables false")).CssVariables.ShouldBeFalse();
+        new SessionOptions().CssVariables.ShouldBeFalse(); // default
+    }
+
+    [Fact]
+    public void ParseTape_SetSvgMetadataAndIntrinsicSize_ParsesAndApplies()
+    {
+        var parser = new TapeParser();
+
+        // Defaults are ON.
+        new SessionOptions().SvgMetadata.ShouldBeTrue();
+        new SessionOptions().SvgIntrinsicSize.ShouldBeTrue();
+
+        SessionOptions.FromCommands(parser.ParseTape("Set SvgMetadata false")).SvgMetadata.ShouldBeFalse();
+        SessionOptions.FromCommands(parser.ParseTape("Set SvgIntrinsicSize false")).SvgIntrinsicSize.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ParseTape_SetFitToContent_ParsesAndApplies()
+    {
+        var parser = new TapeParser();
+        new SessionOptions().FitToContent.ShouldBeFalse(); // default
+        SessionOptions.FromCommands(parser.ParseTape("Set FitToContent true")).FitToContent.ShouldBeTrue();
+        SessionOptions.FromCommands(parser.ParseTape("Set FitToContent false")).FitToContent.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void ParseTape_SetLoopAndLoopCount_ParsesAndApplies()
+    {
+        var parser = new TapeParser();
+        new SessionOptions().Loop.ShouldBeTrue();           // default infinite
+        new SessionOptions().LoopCount.ShouldBeNull();
+
+        SessionOptions.FromCommands(parser.ParseTape("Set Loop false")).Loop.ShouldBeFalse();
+        SessionOptions.FromCommands(parser.ParseTape("Set LoopCount 3")).LoopCount.ShouldBe(3);
+    }
+
+    [Fact]
+    public void Validate_LoopCountZero_IsRejected()
+    {
+        var parser = new TapeParser();
+        var options = SessionOptions.FromCommands(parser.ParseTape("Set LoopCount 0\nOutput x.svg"));
+        options.Validate().ShouldContain("LoopCount must be greater than 0");
+
+        var ok = SessionOptions.FromCommands(parser.ParseTape("Set LoopCount 2\nOutput x.svg"));
+        ok.Validate().ShouldNotContain("LoopCount must be greater than 0");
+    }
+
+    [Fact]
+    public void ParseTape_SetScreenshotAndStaticOutputSettings_ParseAndApply()
+    {
+        var parser = new TapeParser();
+
+        new SessionOptions().ScreenshotWaitForInactivity.ShouldBeFalse(); // default
+        new SessionOptions().StaticOutput.ShouldBeFalse();
+        new SessionOptions().ScreenshotInactivityTimeout.ShouldBe(TimeSpan.FromMilliseconds(500));
+
+        SessionOptions.FromCommands(parser.ParseTape("Set ScreenshotWaitForInactivity true"))
+            .ScreenshotWaitForInactivity.ShouldBeTrue();
+        SessionOptions.FromCommands(parser.ParseTape("Set ScreenshotInactivityTimeout 250ms"))
+            .ScreenshotInactivityTimeout.ShouldBe(TimeSpan.FromMilliseconds(250));
+        SessionOptions.FromCommands(parser.ParseTape("Set StaticOutput true"))
+            .StaticOutput.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Validate_StaticOutput_RequiresSvgOrPng()
+    {
+        var parser = new TapeParser();
+
+        var bad = SessionOptions.FromCommands(parser.ParseTape("Set StaticOutput true\nOutput demo.gif"));
+        bad.Validate().ShouldContain("StaticOutput requires .svg or .png output files; got 'demo.gif'");
+
+        var svg = SessionOptions.FromCommands(parser.ParseTape("Set StaticOutput true\nOutput demo.svg"));
+        svg.Validate().Where(e => e.Contains("StaticOutput")).ShouldBeEmpty();
+
+        var png = SessionOptions.FromCommands(parser.ParseTape("Set StaticOutput true\nOutput demo.png"));
+        png.Validate().Where(e => e.Contains("StaticOutput")).ShouldBeEmpty();
     }
 
     [Fact]

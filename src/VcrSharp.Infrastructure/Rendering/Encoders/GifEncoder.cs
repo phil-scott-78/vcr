@@ -69,6 +69,7 @@ public class GifEncoder(SessionOptions options, FrameStorage storage) : EncoderB
                 .WithCustomArgument("-safe 0"))
             .OutputToFile(outputPath, overwrite: true, options => options
                 .WithCustomArgument($"-filter_complex \"{filterComplex}\"")
+                .WithCustomArgument($"-loop {Options.ResolveGifLoopArgument()}")
                 .ForceFormat("gif"))
             .NotifyOnOutput(_ =>
             {

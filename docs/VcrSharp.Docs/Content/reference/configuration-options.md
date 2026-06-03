@@ -167,6 +167,31 @@ Set PlaybackSpeed 0.5    # Half speed (slow motion)
 Set LoopOffset 2.0    # 2 second pause before loop
 ```
 
+### Loop
+
+**Type:** Boolean
+**Default:** `true`
+**Description:** Whether animated output (SVG, GIF) loops forever. When `false`, the reveal plays once and holds the final frame (SVG uses `repeatCount="1"` + `fill="freeze"`; GIF plays once). Ignored when `LoopCount` is set. Eliminates the "empty → content" flash on looping SVG widgets that mostly show a static end state.
+
+**Example:**
+
+```tape
+Set Loop false    # play the reveal once, then hold the final frame
+```
+
+### LoopCount
+
+**Type:** Integer
+**Default:** None (use `Loop`)
+**Range:** > 0
+**Description:** Explicit number of times animated output plays before holding the final frame. Overrides `Loop`. Applies to SVG (`repeatCount`) and GIF (`-loop`).
+
+**Example:**
+
+```tape
+Set LoopCount 3    # play three times, then hold
+```
+
 ### MaxColors
 
 **Type:** Integer
@@ -305,6 +330,65 @@ Set TransparentBackground true
 
 ```tape
 Set DisableCursor true
+```
+
+## SVG Output Settings
+
+These settings affect SVG output only (animated `Output *.svg` and `Screenshot *.svg`). They are ignored for GIF/MP4/WebM/PNG output. Note that the SVG renderer honors `Padding` but currently ignores `Margin`, `MarginFill`, `WindowBarSize`, and `BorderRadius`, and captures only the visible viewport (not scrollback).
+
+### FitToContent
+
+**Type:** Boolean
+**Default:** `false`
+**Description:** Crop the SVG to the measured content extent — trailing blank rows and right-side blank columns are trimmed, and the inner clip-path is relaxed so the last row is never shaved. Lets you over-provision `Cols`/`Rows` and let the renderer size the SVG to actual content instead of guessing dimensions. Animated SVGs crop to the union of all frames' content.
+
+**Example:**
+
+```tape
+Set FitToContent true
+Set Rows 40           # generous upper bound; the dead space is auto-cropped
+```
+
+### SvgMetadata
+
+**Type:** Boolean
+**Default:** `true`
+**Description:** Emit machine-readable metadata on the root `<svg>` element (`data-cols`, `data-rows`, `data-font-size`, `data-cell-width`, `data-cell-height`, `data-padding`) so a consumer can compute an exact display size without reverse-engineering the `viewBox`. In `FitToContent` mode, `data-cols`/`data-rows` report the cropped extent.
+
+**Example:**
+
+```tape
+Set SvgMetadata false    # opt out of data-* attributes
+```
+
+### SvgIntrinsicSize
+
+**Type:** Boolean
+**Default:** `true`
+**Description:** Emit explicit intrinsic `width`/`height` (px) attributes on the root `<svg>` (in addition to `viewBox`) so an `<img>` embed has a stable intrinsic size. Set to `false` for the legacy responsive-only behavior (`viewBox` only).
+
+**Example:**
+
+```tape
+Set SvgIntrinsicSize false
+```
+
+### CssVariables
+
+**Type:** Boolean
+**Default:** `false`
+**Description:** Emit theme colors as CSS custom properties (e.g. `fill:var(--vcr-green,#98c379)`) plus a `:root` palette block, instead of literal hex. The embedding page can then recolor or light/dark-swap the SVG via CSS variables with no regeneration. The variable namespace is `--vcr-bg`, `--vcr-fg`, and `--vcr-k/r/g/y/b/m/c/w` (normal) / `--vcr-K/R/G/Y/B/M/C/W` (bright). 256-color and truecolor cells stay literal. Every `var()` carries a hex fallback, so SVGs embedded via `<img>` (which cannot reach page CSS) still render correctly.
+
+**Example:**
+
+```tape
+Set CssVariables true
+```
+
+```css
+/* embedding page */
+svg { --vcr-green: var(--brand-accent); }
+[data-theme="light"] svg { --vcr-bg: #fff; --vcr-fg: #222; }
 ```
 
 ## Behavior & Timing Settings
@@ -455,6 +539,46 @@ Set StartupDelay 5s      # Wait 5 seconds before running Exec commands
 Set StartupDelay 2.5s    # Shorter delay for faster systems
 ```
 
+### ScreenshotWaitForInactivity
+
+**Type:** Boolean
+**Default:** `false`
+**Description:** Make the `Screenshot` command wait for the terminal buffer to settle (stop changing) before capturing. Lets a `Screenshot` taken right after an `Exec` command snapshot the finished output instead of an empty or partial screen.
+
+**Example:**
+
+```tape
+Set ScreenshotWaitForInactivity true
+Exec "my-tui --render-table"
+Screenshot table.svg
+```
+
+### ScreenshotInactivityTimeout
+
+**Type:** Duration
+**Default:** `500ms`
+**Description:** How long the buffer must be unchanged for a `Screenshot` to consider it settled. Only used when `ScreenshotWaitForInactivity` is `true`.
+
+**Example:**
+
+```tape
+Set ScreenshotInactivityTimeout 250ms
+```
+
+### StaticOutput
+
+**Type:** Boolean
+**Default:** `false`
+**Description:** Single static-frame output mode: run `Exec`, wait for output to settle, then emit one static frame per `Output` — no SMIL animation, no frame-capture loop, no command echo. Every `Output` must be `.svg` or `.png`. Ideal for rendering a finished widget (table, tree, banner) as a clean static image.
+
+**Example:**
+
+```tape
+Set StaticOutput true
+Exec "my-tui --render-table"
+Output table.svg
+```
+
 ## Setting Precedence
 
 When the same setting is configured in multiple places, the following precedence order applies (highest to lowest):
@@ -528,8 +652,13 @@ VCR# validates settings and provides clear error messages for invalid values:
 
 - `Framerate`: 1-120 fps
 - `MaxColors`: 1-256
+- `LoopCount`: > 0
 - `Padding`, `Margin`, `BorderRadius`: ≥ 0
 - `Width`, `Height`, `FontSize`, `WindowBarSize`: > 0
+
+**Other rules:**
+
+- `StaticOutput true` requires every `Output` to be `.svg` or `.png` (mixing in `.gif`/`.mp4`/`.webm` is a validation error).
 
 Duration settings (e.g. `TypingSpeed`, `WaitTimeout`, `StartBuffer`) are not range-validated.
 

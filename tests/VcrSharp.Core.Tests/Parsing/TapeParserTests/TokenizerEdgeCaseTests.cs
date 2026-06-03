@@ -79,6 +79,29 @@ public class TokenizerEdgeCaseTests
         cmd.Value.ShouldBe("00:00:03");
     }
 
+    [Fact]
+    public void ParseTape_SetWaitTimeout_ParsesAsIdentifier()
+    {
+        // "Wait" is a command keyword; "WaitTimeout" must still tokenize as a setting identifier.
+        var commands = new TapeParser().ParseTape("Set WaitTimeout 20s");
+        commands[0].ShouldBeOfType<SetCommand>().SettingName.ShouldBe("WaitTimeout");
+    }
+
+    [Fact]
+    public void ParseTape_SetScreenshotWaitForInactivity_ParsesAsIdentifier()
+    {
+        // "Screenshot" is a command keyword; the keyword-prefixed setting must tokenize as one identifier.
+        var commands = new TapeParser().ParseTape("Set ScreenshotWaitForInactivity true");
+        commands[0].ShouldBeOfType<SetCommand>().SettingName.ShouldBe("ScreenshotWaitForInactivity");
+    }
+
+    [Fact]
+    public void ParseTape_StandaloneScreenshot_StillParsesAsScreenshotCommand()
+    {
+        var commands = new TapeParser().ParseTape("Screenshot out.png");
+        commands[0].ShouldBeOfType<ScreenshotCommand>();
+    }
+
     // Ensure standalone keywords still work correctly
 
     [Fact]

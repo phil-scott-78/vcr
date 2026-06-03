@@ -10,6 +10,30 @@ namespace VcrSharp.Core.Parsing;
 /// </summary>
 public static class TapeTokenizer
 {
+    /// <summary>
+    /// Matches a command keyword only when it is NOT immediately followed by an identifier
+    /// continuation character. This lets setting names that begin with a command keyword
+    /// (e.g. "WaitTimeout", "WaitPattern", "ScreenshotWaitForInactivity") tokenize as a single
+    /// identifier instead of "keyword + rest". (TokenizerBuilder's requireDelimiters only guards
+    /// the left boundary, not the right.)
+    /// </summary>
+    private static TextParser<TextSpan> Keyword(string word)
+    {
+        var matcher = Span.EqualTo(word);
+        return input =>
+        {
+            var result = matcher(input);
+            if (!result.HasValue)
+                return result;
+
+            var next = result.Remainder.ConsumeChar();
+            if (next.HasValue && (char.IsLetterOrDigit(next.Value) || next.Value == '_'))
+                return Result.Empty<TextSpan>(input);
+
+            return result;
+        };
+    }
+
     // Escape sequence parser for double-quoted strings - returns string to preserve unknown escapes
     private static TextParser<string> EscapeSequence =>
         from backslash in Character.EqualTo('\\')
@@ -96,22 +120,23 @@ public static class TapeTokenizer
             .Match(Span.EqualTo("+Buffer"), TapeToken.PlusBuffer, requireDelimiters: true)
             .Match(Span.EqualTo("+Line"), TapeToken.PlusLine, requireDelimiters: true)
 
-            // Keywords - Commands (require delimiters to avoid matching inside identifiers)
-            // Note: "Wait+Line" still works because "+" is a delimiter
-            .Match(Span.EqualTo("Set"), TapeToken.Set, requireDelimiters: true)
-            .Match(Span.EqualTo("Output"), TapeToken.Output, requireDelimiters: true)
-            .Match(Span.EqualTo("Require"), TapeToken.Require, requireDelimiters: true)
-            .Match(Span.EqualTo("Source"), TapeToken.Source, requireDelimiters: true)
-            .Match(Span.EqualTo("Type"), TapeToken.Type, requireDelimiters: true)
-            .Match(Span.EqualTo("Sleep"), TapeToken.Sleep, requireDelimiters: true)
-            .Match(Span.EqualTo("Hide"), TapeToken.Hide, requireDelimiters: true)
-            .Match(Span.EqualTo("Show"), TapeToken.Show, requireDelimiters: true)
-            .Match(Span.EqualTo("Screenshot"), TapeToken.Screenshot, requireDelimiters: true)
-            .Match(Span.EqualTo("Copy"), TapeToken.Copy, requireDelimiters: true)
-            .Match(Span.EqualTo("Paste"), TapeToken.Paste, requireDelimiters: true)
-            .Match(Span.EqualTo("Env"), TapeToken.Env, requireDelimiters: true)
-            .Match(Span.EqualTo("Exec"), TapeToken.Exec, requireDelimiters: true)
-            .Match(Span.EqualTo("Wait"), TapeToken.Wait, requireDelimiters: true)
+            // Keywords - Commands. Keyword() guards the RIGHT boundary (so "WaitTimeout" /
+            // "ScreenshotWaitForInactivity" tokenize as identifiers) and requireDelimiters guards
+            // the LEFT. Note: "Wait+Line" still works because "+" is a delimiter.
+            .Match(Keyword("Set"), TapeToken.Set, requireDelimiters: true)
+            .Match(Keyword("Output"), TapeToken.Output, requireDelimiters: true)
+            .Match(Keyword("Require"), TapeToken.Require, requireDelimiters: true)
+            .Match(Keyword("Source"), TapeToken.Source, requireDelimiters: true)
+            .Match(Keyword("Type"), TapeToken.Type, requireDelimiters: true)
+            .Match(Keyword("Sleep"), TapeToken.Sleep, requireDelimiters: true)
+            .Match(Keyword("Hide"), TapeToken.Hide, requireDelimiters: true)
+            .Match(Keyword("Show"), TapeToken.Show, requireDelimiters: true)
+            .Match(Keyword("Screenshot"), TapeToken.Screenshot, requireDelimiters: true)
+            .Match(Keyword("Copy"), TapeToken.Copy, requireDelimiters: true)
+            .Match(Keyword("Paste"), TapeToken.Paste, requireDelimiters: true)
+            .Match(Keyword("Env"), TapeToken.Env, requireDelimiters: true)
+            .Match(Keyword("Exec"), TapeToken.Exec, requireDelimiters: true)
+            .Match(Keyword("Wait"), TapeToken.Wait, requireDelimiters: true)
 
             // Keywords - Modifiers (before Identifier so "Ctrl+C" tokens work)
             // Parser will accept these as identifiers when needed (e.g., "CtrlTimeout" as identifier)

@@ -64,6 +64,15 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
             throw new InvalidOperationException("No snapshots found after filtering.");
         }
 
+        // Content-aware re-baseline: drop leading fully-blank frames (so a looping SVG starts
+        // on content instead of flashing empty each cycle) and collapse a trailing static tail.
+        var (keepStart, keepEnd) = ContentAnalysis.TrimBlankLoopRange(
+            snapshots.Select(s => s.Content!).ToList());
+        if (keepStart != 0 || keepEnd != snapshots.Count - 1)
+        {
+            snapshots = snapshots.GetRange(keepStart, keepEnd - keepStart + 1);
+        }
+
         progress?.Report($"Processing {snapshots.Count} frames with SMIL row-diffing...");
 
         // Calculate baseline and duration
@@ -81,6 +90,13 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
         // Generate SVG with SMIL animations
         progress?.Report("Generating SVG...");
         var renderer = new SvgRenderer(Options);
+        if (Options.FitToContent)
+        {
+            // Crop to the union of all frames' content so a row/column that appears partway
+            // through the recording is never clipped.
+            var extent = ContentExtent.Union(states.Select(s => s.Content));
+            renderer.SetContentExtent(extent.Cols, extent.Rows);
+        }
         await renderer.RenderAnimatedAsync(outputPath, states, totalDuration, cancellationToken);
 
         progress?.Report($"SMIL SVG exported to {outputPath}");

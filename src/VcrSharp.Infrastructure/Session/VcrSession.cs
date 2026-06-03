@@ -2,6 +2,7 @@ using System.Diagnostics;
 using VcrSharp.Core.Logging;
 using VcrSharp.Core.Parsing.Ast;
 using VcrSharp.Core.Recording;
+using VcrSharp.Core.Rendering;
 using VcrSharp.Core.Session;
 using VcrSharp.Infrastructure.Playwright;
 using VcrSharp.Infrastructure.Processes;
@@ -129,6 +130,13 @@ public class VcrSession : IAsyncDisposable
 
             // 7. Initialize CDP session for optimized frame capture
             await _terminalPage.InitializeCdpSessionAsync();
+
+            // 7b. Static-output mode: run Exec, wait for output to settle, then emit a single
+            // static frame per Output - no frame-capture loop, no SMIL animation, no command echo.
+            if (_options.StaticOutput)
+            {
+                return await RenderStaticOutputAsync(execCommands, stopwatch, progress, cancellationToken);
+            }
 
             // 8. Initialize frame storage
             _frameStorage = new FrameStorage();
@@ -557,67 +565,103 @@ public class VcrSession : IAsyncDisposable
         var inactivityTimeout = _options.InactivityTimeout;
         var maxWaitTime = _options.MaxWaitForInactivity;
 
-        // Monitor terminal buffer for changes
-        string? lastContent = null;
-        DateTime? lastChangeTime = null;
-        var startTime = DateTime.UtcNow;
-        const int pollIntervalMs = 50; // Check every 50ms (reduced from 200ms to minimize timing lag)
-
         VcrLogger.Logger.Debug("Waiting for terminal inactivity (timeout: {InactivityTimeout}s, max wait: {MaxWait}s)",
             inactivityTimeout.TotalSeconds, maxWaitTime.TotalSeconds);
 
-        while (true)
+        // Poll the buffer until it settles (shared with the Screenshot/static-output settle paths).
+        var stabilized = await BufferStabilizer.WaitForStableAsync(
+            _terminalPage, inactivityTimeout, maxWaitTime, cancellationToken);
+
+        if (stabilized)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var elapsed = DateTime.UtcNow - startTime;
-
-            // Check if we've exceeded maximum wait time
-            if (elapsed > maxWaitTime)
+            // Stop activity monitor NOW to lock in the last activity frame, preventing the prompt
+            // from being counted as activity during the EndBuffer wait.
+            if (_activityMonitor != null)
             {
-                VcrLogger.Logger.Debug("Maximum wait time reached, stopping inactivity wait");
-                break;
+                await _activityMonitor.StopAsync();
             }
 
-            // Get current terminal buffer content
-            var currentContent = await _terminalPage.GetBufferContentAsync();
-
-            // Check if content has changed
-            if (currentContent != lastContent)
-            {
-                // Content changed - reset inactivity timer
-                lastContent = currentContent;
-                lastChangeTime = DateTime.UtcNow;
-                VcrLogger.Logger.Verbose("Terminal content changed, resetting inactivity timer");
-            }
-            else if (lastChangeTime.HasValue)
-            {
-                // Content unchanged - check if inactivity timeout reached
-                var inactiveDuration = DateTime.UtcNow - lastChangeTime.Value;
-                if (inactiveDuration >= inactivityTimeout)
-                {
-                    // Terminal has been inactive long enough
-                    VcrLogger.Logger.Debug("Terminal inactive for {InactiveDuration}s, stopping activity monitor before end buffer",
-                        inactiveDuration.TotalSeconds);
-
-                    // Stop activity monitor NOW to lock in the last activity frame
-                    // This prevents the prompt from being counted as activity during EndBuffer wait
-                    if (_activityMonitor != null)
-                    {
-                        await _activityMonitor.StopAsync();
-                    }
-
-                    // Wait end buffer to capture final frames
-                    await Task.Delay(_options.EndBuffer, cancellationToken);
-                    break;
-                }
-            }
-
-            // Wait before next check
-            await Task.Delay(pollIntervalMs, cancellationToken);
+            // Wait end buffer to capture final frames.
+            await Task.Delay(_options.EndBuffer, cancellationToken);
+        }
+        else
+        {
+            VcrLogger.Logger.Debug("Maximum wait time reached, stopping inactivity wait");
         }
 
         VcrLogger.Logger.Debug("Terminal inactivity wait complete");
+    }
+
+    /// <summary>
+    /// Renders static-output mode: waits for the program output to settle, then captures a single
+    /// settled frame for each Output (static SVG via SvgRenderer, raster PNG via the terminal page).
+    /// No frame-capture loop, animation, trimming, or video encoding is involved.
+    /// </summary>
+    private async Task<RecordingResult> RenderStaticOutputAsync(
+        List<ExecCommand> execCommands,
+        Stopwatch stopwatch,
+        IProgress<string>? progress,
+        CancellationToken cancellationToken)
+    {
+        if (_terminalPage == null)
+            throw new InvalidOperationException("Terminal page not initialized");
+
+        // Wait for the program(s) to produce output and settle before snapshotting.
+        // minWait = StartupDelay so we don't settle on the pre-Exec prompt before the command runs.
+        if (execCommands.Count > 0)
+        {
+            progress?.Report("Waiting for command output to settle...");
+            await BufferStabilizer.WaitForStableAsync(
+                _terminalPage,
+                _options.InactivityTimeout,
+                _options.MaxWaitForInactivity,
+                cancellationToken,
+                minWait: _options.StartupDelay);
+        }
+
+        progress?.Report("Capturing static output...");
+        var outputFiles = new List<string>();
+        foreach (var outputPath in _options.OutputFiles)
+        {
+            var extension = Path.GetExtension(outputPath);
+            if (extension.Equals(".svg", StringComparison.OrdinalIgnoreCase))
+            {
+                var content = await _terminalPage.GetTerminalContentWithStylesAsync();
+                if (content == null)
+                    throw new VcrSessionException("Failed to capture terminal content for static SVG output");
+
+                var renderer = new SvgRenderer(_options);
+                if (_options.FitToContent)
+                {
+                    var extent = ContentExtent.Measure(content);
+                    renderer.SetContentExtent(extent.Cols, extent.Rows);
+                }
+                await renderer.RenderStaticAsync(outputPath, content, cancellationToken);
+            }
+            else
+            {
+                // PNG (or any other extension): raster screenshot of the settled buffer.
+                var directory = Path.GetDirectoryName(outputPath);
+                if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+                await _terminalPage.ScreenshotAsync(outputPath, captureCursor: !_options.DisableCursor);
+            }
+
+            outputFiles.Add(outputPath);
+        }
+
+        stopwatch.Stop();
+
+        return new RecordingResult
+        {
+            FrameDirectory = string.Empty,
+            FrameCount = 0,
+            Duration = stopwatch.Elapsed,
+            OutputFiles = outputFiles,
+            ScreenshotFiles = _state.ScreenshotFiles
+        };
     }
 
     /// <summary>

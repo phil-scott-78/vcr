@@ -41,6 +41,15 @@ public class SessionOptions
     /// </summary>
     public int? Rows { get; set; }
 
+    /// <summary>
+    /// Gets or sets whether SVG output is cropped to the measured content extent
+    /// (trailing blank rows and right-side blank columns are trimmed, and the inner
+    /// clip-path is relaxed so the last row is never shaved). Lets you over-provision
+    /// Cols/Rows and let the renderer size the SVG to actual content. Defaults to false.
+    /// Only affects SVG output (Screenshot .svg and animated Output .svg).
+    /// </summary>
+    public bool FitToContent { get; set; }
+
     // Font Settings
 
     /// <summary>
@@ -95,6 +104,20 @@ public class SessionOptions
     public float LoopOffset { get; set; }
 
     /// <summary>
+    /// Gets or sets whether animated output (SVG, GIF) loops forever. When false, the
+    /// reveal plays once and holds the final frame (SVG repeatCount=1 + fill=freeze;
+    /// GIF plays once). Ignored when <see cref="LoopCount"/> is set. Defaults to true.
+    /// </summary>
+    public bool Loop { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets an explicit loop count for animated output. When set, the animation
+    /// plays this many times then holds the final frame (overrides <see cref="Loop"/>).
+    /// Null means use the <see cref="Loop"/> flag. Must be greater than 0.
+    /// </summary>
+    public int? LoopCount { get; set; }
+
+    /// <summary>
     /// Gets or sets the maximum colors for GIF palette generation (1-256).
     /// </summary>
     public int MaxColors { get; set; } = 256;
@@ -147,6 +170,30 @@ public class SessionOptions
     /// When true, sets allowTransparency on xTerm.js and uses a transparent background color.
     /// </summary>
     public bool TransparentBackground { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether SVG output emits theme colors as CSS custom properties
+    /// (e.g. fill:var(--vcr-green,#98c379)) with a :root palette block, instead of literal hex.
+    /// When true, the embedding page can recolor or light/dark-swap the SVG via CSS variables
+    /// with no regeneration. Defaults to false (literal hex, byte-identical to legacy output).
+    /// Only affects SVG output; 256-color and truecolor cells stay literal.
+    /// </summary>
+    public bool CssVariables { get; set; }
+
+    /// <summary>
+    /// Gets or sets whether SVG output includes explicit intrinsic width/height (px)
+    /// attributes on the root &lt;svg&gt; element (in addition to viewBox), so an
+    /// &lt;img&gt; embed has a stable intrinsic size. Defaults to true.
+    /// </summary>
+    public bool SvgIntrinsicSize { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether SVG output emits machine-readable metadata on the root
+    /// &lt;svg&gt; element (data-cols, data-rows, data-font-size, data-cell-width,
+    /// data-cell-height, data-padding) so a consumer can compute exact display size
+    /// without reverse-engineering the viewBox. Defaults to true.
+    /// </summary>
+    public bool SvgMetadata { get; set; } = true;
 
     // Behavior
 
@@ -222,6 +269,27 @@ public class SessionOptions
     public TimeSpan StartupDelay { get; set; } = TimeSpan.FromSeconds(3.5);
 
     /// <summary>
+    /// Gets or sets whether the Screenshot command waits for the terminal buffer to settle
+    /// (stop changing) before capturing. Lets a Screenshot taken right after an Exec command
+    /// snapshot the finished output instead of an empty/partial screen. Defaults to false
+    /// (capture immediately, legacy behavior).
+    /// </summary>
+    public bool ScreenshotWaitForInactivity { get; set; }
+
+    /// <summary>
+    /// Gets or sets how long the buffer must be unchanged for a Screenshot to consider it
+    /// settled (used only when <see cref="ScreenshotWaitForInactivity"/> is true). Defaults to 500ms.
+    /// </summary>
+    public TimeSpan ScreenshotInactivityTimeout { get; set; } = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
+    /// Gets or sets static-output mode: run Exec, wait for output to settle, then emit a single
+    /// static frame per Output (no SMIL animation, no frame-capture loop, no command echo).
+    /// Requires every Output to be .svg or .png. Defaults to false.
+    /// </summary>
+    public bool StaticOutput { get; set; }
+
+    /// <summary>
     /// Gets or sets the first frame number that was kept after trimming (original frame number before renumbering).
     /// Null if no trimming was performed. Set by VcrSession after frame trimming.
     /// </summary>
@@ -277,6 +345,9 @@ public class SessionOptions
         if (MaxColors is < 1 or > 256)
             errors.Add("MaxColors must be between 1 and 256");
 
+        if (LoopCount is <= 0)
+            errors.Add("LoopCount must be greater than 0");
+
         if (Padding < 0)
             errors.Add("Padding must be non-negative");
 
@@ -300,6 +371,19 @@ public class SessionOptions
 
         if (OutputFiles.Count == 0)
             errors.Add("At least one output file must be specified");
+
+        if (StaticOutput)
+        {
+            foreach (var file in OutputFiles)
+            {
+                var ext = Path.GetExtension(file);
+                if (!ext.Equals(".svg", StringComparison.OrdinalIgnoreCase) &&
+                    !ext.Equals(".png", StringComparison.OrdinalIgnoreCase))
+                {
+                    errors.Add($"StaticOutput requires .svg or .png output files; got '{file}'");
+                }
+            }
+        }
 
         return errors;
     }
@@ -334,6 +418,30 @@ public class SessionOptions
     }
 
     /// <summary>
+    /// Resolves the SMIL repeatCount value for animated SVG output.
+    /// "indefinite" for an infinite loop (default), "1" for play-once-and-hold,
+    /// or the explicit LoopCount.
+    /// </summary>
+    public string ResolveSvgRepeatCount()
+    {
+        if (LoopCount is { } count)
+            return count.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return Loop ? "indefinite" : "1";
+    }
+
+    /// <summary>
+    /// Resolves the FFmpeg gif <c>-loop</c> argument: 0 = loop forever (default),
+    /// -1 = play once (no loop), N-1 = play N times. Mirrors <see cref="ResolveSvgRepeatCount"/>
+    /// so Set Loop / Set LoopCount affect GIF and SVG consistently.
+    /// </summary>
+    public int ResolveGifLoopArgument()
+    {
+        if (LoopCount is { } count)
+            return count <= 1 ? -1 : count - 1;
+        return Loop ? 0 : -1;
+    }
+
+    /// <summary>
     /// Applies a setting value to the options object.
     /// </summary>
     private static void ApplySetting(SessionOptions options, string name, object value)
@@ -352,6 +460,9 @@ public class SessionOptions
                 break;
             case "rows":
                 options.Rows = Convert.ToInt32(value);
+                break;
+            case "fittocontent":
+                options.FitToContent = Convert.ToBoolean(value);
                 break;
 
             // Font settings
@@ -377,6 +488,12 @@ public class SessionOptions
                 break;
             case "loopoffset":
                 options.LoopOffset = Convert.ToSingle(value);
+                break;
+            case "loop":
+                options.Loop = Convert.ToBoolean(value);
+                break;
+            case "loopcount":
+                options.LoopCount = Convert.ToInt32(value);
                 break;
             case "maxcolors":
                 options.MaxColors = Convert.ToInt32(value);
@@ -410,6 +527,15 @@ public class SessionOptions
                 break;
             case "transparentbackground":
                 options.TransparentBackground = Convert.ToBoolean(value);
+                break;
+            case "cssvariables":
+                options.CssVariables = Convert.ToBoolean(value);
+                break;
+            case "svgintrinsicsize":
+                options.SvgIntrinsicSize = Convert.ToBoolean(value);
+                break;
+            case "svgmetadata":
+                options.SvgMetadata = Convert.ToBoolean(value);
                 break;
 
             // Behavior
@@ -479,6 +605,18 @@ public class SessionOptions
                     options.StartupDelay = sd;
                 else
                     options.StartupDelay = TimeSpan.Parse(value.ToString() ?? "3.5s");
+                break;
+            case "screenshotwaitforinactivity":
+                options.ScreenshotWaitForInactivity = Convert.ToBoolean(value);
+                break;
+            case "screenshotinactivitytimeout":
+                if (value is TimeSpan sit)
+                    options.ScreenshotInactivityTimeout = sit;
+                else
+                    options.ScreenshotInactivityTimeout = TimeSpan.Parse(value.ToString() ?? "500ms");
+                break;
+            case "staticoutput":
+                options.StaticOutput = Convert.ToBoolean(value);
                 break;
         }
     }

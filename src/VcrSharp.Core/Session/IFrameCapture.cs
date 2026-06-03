@@ -12,4 +12,13 @@ public interface IFrameCapture
     /// </summary>
     /// <param name="filePath">The file path where the screenshot should be saved.</param>
     Task CaptureScreenshotAsync(string filePath);
+
+    /// <summary>
+    /// Waits for the terminal buffer to stop changing (settle), or until the maximum wait elapses.
+    /// Used by the Screenshot command to capture finished command output rather than a partial screen.
+    /// </summary>
+    /// <param name="inactivityTimeout">How long the buffer must be unchanged to be considered settled.</param>
+    /// <param name="maxWait">Hard cap on total wait time.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task WaitForBufferStableAsync(TimeSpan inactivityTimeout, TimeSpan maxWait, CancellationToken cancellationToken = default);
 }

@@ -27,6 +27,15 @@ public class SvgRenderer
     private int _frameWidth;
     private int _frameHeight;
 
+    // Canvas (root viewBox/intrinsic) size in pixels. Equals Width/Height unless
+    // fit-to-content cropping overrides them via SetContentExtent.
+    private int _canvasWidth;
+    private int _canvasHeight;
+
+    // Content extent override (character cells) when FitToContent is enabled.
+    private int? _cropCols;
+    private int? _cropRows;
+
     public SvgRenderer(SessionOptions options)
     {
         _options = options;
@@ -54,9 +63,9 @@ public class SvgRenderer
             Encoding = Encoding.UTF8
         });
 
-        // Outer SVG with viewBox for responsive scaling
+        // Outer SVG with viewBox (+ optional intrinsic size and metadata) for responsive scaling
         await xml.WriteStartElementAsync(null, "svg", "http://www.w3.org/2000/svg");
-        await xml.WriteAttributeStringAsync(null, "viewBox", null, $"0 0 {_options.Width} {_options.Height}");
+        await WriteRootSvgAttributesAsync(xml, content.Cols, content.Rows);
 
         // Styles
         await WriteStylesAsync(xml);
@@ -84,21 +93,25 @@ public class SvgRenderer
             await xml.WriteStartElementAsync(null, "rect", null);
             await xml.WriteAttributeStringAsync(null, "width", null, "100%");
             await xml.WriteAttributeStringAsync(null, "height", null, "100%");
-            await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(_options.Theme.Background));
+            await xml.WriteAttributeStringAsync(null, "fill", null, BgFill(_options.Theme.Background));
             await xml.WriteEndElementAsync();
         }
 
         // Terminal content group
         await xml.WriteStartElementAsync(null, "g", null);
         await xml.WriteAttributeStringAsync(null, "transform", null, $"translate({FormatNumber(_options.Padding)},{FormatNumber(_options.Padding)})");
-        await xml.WriteAttributeStringAsync(null, "clip-path", null, "url(#terminal-clip)");
+        // In fit-to-content mode the canvas is already sized to content, so the clip-path
+        // (which can shave the last row's descenders) is intentionally omitted.
+        if (!FitMode)
+            await xml.WriteAttributeStringAsync(null, "clip-path", null, "url(#terminal-clip)");
 
         // Content group with xml:space
         await xml.WriteStartElementAsync(null, "g", null);
         await xml.WriteAttributeStringAsync("xml", "space", "http://www.w3.org/XML/1998/namespace", "preserve");
 
-        // Render each line
-        for (var row = 0; row < content.Rows; row++)
+        // Render each line (capped to the cropped extent when fit-to-content is active)
+        var rowCount = _cropRows.HasValue ? Math.Min(content.Rows, _cropRows.Value) : content.Rows;
+        for (var row = 0; row < rowCount; row++)
         {
             var y = row * _charHeight;
             await RenderRowContentAsync(xml, content.Cells[row], y);
@@ -145,9 +158,9 @@ public class SvgRenderer
             Encoding = Encoding.UTF8
         });
 
-        // Outer SVG
+        // Outer SVG (viewBox + optional intrinsic size and metadata)
         await xml.WriteStartElementAsync(null, "svg", "http://www.w3.org/2000/svg");
-        await xml.WriteAttributeStringAsync(null, "viewBox", null, $"0 0 {_options.Width} {_options.Height}");
+        await WriteRootSvgAttributesAsync(xml, states[0].Content.Cols, states[0].Content.Rows);
 
         // Styles (minimal - no keyframe animations needed)
         await WriteStylesAsync(xml);
@@ -175,14 +188,17 @@ public class SvgRenderer
             await xml.WriteStartElementAsync(null, "rect", null);
             await xml.WriteAttributeStringAsync(null, "width", null, "100%");
             await xml.WriteAttributeStringAsync(null, "height", null, "100%");
-            await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(_options.Theme.Background));
+            await xml.WriteAttributeStringAsync(null, "fill", null, BgFill(_options.Theme.Background));
             await xml.WriteEndElementAsync();
         }
 
         // Terminal content group (replaces nested SVG for better Safari compatibility)
         await xml.WriteStartElementAsync(null, "g", null);
         await xml.WriteAttributeStringAsync(null, "transform", null, $"translate({FormatNumber(_options.Padding)},{FormatNumber(_options.Padding)})");
-        await xml.WriteAttributeStringAsync(null, "clip-path", null, "url(#terminal-clip)");
+        // In fit-to-content mode the canvas is already sized to content, so the clip-path
+        // (which can shave the last row's descenders) is intentionally omitted.
+        if (!FitMode)
+            await xml.WriteAttributeStringAsync(null, "clip-path", null, "url(#terminal-clip)");
 
         // Content group
         await xml.WriteStartElementAsync(null, "g", null);
@@ -325,9 +341,8 @@ public class SvgRenderer
             // Render each unique row state with visibility animations
             foreach (var (hash, (cells, intervalList)) in uniqueStates)
             {
-                // Skip empty rows
-                var rowText = string.Concat(cells.Select(c => c.Character)).TrimEnd();
-                if (string.IsNullOrWhiteSpace(rowText) && !cells.Any(c => c.BackgroundColor != null))
+                // Skip empty rows (shared blank-cell definition)
+                if (ContentAnalysis.IsBlankRow(cells))
                     continue;
 
                 // Determine if this state needs animation or is always visible
@@ -349,7 +364,7 @@ public class SvgRenderer
                     await xml.WriteAttributeStringAsync(null, "keyTimes", null, keyTimes);
                     await xml.WriteAttributeStringAsync(null, "dur", null, $"{FormatTime(totalDuration)}s");
                     await xml.WriteAttributeStringAsync(null, "calcMode", null, "discrete");
-                    await xml.WriteAttributeStringAsync(null, "repeatCount", null, "indefinite");
+                    await WriteRepeatCountAsync(xml, freezeEligible: true);
                     await xml.WriteEndElementAsync();
                 }
 
@@ -518,7 +533,7 @@ public class SvgRenderer
     {
         if (run.ForegroundColor == null)
         {
-            return OptimizeHexColor(_options.Theme.Foreground);
+            return FgFill(_options.Theme.Foreground);
         }
 
         if (run.ForegroundColor.StartsWith('#'))
@@ -551,7 +566,7 @@ public class SvgRenderer
                     15 => _options.Theme.BrightWhite,
                     _ => _options.Theme.Foreground
                 };
-                return OptimizeHexColor(themeColor);
+                return ThemeColorFill(GetAnsiColorClass(idx), themeColor);
             }
 
             // Extended palette
@@ -559,7 +574,7 @@ public class SvgRenderer
             if (rgb != null) return rgb;
         }
 
-        return OptimizeHexColor(_options.Theme.Foreground);
+        return FgFill(_options.Theme.Foreground);
     }
 
     /// <summary>
@@ -686,7 +701,7 @@ public class SvgRenderer
             await xml.WriteAttributeStringAsync(null, "keyTimes", null, keyTimes);
             await xml.WriteAttributeStringAsync(null, "dur", null, $"{FormatTime(totalDuration)}s");
             await xml.WriteAttributeStringAsync(null, "calcMode", null, "discrete");
-            await xml.WriteAttributeStringAsync(null, "repeatCount", null, "indefinite");
+            await WriteRepeatCountAsync(xml, freezeEligible: true);
             await xml.WriteEndElementAsync();
 
             // Y position animation
@@ -696,7 +711,7 @@ public class SvgRenderer
             await xml.WriteAttributeStringAsync(null, "keyTimes", null, keyTimes);
             await xml.WriteAttributeStringAsync(null, "dur", null, $"{FormatTime(totalDuration)}s");
             await xml.WriteAttributeStringAsync(null, "calcMode", null, "discrete");
-            await xml.WriteAttributeStringAsync(null, "repeatCount", null, "indefinite");
+            await WriteRepeatCountAsync(xml, freezeEligible: true);
             await xml.WriteEndElementAsync();
         }
 
@@ -724,9 +739,16 @@ public class SvgRenderer
 
         var css = new StringBuilder();
 
+        // CSS custom-property palette (only when CssVariables is enabled) so the embedding
+        // page can recolor / light-dark-swap the SVG with no regeneration.
+        if (_options.CssVariables)
+        {
+            AppendCssVariableRoot(css);
+        }
+
         // Base text styles (baseline is pre-calculated into y position for cross-browser compatibility)
         css.Append($"text{{white-space:pre;font-family:{_options.FontFamily};font-size:{_options.FontSize}px;letter-spacing:0;word-spacing:0;text-rendering:geometricPrecision;font-variant-ligatures:none}}");
-        css.Append($".fg{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
+        css.Append($".fg{{fill:{FgFill(_options.Theme.Foreground)}}}");
 
         // ANSI color classes
         AppendAnsiColorStyles(css);
@@ -734,10 +756,10 @@ public class SvgRenderer
         // Style flags
         css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}");
 
-        // Cursor
+        // Cursor (follows the foreground/--vcr-fg, matching legacy behavior)
         if (!_options.DisableCursor)
         {
-            css.Append($".cursor-block{{fill:{OptimizeHexColor(_options.Theme.Foreground)}}}");
+            css.Append($".cursor-block{{fill:{FgFill(_options.Theme.Foreground)}}}");
         }
 
         await xml.WriteStringAsync(css.ToString());
@@ -749,7 +771,7 @@ public class SvgRenderer
     /// </summary>
     private async Task WriteShadePatternDefsAsync(XmlWriter xml)
     {
-        var fg = OptimizeHexColor(_options.Theme.Foreground);
+        var fg = FgFill(_options.Theme.Foreground);
 
         // Light shade ░ - sparse dots (25% coverage)
         await xml.WriteStartElementAsync(null, "pattern", null);
@@ -800,45 +822,139 @@ public class SvgRenderer
         await xml.WriteAttributeStringAsync(null, "y", null, "1");
         await xml.WriteAttributeStringAsync(null, "width", null, "1");
         await xml.WriteAttributeStringAsync(null, "height", null, "1");
-        await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(_options.Theme.Background));
+        await xml.WriteAttributeStringAsync(null, "fill", null, BgFill(_options.Theme.Background));
         await xml.WriteEndElementAsync(); // rect
         await xml.WriteEndElementAsync(); // pattern
     }
 
     private void AppendAnsiColorStyles(StringBuilder css)
     {
-        var colors = new Dictionary<string, string>
+        foreach (var (letter, color) in AnsiPalette())
         {
-            ["k"] = _options.Theme.Black,
-            ["r"] = _options.Theme.Red,
-            ["g"] = _options.Theme.Green,
-            ["y"] = _options.Theme.Yellow,
-            ["b"] = _options.Theme.Blue,
-            ["m"] = _options.Theme.Magenta,
-            ["c"] = _options.Theme.Cyan,
-            ["w"] = _options.Theme.White,
-            ["K"] = _options.Theme.BrightBlack,
-            ["R"] = _options.Theme.BrightRed,
-            ["G"] = _options.Theme.BrightGreen,
-            ["Y"] = _options.Theme.BrightYellow,
-            ["B"] = _options.Theme.BrightBlue,
-            ["M"] = _options.Theme.BrightMagenta,
-            ["C"] = _options.Theme.BrightCyan,
-            ["W"] = _options.Theme.BrightWhite
-        };
-
-        foreach (var (name, color) in colors)
-        {
-            css.Append($".{name}{{fill:{OptimizeHexColor(color)}}}");
+            css.Append($".{letter}{{fill:{ThemeColorFill(letter, color)}}}");
         }
     }
+
+    /// <summary>
+    /// The 16 ANSI colors paired with their single-letter class/variable suffix
+    /// (k/r/g/y/b/m/c/w normal, K/R/G/Y/B/M/C/W bright). Single source of truth for
+    /// both the CSS class definitions and the :root custom-property block.
+    /// </summary>
+    private (string Letter, string Color)[] AnsiPalette() =>
+    [
+        ("k", _options.Theme.Black), ("r", _options.Theme.Red), ("g", _options.Theme.Green), ("y", _options.Theme.Yellow),
+        ("b", _options.Theme.Blue), ("m", _options.Theme.Magenta), ("c", _options.Theme.Cyan), ("w", _options.Theme.White),
+        ("K", _options.Theme.BrightBlack), ("R", _options.Theme.BrightRed), ("G", _options.Theme.BrightGreen), ("Y", _options.Theme.BrightYellow),
+        ("B", _options.Theme.BrightBlue), ("M", _options.Theme.BrightMagenta), ("C", _options.Theme.BrightCyan), ("W", _options.Theme.BrightWhite),
+    ];
+
+    /// <summary>
+    /// Writes the :root CSS custom-property block (--vcr-bg/--vcr-fg + 16 ANSI vars).
+    /// </summary>
+    private void AppendCssVariableRoot(StringBuilder css)
+    {
+        css.Append(":root{");
+        css.Append($"--vcr-bg:{OptimizeHexColor(_options.Theme.Background)};");
+        css.Append($"--vcr-fg:{OptimizeHexColor(_options.Theme.Foreground)};");
+        foreach (var (letter, color) in AnsiPalette())
+        {
+            css.Append($"--vcr-{letter}:{OptimizeHexColor(color)};");
+        }
+        css.Append('}');
+    }
+
+    /// <summary>Resolves an ANSI palette color to either a literal hex or a var(--vcr-letter,#hex).</summary>
+    private string ThemeColorFill(string letter, string fallback) =>
+        _options.CssVariables ? $"var(--vcr-{letter},{OptimizeHexColor(fallback)})" : OptimizeHexColor(fallback);
+
+    /// <summary>Resolves the foreground color to either a literal hex or var(--vcr-fg,#hex).</summary>
+    private string FgFill(string fallback) =>
+        _options.CssVariables ? $"var(--vcr-fg,{OptimizeHexColor(fallback)})" : OptimizeHexColor(fallback);
+
+    /// <summary>Resolves the background color to either a literal hex or var(--vcr-bg,#hex).</summary>
+    private string BgFill(string fallback) =>
+        _options.CssVariables ? $"var(--vcr-bg,{OptimizeHexColor(fallback)})" : OptimizeHexColor(fallback);
 
     private void CalculateDimensions()
     {
         _charWidth = _options.ActualCellWidth ?? _options.FontSize * 0.55;
         _charHeight = _options.ActualCellHeight ?? _options.FontSize * 1.2;
-        _frameWidth = _options.Width - 2 * _options.Padding;
-        _frameHeight = _options.Height - 2 * _options.Padding;
+
+        // Canvas defaults to the configured viewport. When FitToContent supplies a
+        // content extent, the canvas shrinks to fit measured content plus padding.
+        if (_cropCols.HasValue && _cropRows.HasValue)
+        {
+            _canvasWidth = (int)Math.Ceiling(_cropCols.Value * _charWidth) + 2 * _options.Padding;
+            _canvasHeight = (int)Math.Ceiling(_cropRows.Value * _charHeight) + 2 * _options.Padding;
+        }
+        else
+        {
+            _canvasWidth = _options.Width;
+            _canvasHeight = _options.Height;
+        }
+
+        _frameWidth = _canvasWidth - 2 * _options.Padding;
+        _frameHeight = _canvasHeight - 2 * _options.Padding;
+    }
+
+    /// <summary>
+    /// Overrides the rendered canvas to fit the given content extent (in character cells),
+    /// cropping trailing blank rows and right-side blank columns. Used by FitToContent.
+    /// </summary>
+    public void SetContentExtent(int cols, int rows)
+    {
+        _cropCols = Math.Max(cols, 1);
+        _cropRows = Math.Max(rows, 1);
+        CalculateDimensions();
+    }
+
+    /// <summary>True when fit-to-content cropping is active (an extent has been supplied).</summary>
+    private bool FitMode => _cropRows.HasValue;
+
+    /// <summary>
+    /// Writes the repeatCount for an animation driven by Set Loop / Set LoopCount.
+    /// When the loop is finite (not "indefinite") and the animation can hold its final
+    /// value, also writes fill="freeze" so the reveal plays once (or N times) and holds
+    /// the final frame instead of snapping back to the start.
+    /// </summary>
+    private async Task WriteRepeatCountAsync(XmlWriter xml, bool freezeEligible)
+    {
+        var repeatCount = _options.ResolveSvgRepeatCount();
+        await xml.WriteAttributeStringAsync(null, "repeatCount", null, repeatCount);
+        if (freezeEligible && repeatCount != "indefinite")
+        {
+            await xml.WriteAttributeStringAsync(null, "fill", null, "freeze");
+        }
+    }
+
+    /// <summary>
+    /// Writes the root &lt;svg&gt; attributes: always viewBox; optionally explicit intrinsic
+    /// width/height (px) and machine-readable data-* metadata. Single write site shared by
+    /// the static and animated renderers so size/metadata stay consistent. contentCols/Rows
+    /// are the authoritative grid size; when fit-to-content is active the cropped extent is
+    /// reported instead.
+    /// </summary>
+    private async Task WriteRootSvgAttributesAsync(XmlWriter xml, int contentCols, int contentRows)
+    {
+        await xml.WriteAttributeStringAsync(null, "viewBox", null, $"0 0 {_canvasWidth} {_canvasHeight}");
+
+        if (_options.SvgIntrinsicSize)
+        {
+            await xml.WriteAttributeStringAsync(null, "width", null, _canvasWidth.ToString(CultureInfo.InvariantCulture));
+            await xml.WriteAttributeStringAsync(null, "height", null, _canvasHeight.ToString(CultureInfo.InvariantCulture));
+        }
+
+        if (_options.SvgMetadata)
+        {
+            var cols = _cropCols ?? contentCols;
+            var rows = _cropRows ?? contentRows;
+            await xml.WriteAttributeStringAsync(null, "data-cols", null, cols.ToString(CultureInfo.InvariantCulture));
+            await xml.WriteAttributeStringAsync(null, "data-rows", null, rows.ToString(CultureInfo.InvariantCulture));
+            await xml.WriteAttributeStringAsync(null, "data-font-size", null, _options.FontSize.ToString(CultureInfo.InvariantCulture));
+            await xml.WriteAttributeStringAsync(null, "data-cell-width", null, FormatNumber(_charWidth));
+            await xml.WriteAttributeStringAsync(null, "data-cell-height", null, FormatNumber(_charHeight));
+            await xml.WriteAttributeStringAsync(null, "data-padding", null, _options.Padding.ToString(CultureInfo.InvariantCulture));
+        }
     }
 
     private static string ComputeRowHash(TerminalCell[] cells)
@@ -970,7 +1086,7 @@ public class SvgRenderer
 
             if (themeColor != null)
             {
-                return OptimizeHexColor(themeColor);
+                return ThemeColorFill(GetAnsiColorClass(paletteIndex), themeColor);
             }
 
             // Extended palette (16-255)

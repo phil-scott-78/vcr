@@ -14,6 +14,16 @@ public class ScreenshotCommand(string filePath) : ICommand
 
     public async Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {
+        // Optionally wait for the terminal to settle so a Screenshot taken right after an Exec
+        // command captures the finished output instead of an empty/partial screen.
+        if (context.Options.ScreenshotWaitForInactivity)
+        {
+            await context.FrameCapture.WaitForBufferStableAsync(
+                context.Options.ScreenshotInactivityTimeout,
+                context.Options.MaxWaitForInactivity,
+                cancellationToken);
+        }
+
         // Delegate to frame capture - format detection happens in Infrastructure layer
         await context.FrameCapture.CaptureScreenshotAsync(FilePath);
     }

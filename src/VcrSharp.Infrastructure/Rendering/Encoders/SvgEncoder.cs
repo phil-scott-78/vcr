@@ -24,8 +24,9 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
 
     public override async Task<string> RenderAsync(string outputPath, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
-        ValidateFramesExist();
-
+        // Note: SVG is built from terminal-content snapshots, not PNG frame files, so we validate
+        // snapshots below rather than calling the PNG-based ValidateFramesExist() — an SVG-only
+        // recording deliberately captures no raster frames.
         progress?.Report("Loading terminal content snapshots...");
 
         // Get terminal content snapshots

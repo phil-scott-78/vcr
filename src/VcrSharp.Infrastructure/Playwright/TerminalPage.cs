@@ -683,30 +683,25 @@ public class TerminalPage : ITerminalPage
     }
 
     /// <summary>
-    /// Captures a canvas element as PNG bytes using GPU-accelerated canvas.toBlob().
-    /// Uses async blob API which is more efficient than toDataURL() (no base64 overhead).
+    /// Captures a canvas element as PNG bytes using the synchronous <c>canvas.toDataURL()</c> API.
     /// </summary>
+    /// <remarks>
+    /// Deliberately synchronous. The async <c>canvas.toBlob()</c> path completes via a FileReader
+    /// callback, and on a headless/backgrounded page Chromium throttles those async callback
+    /// wake-ups to ~1 Hz. That capped frame capture at ~1 fps regardless of the configured
+    /// framerate (each grab took ~1000 ms), producing visibly jerky animations. <c>toDataURL()</c>
+    /// returns within the synchronous Evaluate call (~5 ms here) and is not subject to that
+    /// throttle. The extra base64 cost is negligible for terminal-sized canvases.
+    /// </remarks>
     /// <param name="selector">CSS selector for the canvas element.</param>
     /// <returns>PNG image bytes.</returns>
     private async Task<byte[]> CaptureCanvasLayerAsync(string selector)
     {
         var canvas = _page.Locator(selector);
 
-        // Use canvas.toBlob() for maximum performance (MDN recommended, more efficient than toDataURL)
-        var base64Data = await canvas.EvaluateAsync<string>("""
-
-                                                            canvas => new Promise(resolve => {
-                                                                canvas.toBlob(blob => {
-                                                                    const reader = new FileReader();
-                                                                    reader.onloadend = () => {
-                                                                        // Extract base64 data without 'data:image/png;base64,' prefix
-                                                                        resolve(reader.result.split(',')[1]);
-                                                                    };
-                                                                    reader.readAsDataURL(blob);
-                                                                }, 'image/png');
-                                                            })
-
-                                                            """);
+        // Synchronous toDataURL returns "data:image/png;base64,<...>"; strip the prefix and decode.
+        var base64Data = await canvas.EvaluateAsync<string>(
+            "canvas => canvas.toDataURL('image/png').split(',')[1]");
 
         return Convert.FromBase64String(base64Data);
     }

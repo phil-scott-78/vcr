@@ -126,23 +126,31 @@ public class FrameCapture : IFrameCapture, IAsyncDisposable
         var frameNumber = _state.FramesCaptured + 1;
         var timestamp = Stopwatch.Elapsed;
 
-        // Capture both PNG layers and terminal content in parallel for better performance
-        // Skip cursor layer if DisableCursor is enabled
-        var captureLayersTask = _terminalPage.CaptureLayersAsync(captureCursor: !_options.DisableCursor);
+        // Always capture the lightweight terminal-content snapshot (used by the SVG encoder).
+        // The expensive per-frame PNG layers are only needed by raster outputs (GIF/MP4/WebM/PNG/
+        // frames), so an SVG-only recording skips them entirely. Capturing them throttled the loop
+        // to ~1 fps; the content read alone is a few ms.
         var terminalContentTask = _terminalPage.GetTerminalContentWithStylesAsync();
 
-        await Task.WhenAll(captureLayersTask, terminalContentTask);
+        if (_options.RequiresRasterFrames)
+        {
+            // Capture PNG layers and terminal content in parallel for better performance.
+            // Skip cursor layer if DisableCursor is enabled.
+            var captureLayersTask = _terminalPage.CaptureLayersAsync(captureCursor: !_options.DisableCursor);
+            await Task.WhenAll(captureLayersTask, terminalContentTask);
 
-        var (textBytes, cursorBytes) = captureLayersTask.Result;
-        var terminalContent = terminalContentTask.Result;
+            var (textBytes, cursorBytes) = captureLayersTask.Result;
 
-        // Get file paths for both layers
-        var textPath = _storage.GetFrameLayerPath(frameNumber, "text");
-        var cursorPath = _storage.GetFrameLayerPath(frameNumber, "cursor");
+            // Get file paths for both layers
+            var textPath = _storage.GetFrameLayerPath(frameNumber, "text");
+            var cursorPath = _storage.GetFrameLayerPath(frameNumber, "cursor");
 
-        // Enqueue for background writing (non-blocking)
-        await _writeQueue.EnqueueAsync(textPath, textBytes);
-        await _writeQueue.EnqueueAsync(cursorPath, cursorBytes);
+            // Enqueue for background writing (non-blocking)
+            await _writeQueue.EnqueueAsync(textPath, textBytes);
+            await _writeQueue.EnqueueAsync(cursorPath, cursorBytes);
+        }
+
+        var terminalContent = await terminalContentTask;
 
         // Record terminal content snapshot for SVG/text-based outputs
         var snapshot = new TerminalContentSnapshot

@@ -52,8 +52,9 @@ public class VideoEncoder
             throw new InvalidOperationException("No output files specified. VideoEncoder.RenderAsync should only be called when output files are configured.");
         }
 
-        var frameCount = _storage.CountFrames();
-        if (frameCount == 0)
+        // SVG output is rendered from terminal-content snapshots rather than PNG frame files, so an
+        // SVG-only recording legitimately has zero raster frames. Only fail when neither exists.
+        if (_storage.CountFrames() == 0 && _storage.GetTerminalSnapshots().Count == 0)
         {
             throw new InvalidOperationException("No frames captured to render");
         }

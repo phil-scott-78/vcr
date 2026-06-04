@@ -309,6 +309,26 @@ public class SessionOptions
     public List<string> OutputFiles { get; set; } = new();
 
     /// <summary>
+    /// Whether the configured outputs require per-frame raster (PNG) capture. SVG output is
+    /// rendered from lightweight terminal-content snapshots, so an SVG-only recording can skip
+    /// the expensive per-frame canvas screenshot entirely. Returns true if any output is a
+    /// non-SVG animation/image (GIF, MP4, WebM, PNG, or a frames directory).
+    /// </summary>
+    public bool RequiresRasterFrames
+    {
+        get
+        {
+            foreach (var file in OutputFiles)
+            {
+                if (!".svg".Equals(System.IO.Path.GetExtension(file), System.StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Gets or sets environment variables to set in the shell.
     /// </summary>
     public Dictionary<string, string> Environment { get; set; } = new();

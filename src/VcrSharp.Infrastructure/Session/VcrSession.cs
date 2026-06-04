@@ -182,33 +182,43 @@ public class VcrSession : IAsyncDisposable
             // 18. Stop frame capture
             await _frameCapture.StopAsync();
 
-            // 19. Trim frames based on activity frame numbers
+            // 19. Trim frames based on activity frame numbers.
+            // Always record the trimmed range so the SVG encoder can window its snapshots, but only
+            // physically trim/renumber the PNG layer files when a raster output actually needs them
+            // (an SVG-only recording never wrote any PNG frames).
             var frameTrimmer = new FrameTrimmer(_options, _state);
             var frameRange = frameTrimmer.CalculateFrameRange();
             if (frameRange.HasValue)
             {
-                progress?.Report("Trimming frames based on activity...");
-
                 // Store the trimmed frame range in options so encoders can access it
                 // These are the ORIGINAL frame numbers before renumbering
                 _options.TrimmedFirstFrame = frameRange.Value.firstFrame;
                 _options.TrimmedLastFrame = frameRange.Value.lastFrame;
 
-                frameTrimmer.TrimFrames(_frameStorage.FrameDirectory, frameRange.Value.firstFrame, frameRange.Value.lastFrame);
-                frameTrimmer.RenumberFrames(_frameStorage.FrameDirectory);
+                if (_options.RequiresRasterFrames)
+                {
+                    progress?.Report("Trimming frames based on activity...");
 
-                // Update frame count and elapsed time after trimming
-                var remainingFrames = Directory.GetFiles(_frameStorage.FrameDirectory, "frame-text-*.png").Length;
-                _state.FramesCaptured = remainingFrames;
+                    frameTrimmer.TrimFrames(_frameStorage.FrameDirectory, frameRange.Value.firstFrame, frameRange.Value.lastFrame);
+                    frameTrimmer.RenumberFrames(_frameStorage.FrameDirectory);
 
-                // Recalculate elapsed time based on trimmed frame count and framerate
-                _state.ElapsedTime = TimeSpan.FromSeconds(remainingFrames / (double)_options.Framerate);
+                    // Update frame count and elapsed time after trimming
+                    var remainingFrames = Directory.GetFiles(_frameStorage.FrameDirectory, "frame-text-*.png").Length;
+                    _state.FramesCaptured = remainingFrames;
+
+                    // Recalculate elapsed time based on trimmed frame count and framerate
+                    _state.ElapsedTime = TimeSpan.FromSeconds(remainingFrames / (double)_options.Framerate);
+                }
             }
 
-            // 20. Generate frames manifest with variable durations
-            progress?.Report("Generating frames manifest...");
-            var defaultFrameInterval = TimeSpan.FromSeconds(1.0 / _options.Framerate);
-            _frameStorage.GenerateFramesManifest(defaultFrameInterval);
+            // 20. Generate frames manifest with variable durations (only needed by the raster/FFmpeg
+            // encoders; the SVG encoder works directly from terminal-content snapshots).
+            if (_options.RequiresRasterFrames)
+            {
+                progress?.Report("Generating frames manifest...");
+                var defaultFrameInterval = TimeSpan.FromSeconds(1.0 / _options.Framerate);
+                _frameStorage.GenerateFramesManifest(defaultFrameInterval);
+            }
 
             stopwatch.Stop();
 

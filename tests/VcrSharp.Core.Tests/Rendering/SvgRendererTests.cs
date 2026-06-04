@@ -238,6 +238,33 @@ public class SvgRendererTests
         svg.ShouldContain("clip-path=\"url(#terminal-clip)\"");
     }
 
+    [Fact]
+    public async Task ContentWiderThanViewport_GrowsCanvasSoLastColumnIsNotClipped()
+    {
+        // Reproduces the real bug: the terminal rendered more columns than the configured
+        // viewport accounts for (Set Cols drifts from ttyd's actual fit / measured cell size),
+        // so a table's right border lands past _options.Width and gets clipped out of the
+        // viewBox. The canvas must grow to contain every rendered cell. FitToContent is OFF.
+        var options = DeterministicOptions(); // Width=200 (= 20 cols at 10px), Height=100
+        // 24 columns of content (240px) - 4 columns wider than the configured viewport,
+        // with a box-drawing right border in the last column (col 23 -> x = 230).
+        var row = new TerminalCell[24];
+        for (var c = 0; c < 24; c++) row[c] = Cell("#");
+        row[23] = Cell("│"); // │ right border glyph
+        var content = new TerminalContent { Cols = 24, Rows = 1, Cells = [row] };
+
+        var svg = await RenderStaticAsync(options, content);
+        var root = RootTag(svg);
+
+        // Canvas grew from the configured 200px to 240px so nothing is cut off; height unchanged.
+        root.ShouldContain("viewBox=\"0 0 240 100\"");
+        root.ShouldContain("width=\"240\"");
+        // Clip-path stays present (FitToContent off) but now spans the full content width.
+        svg.ShouldContain("<clipPath id=\"terminal-clip\"><rect width=\"240\"");
+        // The last column's right-border glyph is rendered at its center x = 230 + 10/2 = 235.
+        svg.ShouldContain("M235");
+    }
+
     // ---- Theme A: loop control ----
 
     [Fact]

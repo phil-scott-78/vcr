@@ -36,6 +36,12 @@ public class SvgRenderer
     private int? _cropCols;
     private int? _cropRows;
 
+    // Measured content extent (character cells) used to GROW the canvas so no rendered cell is
+    // clipped when the configured viewport is smaller than the content actually captured.
+    // Distinct from _cropCols/_cropRows, which SHRINK the canvas for FitToContent.
+    private int? _measuredExtentCols;
+    private int? _measuredExtentRows;
+
     public SvgRenderer(SessionOptions options)
     {
         _options = options;
@@ -53,6 +59,10 @@ public class SvgRenderer
         {
             Directory.CreateDirectory(directory);
         }
+
+        // Grow the canvas if the captured content is wider/taller than the configured viewport
+        // so trailing columns/rows (e.g. a table's right border) are never clipped.
+        EnsureCanvasFitsContent(ContentExtent.Measure(content));
 
         await using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
         await using var xml = XmlWriter.Create(writer, new XmlWriterSettings
@@ -142,6 +152,11 @@ public class SvgRenderer
         {
             Directory.CreateDirectory(directory);
         }
+
+        // Grow the canvas if the captured content is wider/taller than the configured viewport
+        // so trailing columns/rows (e.g. a table's right border) are never clipped. Uses the
+        // union across all frames so a column that only appears partway through is still covered.
+        EnsureCanvasFitsContent(ContentExtent.Union(states.Select(s => s.Content)));
 
         // Build the row timeline - tracks when each unique row content appears/disappears
         var rowTimeline = BuildRowTimeline(states, totalDurationSeconds);
@@ -891,6 +906,20 @@ public class SvgRenderer
         {
             _canvasWidth = _options.Width;
             _canvasHeight = _options.Height;
+
+            // Guard against the configured viewport being smaller than the content we actually
+            // captured. The terminal's real column/row count can exceed the requested Cols/Rows
+            // (e.g. ttyd re-fits the terminal to the window after we resize it, or the measured
+            // cell size differs slightly from xterm's), so cells laid out at col*_charWidth can
+            // extend past _options.Width. Without this, those trailing columns - like a table's
+            // right border - fall outside the viewBox/clip and are silently cut off. Grow (never
+            // shrink) the canvas so it contains every rendered cell.
+            if (_measuredExtentCols.HasValue)
+                _canvasWidth = Math.Max(_canvasWidth,
+                    (int)Math.Ceiling(_measuredExtentCols.Value * _charWidth) + 2 * _options.Padding);
+            if (_measuredExtentRows.HasValue)
+                _canvasHeight = Math.Max(_canvasHeight,
+                    (int)Math.Ceiling(_measuredExtentRows.Value * _charHeight) + 2 * _options.Padding);
         }
 
         _frameWidth = _canvasWidth - 2 * _options.Padding;
@@ -905,6 +934,20 @@ public class SvgRenderer
     {
         _cropCols = Math.Max(cols, 1);
         _cropRows = Math.Max(rows, 1);
+        CalculateDimensions();
+    }
+
+    /// <summary>
+    /// Grows the canvas (never shrinks it) so it contains the given measured content extent,
+    /// preventing trailing columns/rows from being clipped when the configured viewport is
+    /// smaller than the content the terminal actually produced (see <see cref="CalculateDimensions"/>).
+    /// No-op in FitToContent mode, where the explicit crop extent already drives the canvas size.
+    /// </summary>
+    private void EnsureCanvasFitsContent(ContentExtent extent)
+    {
+        if (FitMode) return;
+        _measuredExtentCols = extent.Cols;
+        _measuredExtentRows = extent.Rows;
         CalculateDimensions();
     }
 

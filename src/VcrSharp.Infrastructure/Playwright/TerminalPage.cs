@@ -299,8 +299,65 @@ public class TerminalPage : ITerminalPage
         // Wait for resize to take effect
         await Task.Delay(100);
 
+        // ttyd's xterm client re-fits the terminal to the window on every viewport change, deriving
+        // the column/row count from the live container size and its own cell metrics. When the chrome
+        // around the canvas (scrollbar/padding) measures differently than the extraWidth/extraHeight
+        // we assumed - which varies by OS, DPI and ttyd build - that fit lands a column or two off the
+        // requested grid (e.g. `Set Cols 77` yielding an 80-column terminal on some machines but 77 on
+        // others). Re-assert the exact grid as the authoritative final step and confirm it holds, so
+        // Set Cols/Rows is honored deterministically rather than left to ttyd's fit.
+        await ForceExactGridAsync(targetCols, targetRows);
+
         // Return the final viewport dimensions and actual cell dimensions
         return (requiredViewportWidth, requiredViewportHeight, cellWidth, cellHeight);
+    }
+
+    /// <summary>
+    /// Forces the terminal to exactly <paramref name="cols"/>×<paramref name="rows"/>, overriding any
+    /// ttyd auto-fit, and verifies it stays put before returning. ttyd re-fits the terminal on viewport
+    /// changes using its own container/cell measurements, which can disagree with the requested grid by
+    /// a column or two depending on the environment; this makes <c>Set Cols</c>/<c>Set Rows</c>
+    /// deterministic. Requires two consecutive in-spec reads so a debounced fit firing just after a
+    /// viewport change can't silently undo the resize.
+    /// </summary>
+    private async Task ForceExactGridAsync(int cols, int rows)
+    {
+        const int maxAttempts = 12;
+        var stableChecks = 0;
+
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var dims = await _page.EvaluateAsync<TerminalDimensions>($$"""
+                () => {
+                    if (window.term.cols !== {{cols}} || window.term.rows !== {{rows}}) {
+                        window.term.resize({{cols}}, {{rows}});
+                    }
+                    return { cols: window.term.cols, rows: window.term.rows };
+                }
+            """);
+
+            if (dims.Cols == cols && dims.Rows == rows)
+            {
+                if (++stableChecks >= 2)
+                {
+                    if (attempt > 0)
+                        VcrLogger.Logger.Debug("Terminal grid pinned to {Cols}×{Rows} after {Attempts} attempt(s)",
+                            cols, rows, attempt + 1);
+                    return;
+                }
+            }
+            else
+            {
+                stableChecks = 0;
+                VcrLogger.Logger.Debug("ttyd re-fit terminal to {ActualCols}×{ActualRows}; forcing back to requested {Cols}×{Rows}",
+                    dims.Cols, dims.Rows, cols, rows);
+            }
+
+            await Task.Delay(40);
+        }
+
+        VcrLogger.Logger.Warning("Terminal grid did not stabilize at requested {Cols}×{Rows} after {MaxAttempts} attempts; capture may be off by a column/row",
+            cols, rows, maxAttempts);
     }
 
     /// <summary>

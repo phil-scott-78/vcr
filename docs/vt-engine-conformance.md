@@ -69,7 +69,7 @@ All acceptance targets pass (0 skipped). Files at 100% include the full cursor/s
 ### Deferred product/engine follow-ups (do not affect the scoreboard)
 - **SvgRenderer**: render the new attributes (reverse / dim / strikethrough / overline / styled+colored underline) — currently populated in `TerminalCell` but not yet drawn (existing bold/italic/underline output unchanged).
 - **Engine leaf-ification**: extract `TerminalContent`/`TerminalCell` so `VcrSharp.Terminal` drops its `VcrSharp.Core` (and transitive ImageSharp) reference.
-- **P6**: animation poll-at-framerate + `ITerminalBackend` seam + browser auto-fallback (wires the engine into the real render pipeline).
+- **P6 (animation) ✅**: `NativeTerminalRenderer.RunAndCaptureAsync` polls the live `VtScreen` at framerate → `TerminalStateWithTime[]` → `SvgRenderer.RenderAnimatedAsync`. `vcr native-snap --animate` produces a browserless animated SVG (verified end to end). Remaining P6: `ITerminalBackend` seam + `VcrSession` auto-fallback (so full `.tape` recordings prefer native), and native GIF/MP4 (rasterize states to frames).
 - **P7**: Unix `forkpty` sibling backend.
 
 ---

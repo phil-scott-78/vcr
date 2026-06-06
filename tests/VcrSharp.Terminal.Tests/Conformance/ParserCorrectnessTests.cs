@@ -46,17 +46,17 @@ public sealed class ParserCorrectnessTests
         c.Cells[0][0].ForegroundColor.ShouldBe("#ff0000");
     }
 
-    [Fact(Skip = Skip_P2)]
+    [Fact]
     public void ScrollRegion_ConstrainsLineFeedScroll()
     {
         // DECSTBM rows 1..2 (1-based). With the region active, the LF at the bottom margin scrolls only
-        // rows 0..1, so "L2" ends up on row 0. Today there is no scroll region → row 0 stays "L1".
-        var c = Render(10, 4, $"{E}[1;2r{E}[HL1\nL2\nL3");
+        // rows 0..1, so "L2" ends up on row 0. (LF needs an accompanying CR — LNM is off by default.)
+        var c = Render(10, 4, $"{E}[1;2r{E}[HL1\r\nL2\r\nL3");
         Row(c, 0).ShouldBe("L2");
         Row(c, 1).ShouldBe("L3");
     }
 
-    [Fact(Skip = Skip_P2)]
+    [Fact]
     public void InsertLine_PushesRowsDown()
     {
         // IL ("CSI L") at home inserts a blank line, pushing "A" down to row 1. Today 'L' is a no-op.

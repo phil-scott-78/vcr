@@ -80,6 +80,18 @@ public sealed class VtScreen
     private bool _curHasDigits;
     private bool _pendingSub;                      // the separator before the next parameter was ':'
     private bool _privateMarker;                   // CSI '?' leader
+    private char _interChar;                       // last CSI/ESC intermediate (e.g. '!' in DECSTR)
+
+    // Scroll region (inclusive, 0-based), tab stops, saved cursor, and a bounded scrollback ring.
+    private int _top;
+    private int _bottom;
+    private bool[] _tabs;
+    private SavedCursor? _saved;
+    private readonly List<Cell[]> _scrollback = new();
+    private const int ScrollbackMax = 1000;
+
+    private readonly record struct SavedCursor(
+        int Row, int Col, string? Fg, string? Bg, bool Bold, bool Italic, bool Underline, bool WrapPending);
 
     public VtScreen(int cols, int rows)
     {
@@ -92,6 +104,15 @@ public sealed class VtScreen
             for (var c = 0; c < _cols; c++)
                 _grid[r][c] = new Cell();
         }
+        _bottom = _rows - 1;
+        _tabs = BuildDefaultTabs();
+    }
+
+    private bool[] BuildDefaultTabs()
+    {
+        var t = new bool[_cols];
+        for (var c = 8; c < _cols; c += 8) t[c] = true; // a tab stop every 8 columns
+        return t;
     }
 
     public int Cols => _cols;
@@ -159,7 +180,7 @@ public sealed class VtScreen
                     case 'P': _state = State.StringConsume; return;             // DCS
                     case 'X': case '^': case '_': _state = State.StringConsume; return; // SOS/PM/APC
                 }
-                if (cp is >= 0x30 and <= 0x7E) { _state = State.Ground; return; } // esc_dispatch (no-op for now)
+                if (cp is >= 0x30 and <= 0x7E) { EscDispatch((char)cp); _state = State.Ground; return; }
                 return;
 
             case State.EscapeIntermediate:
@@ -177,12 +198,12 @@ public sealed class VtScreen
                     if (_state == State.CsiEntry) { _privateMarker = cp == '?'; _state = State.CsiParam; return; }
                     _state = State.CsiIgnore; return;
                 }
-                if (cp is >= 0x20 and <= 0x2F) { _state = State.CsiIntermediate; return; }
+                if (cp is >= 0x20 and <= 0x2F) { _interChar = (char)cp; _state = State.CsiIntermediate; return; }
                 if (cp is >= 0x40 and <= 0x7E) { CommitParam(); DispatchCsi((char)cp); _state = State.Ground; return; }
                 return;
 
             case State.CsiIntermediate:
-                if (cp is >= 0x20 and <= 0x2F) return;
+                if (cp is >= 0x20 and <= 0x2F) { _interChar = (char)cp; return; }
                 if (cp is >= 0x40 and <= 0x7E) { CommitParam(); DispatchCsi((char)cp); _state = State.Ground; return; }
                 if (cp is >= 0x30 and <= 0x3F) { _state = State.CsiIgnore; return; }
                 return;
@@ -201,6 +222,7 @@ public sealed class VtScreen
         _curHasDigits = false;
         _pendingSub = false;
         _privateMarker = false;
+        _interChar = '\0';
     }
 
     private void CommitParam()
@@ -232,7 +254,7 @@ public sealed class VtScreen
                 _wrapPending = false;
                 break;
             case 0x09: // HT
-                _col = Math.Min(_cols - 1, (_col / 8 + 1) * 8);
+                _col = NextTabStop(_col);
                 _wrapPending = false;
                 break;
         }
@@ -241,21 +263,49 @@ public sealed class VtScreen
     private void LineFeed()
     {
         _wrapPending = false;
-        if (_row >= _rows - 1)
-            ScrollUp();
-        else
+        if (_row == _bottom)
+            ScrollRegionUp(1);
+        else if (_row < _rows - 1)
             _row++;
     }
 
-    private void ScrollUp()
+    /// <summary>Scrolls the scroll region [<see cref="_top"/>, <see cref="_bottom"/>] up by
+    /// <paramref name="n"/> lines. Lines leaving the top of a region anchored at the screen top go to
+    /// the scrollback ring; the bottom is filled with blanks.</summary>
+    private void ScrollRegionUp(int n)
     {
-        var top = _grid[0];
-        for (var r = 0; r < _rows - 1; r++)
-            _grid[r] = _grid[r + 1];
-        // reuse the top row array, cleared, as the new bottom row
-        for (var c = 0; c < _cols; c++)
-            top[c] = BlankCell();
-        _grid[_rows - 1] = top;
+        n = Math.Min(n, _bottom - _top + 1);
+        for (var i = 0; i < n; i++)
+        {
+            var removed = _grid[_top];
+            for (var r = _top; r < _bottom; r++) _grid[r] = _grid[r + 1];
+            _grid[_bottom] = NewBlankRow();
+            if (_top == 0) PushScrollback(removed); else { /* discarded */ }
+        }
+    }
+
+    /// <summary>Scrolls the scroll region down by <paramref name="n"/> lines (blanks at the top).</summary>
+    private void ScrollRegionDown(int n)
+    {
+        n = Math.Min(n, _bottom - _top + 1);
+        for (var i = 0; i < n; i++)
+        {
+            for (var r = _bottom; r > _top; r--) _grid[r] = _grid[r - 1];
+            _grid[_top] = NewBlankRow();
+        }
+    }
+
+    private void PushScrollback(Cell[] row)
+    {
+        _scrollback.Add(row);
+        if (_scrollback.Count > ScrollbackMax) _scrollback.RemoveAt(0);
+    }
+
+    private Cell[] NewBlankRow()
+    {
+        var row = new Cell[_cols];
+        for (var c = 0; c < _cols; c++) row[c] = BlankCell();
+        return row;
     }
 
     private Cell BlankCell() => new() { Bg = _bg }; // erased cells keep the current background
@@ -319,20 +369,39 @@ public sealed class VtScreen
                 _col = Math.Clamp(Param(1, 1) - 1, 0, _cols - 1);
                 _wrapPending = false;
                 break;
-            case 'A': _row = Math.Max(0, _row - Param(0, 1)); _wrapPending = false; break;
-            case 'B': _row = Math.Min(_rows - 1, _row + Param(0, 1)); _wrapPending = false; break;
+            case 'A': _row = Math.Max(CursorUpLimit(), _row - Param(0, 1)); _wrapPending = false; break;   // CUU (stops at top margin)
+            case 'B': _row = Math.Min(CursorDownLimit(), _row + Param(0, 1)); _wrapPending = false; break; // CUD (stops at bottom margin)
             case 'C': _col = Math.Min(_cols - 1, _col + Param(0, 1)); _wrapPending = false; break;
             case 'D': _col = Math.Max(0, _col - Param(0, 1)); _wrapPending = false; break;
-            case 'G': _col = Math.Clamp(Param(0, 1) - 1, 0, _cols - 1); _wrapPending = false; break;
-            case 'd': _row = Math.Clamp(Param(0, 1) - 1, 0, _rows - 1); _wrapPending = false; break;
+            case 'E': _row = Math.Min(CursorDownLimit(), _row + Param(0, 1)); _col = 0; _wrapPending = false; break; // CNL
+            case 'F': _row = Math.Max(CursorUpLimit(), _row - Param(0, 1)); _col = 0; _wrapPending = false; break;   // CPL
+            case 'G':
+            case '`': _col = Math.Clamp(Param(0, 1) - 1, 0, _cols - 1); _wrapPending = false; break;  // CHA / HPA
+            case 'a': _col = Math.Min(_cols - 1, _col + Param(0, 1)); _wrapPending = false; break;     // HPR
+            case 'd': _row = Math.Clamp(Param(0, 1) - 1, 0, _rows - 1); _wrapPending = false; break;   // VPA
+            case 'e': _row = Math.Min(_rows - 1, _row + Param(0, 1)); _wrapPending = false; break;     // VPR
             case 'J': EraseInDisplay(Param(0, 0)); break;
             case 'K': EraseInLine(Param(0, 0)); break;
-            case 'X': EraseChars(Param(0, 1)); break;     // ECH: erase N chars from cursor (Spectre uses this)
-            case '@': InsertChars(Param(0, 1)); break;    // ICH: insert N blanks, shift right
-            case 'P': DeleteChars(Param(0, 1)); break;    // DCH: delete N chars, shift left
-            // h/l (mode set/reset), r (scroll region), L/M (IL/DL), S/T (SU/SD), etc. are later phases.
+            case 'X': EraseChars(Param(0, 1)); break;     // ECH
+            case '@': InsertChars(Param(0, 1)); break;    // ICH
+            case 'P': DeleteChars(Param(0, 1)); break;    // DCH
+            case 'L': InsertLines(Param(0, 1)); break;    // IL
+            case 'M': DeleteLines(Param(0, 1)); break;    // DL
+            case 'S': ScrollRegionUp(Param(0, 1)); break;    // SU
+            case 'T': ScrollRegionDown(Param(0, 1)); break;  // SD
+            case 'r': if (!_privateMarker) SetScrollRegion(); break; // DECSTBM
+            case 'g': ClearTabs(Param(0, 0)); break;      // TBC
+            case 'I': TabForward(Param(0, 1)); break;     // CHT
+            case 'Z': TabBackward(Param(0, 1)); break;    // CBT
+            case 's': if (!_privateMarker) SaveCursor(); break;  // SCOSC (DECSLRM mode 69 not enabled)
+            case 'u': RestoreCursor(); break;             // SCORC
+            case 'p': if (_interChar == '!') SoftReset(); break; // DECSTR
+            // h/l (DEC modes), alt screen, mouse, etc. are P4.
         }
     }
+
+    private int CursorUpLimit() => _row >= _top ? _top : 0;
+    private int CursorDownLimit() => _row <= _bottom ? _bottom : _rows - 1;
 
     /// <summary>Reads parameter <paramref name="index"/>. Empty (-1) and (for 1-defaulting commands)
     /// explicit 0 fall back to <paramref name="fallback"/>.</summary>
@@ -358,8 +427,11 @@ public sealed class VtScreen
                 EraseLineRange(_row, 0, _col);
                 break;
             case 2: // whole screen
-            case 3:
                 for (var r = 0; r < _rows; r++) EraseLineRange(r, 0, _cols - 1);
+                break;
+            case 3: // whole screen + scrollback
+                for (var r = 0; r < _rows; r++) EraseLineRange(r, 0, _cols - 1);
+                _scrollback.Clear();
                 break;
         }
     }
@@ -406,6 +478,120 @@ public sealed class VtScreen
         for (var c = _col; c < _cols; c++)
             row[c] = c + count < _cols ? row[c + count] : BlankCell();
         _wrapPending = false;
+    }
+
+    // ---- line edits, scroll region, tabs, cursor save/restore, resets (P2) ----
+
+    private void InsertLines(int n)
+    {
+        if (_row < _top || _row > _bottom) return;       // IL only acts inside the margins
+        n = Math.Min(n, _bottom - _row + 1);
+        for (var r = _bottom; r >= _row + n; r--) _grid[r] = _grid[r - n];
+        for (var r = _row; r < _row + n; r++) _grid[r] = NewBlankRow();
+        // NB: cursor column is NOT reset — ECMA-48 says move to line home, but xterm (and libvterm)
+        // leave the cursor put, and we match xterm.
+        _wrapPending = false;
+    }
+
+    private void DeleteLines(int n)
+    {
+        if (_row < _top || _row > _bottom) return;       // DL only acts inside the margins
+        n = Math.Min(n, _bottom - _row + 1);
+        for (var r = _row; r <= _bottom - n; r++) _grid[r] = _grid[r + n];
+        for (var r = _bottom - n + 1; r <= _bottom; r++) _grid[r] = NewBlankRow();
+        // cursor column unchanged (see InsertLines)
+        _wrapPending = false;
+    }
+
+    private void SetScrollRegion()
+    {
+        var top = Param(0, 1) - 1;
+        var bottom = Param(1, _rows) - 1;
+        if (top < 0) top = 0;
+        if (bottom > _rows - 1) bottom = _rows - 1;
+        if (top >= bottom) { top = 0; bottom = _rows - 1; } // invalid -> full screen
+        _top = top;
+        _bottom = bottom;
+        _row = 0; _col = 0; // DECSTBM homes the cursor
+        _wrapPending = false;
+    }
+
+    private void ReverseIndex()
+    {
+        _wrapPending = false;
+        if (_row == _top) ScrollRegionDown(1);
+        else if (_row > 0) _row--;
+    }
+
+    private int NextTabStop(int from)
+    {
+        for (var c = from + 1; c < _cols; c++) if (_tabs[c]) return c;
+        return _cols - 1;
+    }
+
+    private int PrevTabStop(int from)
+    {
+        for (var c = from - 1; c > 0; c--) if (_tabs[c]) return c;
+        return 0;
+    }
+
+    private void TabForward(int n) { for (var i = 0; i < n; i++) _col = NextTabStop(_col); _wrapPending = false; }
+    private void TabBackward(int n) { for (var i = 0; i < n; i++) _col = PrevTabStop(_col); _wrapPending = false; }
+
+    private void ClearTabs(int mode)
+    {
+        if (mode == 3) Array.Clear(_tabs);            // clear all
+        else if (_col < _cols) _tabs[_col] = false;   // clear at cursor (mode 0)
+    }
+
+    private void SaveCursor() =>
+        _saved = new SavedCursor(_row, _col, _fg, _bg, _bold, _italic, _underline, _wrapPending);
+
+    private void RestoreCursor()
+    {
+        if (_saved is not { } s) { _row = 0; _col = 0; _wrapPending = false; return; }
+        _row = Math.Clamp(s.Row, 0, _rows - 1);
+        _col = Math.Clamp(s.Col, 0, _cols - 1);
+        _fg = s.Fg; _bg = s.Bg; _bold = s.Bold; _italic = s.Italic; _underline = s.Underline;
+        _wrapPending = s.WrapPending;
+    }
+
+    private void SoftReset() // DECSTR
+    {
+        _top = 0; _bottom = _rows - 1;
+        ResetSgr();
+        _saved = null;
+        _row = 0; _col = 0;
+        _wrapPending = false;
+    }
+
+    private void HardReset() // RIS
+    {
+        for (var r = 0; r < _rows; r++)
+            for (var c = 0; c < _cols; c++)
+                _grid[r][c] = new Cell();
+        _top = 0; _bottom = _rows - 1;
+        _tabs = BuildDefaultTabs();
+        _scrollback.Clear();
+        _saved = null;
+        ResetSgr();
+        _row = 0; _col = 0;
+        _wrapPending = false;
+    }
+
+    private void EscDispatch(char final)
+    {
+        switch (final)
+        {
+            case 'D': LineFeed(); break;                 // IND
+            case 'E': _col = 0; LineFeed(); break;       // NEL
+            case 'M': ReverseIndex(); break;             // RI
+            case '7': SaveCursor(); break;               // DECSC
+            case '8': RestoreCursor(); break;            // DECRC
+            case 'c': HardReset(); break;                // RIS
+            case 'H': if (_col < _cols) _tabs[_col] = true; break; // HTS
+            // '=', '>', charset designators, etc. are no-ops / later phases.
+        }
     }
 
     // ---- SGR (handles both `38;2;r;g;b` and the ITU colon form `38:2::r:g:b`) ----

@@ -170,6 +170,7 @@ public class TapeParser
             .Or(Duration.Select(d => d.ToString()))
             .Or(Number.Select(n => n.ToString(CultureInfo.InvariantCulture)))
             .Or(Boolean.Select(b => b.ToString()))
+            .Or(Identifier) // bare-word values, e.g. Set Mode animated / Set Size fit
         select (ICommand)new SetCommand(settingName, value, keyword.Position.Line);
 
     // Output command: Output demo.gif
@@ -399,11 +400,14 @@ public class TapeParser
         "BorderRadius", "CursorBlink", "DisableCursor", "TransparentBackground",
         "CssVariables", "SvgIntrinsicSize", "SvgMetadata",
 
+        // Capture + sizing (the two clear front-ends over StaticOutput/FitToContent)
+        "Mode", "Size",
+
         // Behavior
         "Shell", "WorkingDirectory", "TypingSpeed", "WaitTimeout",
         "WaitPattern", "InactivityTimeout", "MaxWaitForInactivity", "StartWaitTimeout",
         "StartBuffer", "EndBuffer", "HoldDuration", "StartupDelay",
-        "ScreenshotWaitForInactivity", "ScreenshotInactivityTimeout", "StaticOutput", "Animate"
+        "ScreenshotWaitForInactivity", "ScreenshotInactivityTimeout", "StaticOutput"
     };
 
     /// <summary>

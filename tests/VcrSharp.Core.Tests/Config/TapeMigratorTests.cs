@@ -105,7 +105,7 @@ public class TapeMigratorTests
         plan.ConfigToml.ShouldContain("[preset.doc]");
         plan.ConfigToml.ShouldContain("inherits = \"base\"");
         plan.ConfigToml.ShouldContain("[preset.landing]");
-        plan.ConfigToml.ShouldContain("staticOutput = true");
+        plan.ConfigToml.ShouldContain("mode = static"); // emitted as the modern front-end, not staticOutput
 
         // Every tape migrates and stays equivalent — including the fork, which never gets endBuffer.
         plan.Rewritten.ShouldBe(5);

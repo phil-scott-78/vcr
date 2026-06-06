@@ -3,10 +3,11 @@ using VcrSharp.Core.Parsing.Ast;
 namespace VcrSharp.Core.Settings;
 
 /// <summary>
-/// The Phase-2 "ruthless prune": settings and commands that are dead, no-ops on the primary SVG
-/// path, or superseded. They still parse and apply (nothing breaks), but using them surfaces a
-/// deprecation warning pointing at the replacement. This shrinks the felt surface without changing
-/// any rendered output — the removal itself happens in a later release.
+/// A deliberately conservative deprecation list: only settings/commands that are genuinely
+/// redundant or superseded in every mode — animated, static, and raster (GIF/MP4) alike. Animation
+/// is a first-class concern, so the loop/playback/palette/cursor/margin knobs are NOT deprecated.
+/// Deprecated names still parse and apply (nothing breaks); using one surfaces a warning pointing at
+/// the replacement. Also lints the new <c>Mode</c>/<c>Size</c> values for typos.
 /// </summary>
 public static class SettingDeprecations
 {
@@ -14,47 +15,19 @@ public static class SettingDeprecations
     public static readonly IReadOnlyDictionary<string, string> Settings =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            // Superseded sizing
-            ["Width"] = "use Cols (Width is ignored when Cols is set)",
-            ["Height"] = "use Rows (Height is ignored when Rows is set)",
+            // Superseded by the terminal-grid sizing model
+            ["Width"] = "use Cols (Width is only a fallback when Cols is unset)",
+            ["Height"] = "use Rows (Height is only a fallback when Rows is unset)",
 
-            // No-ops on the SVG output path
-            ["Margin"] = "has no effect on SVG output",
-            ["MarginFill"] = "has no effect on SVG output",
-            ["WindowBarSize"] = "has no effect on SVG output",
-            ["BorderRadius"] = "has no effect on SVG output",
+            // Renamed to the clear capture/sizing front-ends
+            ["StaticOutput"] = "use 'Set Mode static' (Mode is animated|static)",
+            ["FitToContent"] = "use 'Set Size fit' (Size is grid|fit)",
 
-            // Subsumed / unused styling
-            ["CursorBlink"] = "use DisableCursor",
-            ["LetterSpacing"] = "no longer used",
-            ["LineHeight"] = "no longer used",
-            ["FontFamily"] = "rarely needed; the default monospace stack is recommended",
-
-            // Looping is meaningless for a static SVG embed
-            ["Loop"] = "looping does not apply to static SVG output",
-            ["LoopCount"] = "looping does not apply to static SVG output",
-            ["LoopOffset"] = "looping does not apply to static SVG output",
-            ["PlaybackSpeed"] = "no longer used",
-            ["MaxColors"] = "GIF-only and rarely needed",
-
-            // SVG embedding knobs — behavior is now always-on; the toggles are going away
-            ["CssVariables"] = "removed from the per-tape surface",
-            ["SvgIntrinsicSize"] = "always on now; the toggle is no longer needed",
-            ["SvgMetadata"] = "always on now; the toggle is no longer needed",
-
-            // Static/animation
-            ["StaticOutput"] = "use 'Set Animate false' (Animate is the inverse of StaticOutput)",
-
-            // The six overlapping timing knobs collapse to EndBuffer/HoldDuration + inline Wait@
-            ["WaitTimeout"] = "use an inline modifier on Wait, e.g. 'Wait@30s /pattern/'",
+            // Redundant with the Wait command itself
             ["WaitPattern"] = "pass a regex directly to Wait, e.g. 'Wait /pattern/'",
-            ["InactivityTimeout"] = "settle timing is now automatic",
-            ["MaxWaitForInactivity"] = "settle timing is now automatic",
-            ["StartWaitTimeout"] = "settle timing is now automatic",
-            ["StartBuffer"] = "settle timing is now automatic",
-            ["StartupDelay"] = "moved to an internal default",
-            ["ScreenshotWaitForInactivity"] = "Screenshot waits for output to settle automatically",
-            ["ScreenshotInactivityTimeout"] = "Screenshot waits for output to settle automatically",
+
+            // Speculative theming knob, effectively unused
+            ["CssVariables"] = "removed from the per-tape surface",
         };
 
     /// <summary>Deprecated command keywords → guidance shown to the author.</summary>
@@ -63,15 +36,20 @@ public static class SettingDeprecations
         {
             ["Require"] = "a clear runtime error already covers the missing-program case",
             ["Source"] = "use 'Use <preset>' with a vcr.toml instead",
-            ["Hide"] = "frame gating does not apply to static SVG output",
-            ["Show"] = "frame gating does not apply to static SVG output",
             ["Copy"] = "clipboard commands are being removed",
             ["Paste"] = "clipboard commands are being removed",
         };
 
+    private static readonly IReadOnlyDictionary<string, string[]> EnumSettings =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Mode"] = new[] { "animated", "static" },
+            ["Size"] = new[] { "grid", "fit" },
+        };
+
     /// <summary>
-    /// Collects deprecation warnings for the commands a user authored. Pass the parsed tape commands
-    /// (before preset resolution) so line numbers point at the tape, not generated preset defaults.
+    /// Collects deprecation warnings (and Mode/Size typo warnings) for the commands a user authored.
+    /// Pass the parsed tape commands (before preset resolution) so line numbers point at the tape.
     /// </summary>
     public static List<string> Collect(IEnumerable<ICommand> commands)
     {
@@ -79,10 +57,20 @@ public static class SettingDeprecations
 
         foreach (var command in commands)
         {
-            if (command is SetCommand set && Settings.TryGetValue(set.SettingName, out var settingMessage))
+            if (command is SetCommand set)
             {
                 var where = set.LineNumber > 0 ? $"line {set.LineNumber}: " : "";
-                warnings.Add($"{where}'Set {set.SettingName}' is deprecated — {settingMessage}.");
+
+                if (Settings.TryGetValue(set.SettingName, out var settingMessage))
+                {
+                    warnings.Add($"{where}'Set {set.SettingName}' is deprecated — {settingMessage}.");
+                }
+                else if (EnumSettings.TryGetValue(set.SettingName, out var allowed)
+                         && !allowed.Contains(set.Value.ToString(), StringComparer.OrdinalIgnoreCase))
+                {
+                    warnings.Add($"{where}'Set {set.SettingName} {set.Value}' is not recognized — use {string.Join(" or ", allowed)}.");
+                }
+
                 continue;
             }
 

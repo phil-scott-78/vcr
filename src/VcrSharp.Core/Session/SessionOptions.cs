@@ -639,8 +639,11 @@ public class SessionOptions
             case "staticoutput":
                 options.StaticOutput = Convert.ToBoolean(value);
                 break;
-            case "animate": // forward name: the inverse of StaticOutput (Animate false == static)
-                options.StaticOutput = !Convert.ToBoolean(value);
+            case "mode": // capture mode: "animated" (default, capture frames) or "static" (one settled frame)
+                options.StaticOutput = string.Equals(value.ToString(), "static", StringComparison.OrdinalIgnoreCase);
+                break;
+            case "size": // canvas sizing: "grid" (default, exact Cols×Rows) or "fit" (crop to content + scale)
+                options.FitToContent = string.Equals(value.ToString(), "fit", StringComparison.OrdinalIgnoreCase);
                 break;
         }
     }

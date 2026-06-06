@@ -520,7 +520,22 @@ public static partial class TapeMigrator
     private static void AppendSettings(StringBuilder sb, Dictionary<string, string> settings)
     {
         foreach (var (key, value) in settings.OrderBy(k => PreferredOrder(k.Key)).ThenBy(k => k.Key, StringComparer.OrdinalIgnoreCase))
-            sb.Append(LowerFirst(key)).Append(" = ").Append(RenderTomlValue(value)).Append('\n');
+        {
+            var (renderedKey, renderedValue) = TranslateSetting(key, value);
+            sb.Append(renderedKey).Append(" = ").Append(renderedValue).Append('\n');
+        }
+    }
+
+    /// <summary>Emits the modern Mode/Size front-ends instead of the deprecated StaticOutput/FitToContent.</summary>
+    private static (string Key, string Value) TranslateSetting(string key, string value)
+    {
+        var isTrue = value.Equals("true", StringComparison.OrdinalIgnoreCase);
+        if (key.Equals("StaticOutput", StringComparison.OrdinalIgnoreCase))
+            return ("mode", isTrue ? "static" : "animated");
+        if (key.Equals("FitToContent", StringComparison.OrdinalIgnoreCase))
+            return ("size", isTrue ? "fit" : "grid");
+
+        return (LowerFirst(key), RenderTomlValue(value));
     }
 
     private static int PreferredOrder(string key) => key.ToLowerInvariant() switch

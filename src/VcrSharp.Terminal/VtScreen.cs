@@ -41,6 +41,8 @@ public sealed class VtScreen
         StringConsume,  // DCS / SOS / PM / APC: ends on ST / ESC
     }
 
+    private enum Charset { Ascii, SpecialGraphics }
+
     private sealed class Cell
     {
         public string Char = " ";
@@ -48,13 +50,15 @@ public sealed class VtScreen
         public string? Bg;
         public bool Bold;
         public bool Italic;
-        public bool Underline;
+        public bool Dim;
+        public bool Blink;
+        public bool Reverse;
+        public bool Conceal;
+        public bool Strike;
+        public bool Overline;
+        public int UnderlineStyle; // 0 none, 1 single, 2 double, 3 curly, 4 dotted, 5 dashed
+        public string? UnderlineColor;
         public int Width = 1;
-
-        public Cell Clone() => new()
-        {
-            Char = Char, Fg = Fg, Bg = Bg, Bold = Bold, Italic = Italic, Underline = Underline, Width = Width,
-        };
     }
 
     private readonly int _cols;
@@ -68,12 +72,30 @@ public sealed class VtScreen
     private int _col;
     private bool _wrapPending; // deferred autowrap: set after writing the last column
 
-    // Current SGR state
+    // Current SGR pen
     private string? _fg;
     private string? _bg;
     private bool _bold;
     private bool _italic;
-    private bool _underline;
+    private bool _dim;
+    private bool _blink;
+    private bool _reverse;
+    private bool _conceal;
+    private bool _strike;
+    private bool _overline;
+    private int _underlineStyle;       // 0 none, 1 single, 2 double, 3 curly, 4 dotted, 5 dashed
+    private string? _underlineColor;
+
+    // Charset state (G0/G1 designations + active GL) for DEC line-drawing
+    private readonly Charset[] _charsets = { Charset.Ascii, Charset.Ascii };
+    private int _gl;
+
+    // Current SGR pen, exposed for conformance/inspection.
+    public bool PenBold => _bold;
+    public bool PenItalic => _italic;
+    public int PenUnderline => _underlineStyle;
+    public bool PenBlink => _blink;
+    public bool PenReverse => _reverse;
 
     // Parser state
     private State _state = State.Ground;
@@ -103,8 +125,21 @@ public sealed class VtScreen
     private bool _newlineMode;          // LNM (20)
     private readonly Dictionary<int, bool> _otherModes = new(); // tracked-only (mouse/paste/focus/…)
 
-    private readonly record struct SavedCursor(
-        int Row, int Col, string? Fg, string? Bg, bool Bold, bool Italic, bool Underline, bool WrapPending);
+    private readonly record struct Pen(
+        string? Fg, string? Bg, bool Bold, bool Italic, bool Dim, bool Blink, bool Reverse,
+        bool Conceal, bool Strike, bool Overline, int UnderlineStyle, string? UnderlineColor);
+
+    private readonly record struct SavedCursor(int Row, int Col, Pen Pen, bool WrapPending);
+
+    private Pen CapturePen() => new(_fg, _bg, _bold, _italic, _dim, _blink, _reverse, _conceal,
+        _strike, _overline, _underlineStyle, _underlineColor);
+
+    private void ApplyPen(Pen p)
+    {
+        _fg = p.Fg; _bg = p.Bg; _bold = p.Bold; _italic = p.Italic; _dim = p.Dim; _blink = p.Blink;
+        _reverse = p.Reverse; _conceal = p.Conceal; _strike = p.Strike; _overline = p.Overline;
+        _underlineStyle = p.UnderlineStyle; _underlineColor = p.UnderlineColor;
+    }
 
     public VtScreen(int cols, int rows)
     {
@@ -154,7 +189,7 @@ public sealed class VtScreen
 
         // "Anywhere" transitions: ESC always cancels the current sequence/string and re-enters escape
         // handling (so the byte after a string's terminating ESC is NOT dropped); CAN/SUB abort.
-        if (cp == 0x1B) { _state = State.Escape; return; }
+        if (cp == 0x1B) { _state = State.Escape; _interChar = '\0'; return; }
         if (cp == 0x18 || cp == 0x1A) { _state = State.Ground; return; }
 
         // String-collecting states handle their own byte set (and are exited by the ESC above).
@@ -193,7 +228,7 @@ public sealed class VtScreen
                 return;
 
             case State.Escape:
-                if (cp is >= 0x20 and <= 0x2F) { _state = State.EscapeIntermediate; return; } // intermediates
+                if (cp is >= 0x20 and <= 0x2F) { _interChar = (char)cp; _state = State.EscapeIntermediate; return; }
                 switch (cp)
                 {
                     case '[': ClearParams(); _state = State.CsiEntry; return;   // CSI
@@ -205,8 +240,8 @@ public sealed class VtScreen
                 return;
 
             case State.EscapeIntermediate:
-                if (cp is >= 0x20 and <= 0x2F) return;                  // collect more intermediates
-                if (cp is >= 0x30 and <= 0x7E) { _state = State.Ground; return; } // esc_dispatch (no-op)
+                if (cp is >= 0x20 and <= 0x2F) { _interChar = (char)cp; return; }
+                if (cp is >= 0x30 and <= 0x7E) { EscIntermediateDispatch(_interChar, (char)cp); _state = State.Ground; return; }
                 return;
 
             case State.CsiEntry:
@@ -271,6 +306,8 @@ public sealed class VtScreen
                 if (_newlineMode) _col = 0; // LNM: LF also carriage-returns
                 LineFeed();
                 break;
+            case 0x0E: _gl = 1; break; // SO: invoke G1 into GL
+            case 0x0F: _gl = 0; break; // SI: invoke G0 into GL
             case 0x08: // BS
                 if (_col > 0) _col--;
                 _wrapPending = false;
@@ -334,6 +371,12 @@ public sealed class VtScreen
 
     private void Print(Rune rune)
     {
+        // Combining marks attach to the previous base cell rather than occupying a new cell.
+        if (IsCombining(rune)) { AppendCombining(rune); return; }
+
+        // DEC special-graphics (line drawing) maps ASCII into box-drawing glyphs when active.
+        if (_charsets[_gl] == Charset.SpecialGraphics) rune = MapSpecialGraphics(rune);
+
         if (_wrapPending && _autoWrap)
         {
             _col = 0;
@@ -342,7 +385,7 @@ public sealed class VtScreen
         _wrapPending = false;
 
         var width = RuneWidth(rune);
-        if (width == 0) width = 1; // treat zero-width/combining as 1 for now (P3: grapheme merge)
+        if (width == 0) width = 1;
 
         if (_col + width > _cols)
         {
@@ -365,7 +408,14 @@ public sealed class VtScreen
         cell.Bg = _bg;
         cell.Bold = _bold;
         cell.Italic = _italic;
-        cell.Underline = _underline;
+        cell.Dim = _dim;
+        cell.Blink = _blink;
+        cell.Reverse = _reverse;
+        cell.Conceal = _conceal;
+        cell.Strike = _strike;
+        cell.Overline = _overline;
+        cell.UnderlineStyle = _underlineStyle;
+        cell.UnderlineColor = _underlineColor;
         cell.Width = width;
 
         if (width == 2 && _col + 1 < _cols)
@@ -376,7 +426,14 @@ public sealed class VtScreen
             cont.Bg = _bg;
             cont.Bold = false;
             cont.Italic = false;
-            cont.Underline = false;
+            cont.Dim = false;
+            cont.Blink = false;
+            cont.Reverse = false;
+            cont.Conceal = false;
+            cont.Strike = false;
+            cont.Overline = false;
+            cont.UnderlineStyle = 0;
+            cont.UnderlineColor = null;
             cont.Width = 0; // continuation
         }
 
@@ -582,15 +639,14 @@ public sealed class VtScreen
         else if (_col < _cols) _tabs[_col] = false;   // clear at cursor (mode 0)
     }
 
-    private void SaveCursor() =>
-        _saved = new SavedCursor(_row, _col, _fg, _bg, _bold, _italic, _underline, _wrapPending);
+    private void SaveCursor() => _saved = new SavedCursor(_row, _col, CapturePen(), _wrapPending);
 
     private void RestoreCursor()
     {
         if (_saved is not { } s) { _row = 0; _col = 0; _wrapPending = false; return; }
         _row = Math.Clamp(s.Row, 0, _rows - 1);
         _col = Math.Clamp(s.Col, 0, _cols - 1);
-        _fg = s.Fg; _bg = s.Bg; _bold = s.Bold; _italic = s.Italic; _underline = s.Underline;
+        ApplyPen(s.Pen);
         _wrapPending = s.WrapPending;
     }
 
@@ -621,6 +677,7 @@ public sealed class VtScreen
         _otherModes.Clear();
         _originMode = false; _insertMode = false; _newlineMode = false;
         _autoWrap = true; _cursorVisible = true; _reverseScreen = false;
+        _charsets[0] = Charset.Ascii; _charsets[1] = Charset.Ascii; _gl = 0;
         ResetSgr();
         _row = 0; _col = 0;
         _wrapPending = false;
@@ -691,17 +748,90 @@ public sealed class VtScreen
         _row = 0; _col = 0; _wrapPending = false;
     }
 
-    private void SaveAltCursor() =>
-        _altSaved = new SavedCursor(_row, _col, _fg, _bg, _bold, _italic, _underline, _wrapPending);
+    private void SaveAltCursor() => _altSaved = new SavedCursor(_row, _col, CapturePen(), _wrapPending);
 
     private void RestoreAltCursor()
     {
         if (_altSaved is not { } s) { _row = 0; _col = 0; _wrapPending = false; return; }
         _row = Math.Clamp(s.Row, 0, _rows - 1);
         _col = Math.Clamp(s.Col, 0, _cols - 1);
-        _fg = s.Fg; _bg = s.Bg; _bold = s.Bold; _italic = s.Italic; _underline = s.Underline;
+        ApplyPen(s.Pen);
         _wrapPending = s.WrapPending;
     }
+
+    private void EscIntermediateDispatch(char intermediate, char final)
+    {
+        // Charset designation: ESC ( c → G0, ESC ) c → G1 (c == '0' selects DEC special graphics).
+        var cs = final == '0' ? Charset.SpecialGraphics : Charset.Ascii;
+        if (intermediate == '(') _charsets[0] = cs;
+        else if (intermediate == ')') _charsets[1] = cs;
+        // '*'/'+' (G2/G3) and '#' (DECDHL/DECALN) are accepted/ignored for now.
+    }
+
+    private static bool IsCombining(Rune rune)
+    {
+        var cat = Rune.GetUnicodeCategory(rune);
+        return cat is UnicodeCategory.NonSpacingMark
+            or UnicodeCategory.SpacingCombiningMark
+            or UnicodeCategory.EnclosingMark;
+    }
+
+    private void AppendCombining(Rune rune)
+    {
+        // Attach to the most recently written base cell; ignore if there isn't one.
+        var col = _wrapPending ? _col : _col - 1;
+        while (col >= 0 && _grid[_row][col].Width == 0) col--; // skip wide-char continuation
+        if (col < 0) return;
+        _grid[_row][col].Char += rune.ToString();
+    }
+
+    private static Rune MapSpecialGraphics(Rune rune)
+    {
+        var cp = rune.Value;
+        if (cp is >= 0x5F and <= 0x7E)
+        {
+            var mapped = DecSpecialGraphics[cp - 0x5F];
+            if (mapped != '\0') return new Rune(mapped);
+        }
+        return rune;
+    }
+
+    // DEC Special Graphics (line drawing) for code points 0x5F..0x7E.
+    private static readonly char[] DecSpecialGraphics =
+    {
+        ' ', // _ blank
+        '◆', // ` diamond
+        '▒', // a checkerboard
+        '␉', // b HT
+        '␌', // c FF
+        '␍', // d CR
+        '␊', // e LF
+        '°', // f degree
+        '±', // g plus/minus
+        '␤', // h NL
+        '␋', // i VT
+        '┘', // j ┘
+        '┐', // k ┐
+        '┌', // l ┌
+        '└', // m └
+        '┼', // n ┼
+        '⎺', // o scan 1
+        '⎻', // p scan 3
+        '─', // q ─
+        '⎼', // r scan 7
+        '⎽', // s scan 9
+        '├', // t ├
+        '┤', // u ┤
+        '┴', // v ┴
+        '┬', // w ┬
+        '│', // x │
+        '≤', // y ≤
+        '≥', // z ≥
+        'π', // { π
+        '≠', // | ≠
+        '£', // } £
+        '·', // ~ ·
+    };
 
     private void EscDispatch(char final)
     {
@@ -729,7 +859,7 @@ public sealed class VtScreen
         while (i < count)
         {
             var code = Val(i);
-            if (code == 38 || code == 48) { i = ApplyExtendedColor(code, i); continue; }
+            if (code is 38 or 48 or 58) { i = ApplyExtendedColor(code, i); continue; }
 
             // A colon group is the code plus any following colon-joined sub-parameters.
             var groupEnd = i;
@@ -741,7 +871,10 @@ public sealed class VtScreen
 
     private void ResetSgr()
     {
-        _fg = null; _bg = null; _bold = false; _italic = false; _underline = false;
+        _fg = null; _bg = null;
+        _bold = false; _italic = false; _dim = false; _blink = false; _reverse = false;
+        _conceal = false; _strike = false; _overline = false;
+        _underlineStyle = 0; _underlineColor = null;
     }
 
     private void ApplySimpleSgr(int code, int start, int groupEnd)
@@ -750,20 +883,30 @@ public sealed class VtScreen
         {
             case 0: ResetSgr(); break;
             case 1: _bold = true; break;
+            case 2: _dim = true; break;
             case 3: _italic = true; break;
-            case 4: _underline = groupEnd <= start || Val(start + 1) != 0; break; // 4 / 4:0 (off) / 4:n (on)
-            case 21: _underline = true; break; // doubly underlined → underline (no style model yet)
-            case 22: _bold = false; break;
+            case 4: _underlineStyle = groupEnd > start ? Val(start + 1) : 1; break; // 4 / 4:0 off / 4:n style
+            case 5: case 6: _blink = true; break;
+            case 7: _reverse = true; break;
+            case 8: _conceal = true; break;
+            case 9: _strike = true; break;
+            case 21: _underlineStyle = 2; break; // doubly underlined
+            case 22: _bold = false; _dim = false; break;
             case 23: _italic = false; break;
-            case 24: _underline = false; break;
+            case 24: _underlineStyle = 0; break;
+            case 25: _blink = false; break;
+            case 27: _reverse = false; break;
+            case 28: _conceal = false; break;
+            case 29: _strike = false; break;
             case >= 30 and <= 37: _fg = (code - 30).ToString(CultureInfo.InvariantCulture); break;
             case 39: _fg = null; break;
             case >= 40 and <= 47: _bg = (code - 40).ToString(CultureInfo.InvariantCulture); break;
             case 49: _bg = null; break;
+            case 53: _overline = true; break;
+            case 55: _overline = false; break;
+            case 59: _underlineColor = null; break;
             case >= 90 and <= 97: _fg = (code - 90 + 8).ToString(CultureInfo.InvariantCulture); break;
             case >= 100 and <= 107: _bg = (code - 100 + 8).ToString(CultureInfo.InvariantCulture); break;
-            // 2 (dim), 5/6 (blink), 7 (reverse), 8 (conceal), 9 (strike), 53/55 (overline), 58/59
-            // (underline color): no cell-model field yet (P3). Accepted and ignored.
         }
     }
 
@@ -814,7 +957,12 @@ public sealed class VtScreen
 
     private void SetColor(int code, string value)
     {
-        if (code == 38) _fg = value; else _bg = value;
+        switch (code)
+        {
+            case 38: _fg = value; break;
+            case 48: _bg = value; break;
+            case 58: _underlineColor = value; break;
+        }
     }
 
     /// <summary>Parameter value with empty (-1) and out-of-range normalised to 0 (for color
@@ -838,7 +986,15 @@ public sealed class VtScreen
                     BackgroundColor = s.Bg,
                     IsBold = s.Bold,
                     IsItalic = s.Italic,
-                    IsUnderline = s.Underline,
+                    IsUnderline = s.UnderlineStyle > 0,
+                    UnderlineStyle = s.UnderlineStyle,
+                    UnderlineColor = s.UnderlineColor,
+                    IsDim = s.Dim,
+                    IsBlink = s.Blink,
+                    IsReverse = s.Reverse,
+                    IsConceal = s.Conceal,
+                    IsStrikethrough = s.Strike,
+                    IsOverline = s.Overline,
                     Width = s.Width,
                 };
             }

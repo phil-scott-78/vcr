@@ -149,6 +149,7 @@ public static class LibVtermHarness
         switch (verb)
         {
             case "cursor": AssertCursor(rhs, ctx); return;
+            case "pen": AssertPen(args, rhs, ctx); return;
             case "screen_row":
             {
                 var nums = ParseInts(args);
@@ -171,6 +172,25 @@ public static class LibVtermHarness
             // ?pen / ?lineinfo / ?screen_cell / ?screen_eol / ?screen_attrs_extent — not yet modelled.
             default: ctx.Result.Skipped++; return;
         }
+    }
+
+    private static void AssertPen(string attr, string rhs, Ctx ctx)
+    {
+        var s = ctx.Screen;
+        if (s is null) { ctx.Result.Skipped++; return; }
+        // We grade the boolean/level pen attributes we model; color/font/small/baseline are not graded.
+        var actual = attr switch
+        {
+            "bold" => s.PenBold ? "on" : "off",
+            "italic" => s.PenItalic ? "on" : "off",
+            "blink" => s.PenBlink ? "on" : "off",
+            "reverse" => s.PenReverse ? "on" : "off",
+            "underline" => s.PenUnderline.ToString(CultureInfo.InvariantCulture),
+            _ => null,
+        };
+        if (actual is null) { ctx.Result.Skipped++; return; }
+        if (actual == rhs.Trim()) ctx.Result.Passed++;
+        else ctx.Fail($"?pen {attr} expected {rhs.Trim()} actual {actual}");
     }
 
     private static void AssertCursor(string rhs, Ctx ctx)

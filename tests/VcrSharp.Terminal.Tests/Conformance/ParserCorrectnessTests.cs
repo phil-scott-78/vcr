@@ -71,6 +71,42 @@ public sealed class ParserCorrectnessTests
     }
 
     [Fact]
+    public void LineDrawing_Charset_MapsToBoxGlyphs()
+    {
+        // ESC ( 0 designates DEC special graphics; q->─ x->│; ESC ( B restores ASCII.
+        var c = Render(10, 1, $"{E}(0qx{E}(BAB");
+        c.Cells[0][0].Character.ShouldBe("─");
+        c.Cells[0][1].Character.ShouldBe("│");
+        c.Cells[0][2].Character.ShouldBe("A");
+        c.Cells[0][3].Character.ShouldBe("B");
+    }
+
+    [Fact]
+    public void CombiningMark_MergesIntoBaseCell()
+    {
+        var acute = ((char)0x0301).ToString(); // combining acute accent
+        var c = Render(5, 1, "e" + acute + "x");
+        c.Cells[0][0].Character.ShouldBe("e" + acute);
+        c.Cells[0][1].Character.ShouldBe("x");
+    }
+
+    [Fact]
+    public void Sgr_ReverseDimStrike_SetFlags()
+    {
+        var cell = Render(5, 1, $"{E}[7;2;9mX").Cells[0][0];
+        cell.IsReverse.ShouldBeTrue();
+        cell.IsDim.ShouldBeTrue();
+        cell.IsStrikethrough.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Sgr_StyledUnderline_SetsLevel()
+    {
+        Render(5, 1, $"{E}[4:3mX").Cells[0][0].UnderlineStyle.ShouldBe(3); // curly
+        Render(5, 1, $"{E}[21mY").Cells[0][0].UnderlineStyle.ShouldBe(2);  // double
+    }
+
+    [Fact]
     public void HideCursor_ReflectedInSnapshot()
     {
         // DECTCEM (CSI ?25l) hides the cursor; today ToTerminalContent hardcodes CursorVisible=false,

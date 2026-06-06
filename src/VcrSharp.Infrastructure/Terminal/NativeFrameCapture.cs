@@ -33,8 +33,14 @@ public sealed class NativeFrameCapture(NativeTerminalPage page, SessionOptions o
         await renderer.RenderStaticAsync(filePath, content);
     }
 
-    public async Task WaitForBufferStableAsync(TimeSpan inactivityTimeout, TimeSpan maxWait,
+    public Task WaitForBufferStableAsync(TimeSpan inactivityTimeout, TimeSpan maxWait,
         CancellationToken cancellationToken = default)
+        => WaitForBufferStableAsync(inactivityTimeout, maxWait, TimeSpan.Zero, cancellationToken);
+
+    /// <summary><paramref name="minWait"/> guards against settling on the pre-output prompt while an
+    /// Exec command (e.g. <c>dotnet run</c>) is still starting up — stability can't be declared before it.</summary>
+    public async Task WaitForBufferStableAsync(TimeSpan inactivityTimeout, TimeSpan maxWait,
+        TimeSpan minWait, CancellationToken cancellationToken = default)
     {
         var overall = Stopwatch.StartNew();
         var sinceChange = Stopwatch.StartNew();
@@ -45,7 +51,7 @@ public sealed class NativeFrameCapture(NativeTerminalPage page, SessionOptions o
             await Task.Delay(20, cancellationToken);
             var now = Signature();
             if (now != last) { last = now; sinceChange.Restart(); }
-            else if (sinceChange.Elapsed >= inactivityTimeout) return;
+            else if (overall.Elapsed >= minWait && sinceChange.Elapsed >= inactivityTimeout) return;
         }
     }
 

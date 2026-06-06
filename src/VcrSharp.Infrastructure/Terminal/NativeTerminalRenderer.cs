@@ -1,6 +1,6 @@
 using System.Text;
 using VcrSharp.Core.Rendering;
-using VcrSharp.Core.Terminal;
+using VcrSharp.Terminal;
 
 namespace VcrSharp.Infrastructure.Terminal;
 

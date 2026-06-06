@@ -1,8 +1,8 @@
 using Shouldly;
 using VcrSharp.Core.Rendering;
-using VcrSharp.Core.Terminal;
+using VcrSharp.Terminal;
 
-namespace VcrSharp.Core.Tests.Terminal;
+namespace VcrSharp.Terminal.Tests;
 
 /// <summary>Tests for the VT/ANSI parser that backs the browserless render path.</summary>
 public class VtScreenTests

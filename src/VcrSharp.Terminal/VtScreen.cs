@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using VcrSharp.Core.Rendering;
 
-namespace VcrSharp.Core.Terminal;
+namespace VcrSharp.Terminal;
 
 /// <summary>
 /// A minimal in-process VT/ANSI terminal screen. Feed it the byte/char stream a program writes (or

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <!--
+    The platform-neutral VT/ANSI terminal engine: a pure byte-stream -> cell-grid parser with no
+    PTY, browser, or OS dependency. Lives in its own assembly so the Unix forkpty backend (P7) can
+    reuse it unchanged. Today it references VcrSharp.Core only for the TerminalContent/TerminalCell
+    snapshot contract; inverting that (extracting the DTOs so this becomes a true leaf) is a tracked
+    follow-up — see docs/vt-engine-conformance.md.
+  -->
+  <ItemGroup>
+    <ProjectReference Include="..\VcrSharp.Core\VcrSharp.Core.csproj" />
+  </ItemGroup>
+
+</Project>

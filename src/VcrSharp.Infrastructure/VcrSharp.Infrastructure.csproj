@@ -10,6 +10,7 @@
   
   <ItemGroup>
     <ProjectReference Include="..\VcrSharp.Core\VcrSharp.Core.csproj" />
+    <ProjectReference Include="..\VcrSharp.Terminal\VcrSharp.Terminal.csproj" />
   </ItemGroup>
 
   <ItemGroup>

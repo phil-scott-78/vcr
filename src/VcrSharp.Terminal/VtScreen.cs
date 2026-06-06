@@ -59,7 +59,10 @@ public sealed class VtScreen
 
     private readonly int _cols;
     private readonly int _rows;
-    private readonly Cell[][] _grid;
+    private Cell[][] _grid;        // active buffer (points at _main or _alt)
+    private Cell[][] _main;
+    private Cell[][] _alt;
+    private bool _onAlt;
 
     private int _row;
     private int _col;
@@ -86,9 +89,19 @@ public sealed class VtScreen
     private int _top;
     private int _bottom;
     private bool[] _tabs;
-    private SavedCursor? _saved;
+    private SavedCursor? _saved;     // DECSC / SCOSC
+    private SavedCursor? _altSaved;  // alt-screen (1048/1049) save slot
     private readonly List<Cell[]> _scrollback = new();
     private const int ScrollbackMax = 1000;
+
+    // Modes (DEC private + ANSI). Defaults match a freshly reset xterm.
+    private bool _autoWrap = true;      // DECAWM (?7)
+    private bool _cursorVisible = true; // DECTCEM (?25)
+    private bool _originMode;           // DECOM (?6)
+    private bool _reverseScreen;        // DECSCNM (?5) — tracked; render handled later
+    private bool _insertMode;           // IRM (4)
+    private bool _newlineMode;          // LNM (20)
+    private readonly Dictionary<int, bool> _otherModes = new(); // tracked-only (mouse/paste/focus/…)
 
     private readonly record struct SavedCursor(
         int Row, int Col, string? Fg, string? Bg, bool Bold, bool Italic, bool Underline, bool WrapPending);
@@ -97,15 +110,23 @@ public sealed class VtScreen
     {
         _cols = Math.Max(1, cols);
         _rows = Math.Max(1, rows);
-        _grid = new Cell[_rows][];
-        for (var r = 0; r < _rows; r++)
-        {
-            _grid[r] = new Cell[_cols];
-            for (var c = 0; c < _cols; c++)
-                _grid[r][c] = new Cell();
-        }
+        _main = NewBuffer();
+        _alt = NewBuffer();
+        _grid = _main;
         _bottom = _rows - 1;
         _tabs = BuildDefaultTabs();
+    }
+
+    private Cell[][] NewBuffer()
+    {
+        var g = new Cell[_rows][];
+        for (var r = 0; r < _rows; r++)
+        {
+            g[r] = new Cell[_cols];
+            for (var c = 0; c < _cols; c++)
+                g[r][c] = new Cell();
+        }
+        return g;
     }
 
     private bool[] BuildDefaultTabs()
@@ -247,6 +268,7 @@ public sealed class VtScreen
             case 0x0A: // LF
             case 0x0B: // VT
             case 0x0C: // FF
+                if (_newlineMode) _col = 0; // LNM: LF also carriage-returns
                 LineFeed();
                 break;
             case 0x08: // BS
@@ -312,22 +334,30 @@ public sealed class VtScreen
 
     private void Print(Rune rune)
     {
-        if (_wrapPending)
+        if (_wrapPending && _autoWrap)
         {
             _col = 0;
             LineFeed();
-            _wrapPending = false;
         }
+        _wrapPending = false;
 
         var width = RuneWidth(rune);
         if (width == 0) width = 1; // treat zero-width/combining as 1 for now (P3: grapheme merge)
 
         if (_col + width > _cols)
         {
-            // not enough room for a wide char at the right margin -> wrap first
-            _col = 0;
-            LineFeed();
+            if (_autoWrap)
+            {
+                _col = 0;
+                LineFeed();
+            }
+            else
+            {
+                _col = Math.Max(0, _cols - width); // no autowrap: overwrite at the right margin
+            }
         }
+
+        if (_insertMode) InsertChars(width); // IRM: shift right to make room before writing
 
         var cell = _grid[_row][_col];
         cell.Char = rune.ToString();
@@ -354,7 +384,7 @@ public sealed class VtScreen
         if (_col >= _cols)
         {
             _col = _cols - 1;
-            _wrapPending = true;
+            if (_autoWrap) _wrapPending = true; // deferred wrap only when DECAWM is on
         }
     }
 
@@ -365,7 +395,7 @@ public sealed class VtScreen
             case 'm': ApplySgr(); break;
             case 'H':
             case 'f':
-                _row = Math.Clamp(Param(0, 1) - 1, 0, _rows - 1);
+                _row = RowFromParam(Param(0, 1));
                 _col = Math.Clamp(Param(1, 1) - 1, 0, _cols - 1);
                 _wrapPending = false;
                 break;
@@ -378,7 +408,7 @@ public sealed class VtScreen
             case 'G':
             case '`': _col = Math.Clamp(Param(0, 1) - 1, 0, _cols - 1); _wrapPending = false; break;  // CHA / HPA
             case 'a': _col = Math.Min(_cols - 1, _col + Param(0, 1)); _wrapPending = false; break;     // HPR
-            case 'd': _row = Math.Clamp(Param(0, 1) - 1, 0, _rows - 1); _wrapPending = false; break;   // VPA
+            case 'd': _row = RowFromParam(Param(0, 1)); _wrapPending = false; break;   // VPA
             case 'e': _row = Math.Min(_rows - 1, _row + Param(0, 1)); _wrapPending = false; break;     // VPR
             case 'J': EraseInDisplay(Param(0, 0)); break;
             case 'K': EraseInLine(Param(0, 0)); break;
@@ -396,12 +426,20 @@ public sealed class VtScreen
             case 's': if (!_privateMarker) SaveCursor(); break;  // SCOSC (DECSLRM mode 69 not enabled)
             case 'u': RestoreCursor(); break;             // SCORC
             case 'p': if (_interChar == '!') SoftReset(); break; // DECSTR
-            // h/l (DEC modes), alt screen, mouse, etc. are P4.
+            case 'h': SetModes(true); break;              // SM / DECSET
+            case 'l': SetModes(false); break;             // RM / DECRST
         }
     }
 
     private int CursorUpLimit() => _row >= _top ? _top : 0;
     private int CursorDownLimit() => _row <= _bottom ? _bottom : _rows - 1;
+
+    /// <summary>Maps a 1-based row parameter to a 0-based row, honoring origin mode (relative to the
+    /// scroll region) when DECOM is set.</summary>
+    private int RowFromParam(int oneBased) =>
+        _originMode
+            ? Math.Clamp(_top + oneBased - 1, _top, _bottom)
+            : Math.Clamp(oneBased - 1, 0, _rows - 1);
 
     /// <summary>Reads parameter <paramref name="index"/>. Empty (-1) and (for 1-defaulting commands)
     /// explicit 0 fall back to <paramref name="fallback"/>.</summary>
@@ -512,7 +550,7 @@ public sealed class VtScreen
         if (top >= bottom) { top = 0; bottom = _rows - 1; } // invalid -> full screen
         _top = top;
         _bottom = bottom;
-        _row = 0; _col = 0; // DECSTBM homes the cursor
+        _row = _originMode ? _top : 0; _col = 0; // DECSTBM homes the cursor
         _wrapPending = false;
     }
 
@@ -561,22 +599,108 @@ public sealed class VtScreen
         _top = 0; _bottom = _rows - 1;
         ResetSgr();
         _saved = null;
+        _originMode = false;
+        _insertMode = false;
+        _autoWrap = true;
+        _cursorVisible = true;
         _row = 0; _col = 0;
         _wrapPending = false;
     }
 
     private void HardReset() // RIS
     {
-        for (var r = 0; r < _rows; r++)
-            for (var c = 0; c < _cols; c++)
-                _grid[r][c] = new Cell();
+        _onAlt = false; _grid = _main;
+        foreach (var buffer in new[] { _main, _alt })
+            for (var r = 0; r < _rows; r++)
+                for (var c = 0; c < _cols; c++)
+                    buffer[r][c] = new Cell();
         _top = 0; _bottom = _rows - 1;
         _tabs = BuildDefaultTabs();
         _scrollback.Clear();
-        _saved = null;
+        _saved = null; _altSaved = null;
+        _otherModes.Clear();
+        _originMode = false; _insertMode = false; _newlineMode = false;
+        _autoWrap = true; _cursorVisible = true; _reverseScreen = false;
         ResetSgr();
         _row = 0; _col = 0;
         _wrapPending = false;
+    }
+
+    // ---- modes + alternate screen (P4) ----
+
+    private void SetModes(bool on)
+    {
+        foreach (var p in _params)
+        {
+            if (p < 0) continue;
+            if (_privateMarker) SetPrivateMode(p, on);
+            else SetAnsiMode(p, on);
+        }
+    }
+
+    private void SetPrivateMode(int code, bool on)
+    {
+        switch (code)
+        {
+            case 5: _reverseScreen = on; break;                                            // DECSCNM
+            case 6: _originMode = on; _row = on ? _top : 0; _col = 0; _wrapPending = false; break; // DECOM
+            case 7: _autoWrap = on; break;                                                 // DECAWM
+            case 25: _cursorVisible = on; break;                                           // DECTCEM
+            case 47: AltSwitch(on, clearEnter: false, clearLeave: false, save: false); break;
+            case 1047: AltSwitch(on, clearEnter: false, clearLeave: true, save: false); break;
+            case 1048: if (on) SaveAltCursor(); else RestoreAltCursor(); break;
+            case 1049: AltSwitch(on, clearEnter: true, clearLeave: false, save: true); break;
+            default: _otherModes[code] = on; break; // mouse/paste/focus/etc. — tracked only
+        }
+    }
+
+    private void SetAnsiMode(int code, bool on)
+    {
+        switch (code)
+        {
+            case 4: _insertMode = on; break;   // IRM
+            case 20: _newlineMode = on; break; // LNM
+        }
+    }
+
+    private void AltSwitch(bool on, bool clearEnter, bool clearLeave, bool save)
+    {
+        if (on)
+        {
+            if (_onAlt) return;
+            if (save) SaveAltCursor();
+            _onAlt = true; _grid = _alt;
+            _top = 0; _bottom = _rows - 1;       // alt screen uses the full page
+            if (clearEnter) ClearActive();
+        }
+        else
+        {
+            if (!_onAlt) return;
+            if (clearLeave) ClearActive();
+            _onAlt = false; _grid = _main;
+            _top = 0; _bottom = _rows - 1;
+            if (save) RestoreAltCursor();
+        }
+    }
+
+    private void ClearActive()
+    {
+        for (var r = 0; r < _rows; r++)
+            for (var c = 0; c < _cols; c++)
+                _grid[r][c] = BlankCell();
+        _row = 0; _col = 0; _wrapPending = false;
+    }
+
+    private void SaveAltCursor() =>
+        _altSaved = new SavedCursor(_row, _col, _fg, _bg, _bold, _italic, _underline, _wrapPending);
+
+    private void RestoreAltCursor()
+    {
+        if (_altSaved is not { } s) { _row = 0; _col = 0; _wrapPending = false; return; }
+        _row = Math.Clamp(s.Row, 0, _rows - 1);
+        _col = Math.Clamp(s.Col, 0, _cols - 1);
+        _fg = s.Fg; _bg = s.Bg; _bold = s.Bold; _italic = s.Italic; _underline = s.Underline;
+        _wrapPending = s.WrapPending;
     }
 
     private void EscDispatch(char final)
@@ -727,7 +851,7 @@ public sealed class VtScreen
             Cells = cells,
             CursorX = _col,
             CursorY = _row,
-            CursorVisible = false,
+            CursorVisible = _cursorVisible,
         };
     }
 

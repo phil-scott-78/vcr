@@ -11,10 +11,6 @@ namespace VcrSharp.Terminal.Tests.Conformance;
 /// </summary>
 public sealed class ParserCorrectnessTests
 {
-    private const string Skip_P1 = "P1 (Williams parser rewrite) — see docs/vt-engine-conformance.md";
-    private const string Skip_P2 = "P2 (scroll region + edit ops) — see docs/vt-engine-conformance.md";
-    private const string Skip_P4 = "P4 (DEC modes + alt screen) — see docs/vt-engine-conformance.md";
-
     private static readonly string E = ((char)0x1b).ToString();
 
     private static TerminalContent Render(int cols, int rows, string input)
@@ -65,7 +61,7 @@ public sealed class ParserCorrectnessTests
         Row(c, 1).ShouldBe("A");
     }
 
-    [Fact(Skip = Skip_P4)]
+    [Fact]
     public void AltScreen_StartsBlank()
     {
         // Entering the alternate buffer (DECSET 1049) shows a blank screen; the main buffer's "P" is
@@ -74,7 +70,7 @@ public sealed class ParserCorrectnessTests
         Row(c, 0).ShouldBe("");
     }
 
-    [Fact(Skip = Skip_P4)]
+    [Fact]
     public void HideCursor_ReflectedInSnapshot()
     {
         // DECTCEM (CSI ?25l) hides the cursor; today ToTerminalContent hardcodes CursorVisible=false,

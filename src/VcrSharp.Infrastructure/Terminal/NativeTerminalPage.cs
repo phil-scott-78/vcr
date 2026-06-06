@@ -14,7 +14,7 @@ namespace VcrSharp.Infrastructure.Terminal;
 /// echoes it back through the parser; reads come from the live cell grid. <paramref name="gate"/> is the
 /// lock shared with the drain thread so a snapshot never tears against an in-flight <c>Feed</c>.
 /// </summary>
-public sealed class NativeTerminalPage(ConPtyProcess pty, VtScreen screen, object gate, SessionOptions options)
+public sealed class NativeTerminalPage(IPtyProcess pty, VtScreen screen, object gate, SessionOptions options)
     : ITerminalPage
 {
     private string _clipboard = string.Empty;
@@ -54,6 +54,7 @@ public sealed class NativeTerminalPage(ConPtyProcess pty, VtScreen screen, objec
         while (sw.ElapsedMilliseconds < timeoutMs)
         {
             if (pattern.IsMatch(ScreenText())) return true;
+            if (pty.HasExited) { await SettleAfterExitAsync(cancellationToken); return true; }
             await Task.Delay(25, cancellationToken);
         }
         return pattern.IsMatch(ScreenText());
@@ -69,9 +70,37 @@ public sealed class NativeTerminalPage(ConPtyProcess pty, VtScreen screen, objec
         {
             text = ScreenText();
             if (pattern.IsMatch(text)) return (true, text, text);
+            if (pty.HasExited)
+            {
+                await SettleAfterExitAsync(cancellationToken);
+                text = ScreenText();
+                return (true, text, text);
+            }
             await Task.Delay(25, cancellationToken);
         }
         return (pattern.IsMatch(text), text, text);
+    }
+
+    /// <summary>
+    /// A bare <c>Wait</c> defaults to the shell-prompt pattern — fine for an interactive session, but a
+    /// non-interactive <c>Exec</c> shell <em>exits</em> instead of re-prompting, so that prompt never
+    /// comes. Rather than block to the timeout and fail the recording, once the child has exited we treat
+    /// the wait as satisfied (the command is genuinely done): briefly let the drain flush the command's
+    /// tail so the next <c>Screenshot</c>/frame sees the full output, then return. Inert for interactive
+    /// tapes, where the shell stays alive and prompt-matching works as before. Same on Windows and Unix.
+    /// </summary>
+    private async Task SettleAfterExitAsync(CancellationToken cancellationToken)
+    {
+        var last = ScreenText();
+        var stableSince = Stopwatch.StartNew();
+        var overall = Stopwatch.StartNew();
+        while (overall.ElapsedMilliseconds < 1000)
+        {
+            await Task.Delay(20, cancellationToken);
+            var now = ScreenText();
+            if (now != last) { last = now; stableSince.Restart(); }
+            else if (stableSince.ElapsedMilliseconds >= 150) return;
+        }
     }
 
     public Task CopyToClipboardAsync(string text, CancellationToken cancellationToken)

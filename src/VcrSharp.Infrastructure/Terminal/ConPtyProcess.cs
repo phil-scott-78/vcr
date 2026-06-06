@@ -11,7 +11,7 @@ namespace VcrSharp.Infrastructure.Terminal;
 /// real pseudo-terminal and re-emits a VT stream sized to the console, which we feed to a VtScreen.
 /// Windows 10 1809+ only (the browserless path is Windows-first for now).
 /// </summary>
-public sealed class ConPtyProcess : IDisposable
+public sealed class ConPtyProcess : IPtyProcess
 {
     private const int STARTF_USESTDHANDLES = 0x00000100;
     private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;

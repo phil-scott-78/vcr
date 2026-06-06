@@ -41,11 +41,6 @@ public sealed class NativePlayCommand : AsyncCommand<NativePlayCommand.Settings>
     {
         VcrLogger.Configure(settings.Verbose);
 
-        if (!OperatingSystem.IsWindows())
-        {
-            AnsiConsole.MarkupLine("[bold red]Error:[/] native playback currently requires Windows (ConPTY). Use the browser path on other platforms.");
-            return 1;
-        }
         if (!File.Exists(settings.TapeFile))
         {
             AnsiConsole.MarkupLineInterpolated($"[bold red]Error:[/] Tape file not found: {settings.TapeFile}");
@@ -85,7 +80,7 @@ public sealed class NativePlayCommand : AsyncCommand<NativePlayCommand.Settings>
                 result = await session.RecordAsync(commands, renderable, framerate, progress, cancellationToken);
             });
 
-            AnsiConsole.MarkupLine("[green]✓[/] Played tape with [bold]no ttyd and no Chromium[/] (ConPTY + VT parser)");
+            AnsiConsole.MarkupLine("[green]✓[/] Played tape with [bold]no ttyd and no Chromium[/] (PTY + VT parser)");
             AnsiConsole.MarkupLineInterpolated($"[dim]Frames:[/] {result!.FrameCount}   [dim]Duration:[/] {result.DurationSeconds:F2}s   [dim]@[/] {framerate}fps");
             foreach (var file in result.OutputFiles)
             {

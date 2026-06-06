@@ -6,10 +6,11 @@ using VcrSharp.Terminal;
 namespace VcrSharp.Infrastructure.Terminal;
 
 /// <summary>
-/// The browserless render path: run a command in an in-process pseudoconsole (ConPTY), feed its VT
-/// output through <see cref="VtScreen"/>, and snapshot the settled cell grid to a
-/// <see cref="TerminalContent"/>. No ttyd, no Chromium. The caller (CLI) renders the snapshot with the
-/// existing SvgRenderer, proving the cell grid — not the browser — is all the SVG path ever needed.
+/// The browserless render path: run a command in an in-process pseudoconsole (ConPTY on Windows,
+/// <c>posix_openpt</c>+<c>posix_spawn</c> on Unix), feed its VT output through <see cref="VtScreen"/>, and
+/// snapshot the settled cell grid to a <see cref="TerminalContent"/>. No ttyd, no Chromium. The caller
+/// (CLI) renders the snapshot with the existing SvgRenderer, proving the cell grid — not the browser — is
+/// all the SVG path ever needed.
 /// </summary>
 public sealed class NativeTerminalRenderer
 {
@@ -23,6 +24,23 @@ public sealed class NativeTerminalRenderer
     }
 
     /// <summary>
+    /// Starts <paramref name="command"/> in a PTY. On Windows it runs through PowerShell; on Unix through
+    /// <c>/bin/sh -c</c> — either way shell builtins / pipelines / `dotnet run` work, and the shell exits
+    /// so the PTY reaches EOF. TERM/COLORTERM nudge Spectre to emit 256/truecolor SGR.
+    /// </summary>
+    private IPtyProcess StartPty(string command, string? workingDirectory)
+    {
+        var env = new Dictionary<string, string>
+        {
+            ["TERM"] = "xterm-256color",
+            ["COLORTERM"] = "truecolor",
+        };
+        var windowsCommandLine = $"pwsh -NoLogo -NoProfile -Command \"{command.Replace("\"", "`\"")}\"";
+        string[] unixArgv = ["/bin/sh", "-c", command];
+        return PtyProcess.Start(windowsCommandLine, unixArgv, _cols, _rows, env, workingDirectory);
+    }
+
+    /// <summary>
     /// Runs <paramref name="command"/> (via <c>pwsh -Command</c>) to completion in a ConPTY and returns
     /// the final screen as a <see cref="TerminalContent"/>. Falls back to capturing whatever has been
     /// produced if the command outruns <paramref name="timeout"/>.
@@ -32,16 +50,7 @@ public sealed class NativeTerminalRenderer
     {
         var maxMs = (int)(timeout ?? TimeSpan.FromSeconds(60)).TotalMilliseconds;
 
-        // Run the command through PowerShell so shell builtins / pipelines / `dotnet run` all work,
-        // then exit (so the PTY reaches EOF). TERM/COLORTERM nudge Spectre to emit 256/truecolor SGR.
-        var commandLine = $"pwsh -NoLogo -NoProfile -Command \"{command.Replace("\"", "`\"")}\"";
-        var env = new Dictionary<string, string>
-        {
-            ["TERM"] = "xterm-256color",
-            ["COLORTERM"] = "truecolor",
-        };
-
-        var pty = ConPtyProcess.Start(commandLine, _cols, _rows, env, workingDirectory);
+        var pty = StartPty(command, workingDirectory);
         var screen = new VtScreen(_cols, _rows);
 
         // Drain on a background thread: ConPTY only EOFs once the pseudoconsole is closed, so we read
@@ -98,14 +107,7 @@ public sealed class NativeTerminalRenderer
         var maxMs = (int)(timeout ?? TimeSpan.FromSeconds(60)).TotalMilliseconds;
         var intervalMs = Math.Max(1, (int)Math.Round(1000.0 / Math.Max(1, framerate)));
 
-        var commandLine = $"pwsh -NoLogo -NoProfile -Command \"{command.Replace("\"", "`\"")}\"";
-        var env = new Dictionary<string, string>
-        {
-            ["TERM"] = "xterm-256color",
-            ["COLORTERM"] = "truecolor",
-        };
-
-        var pty = ConPtyProcess.Start(commandLine, _cols, _rows, env, workingDirectory);
+        var pty = StartPty(command, workingDirectory);
         var screen = new VtScreen(_cols, _rows);
         var gate = new object();
 

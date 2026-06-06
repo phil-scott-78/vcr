@@ -35,12 +35,6 @@ public sealed class NativeSnapCommand : AsyncCommand<NativeSnapCommand.Settings>
 
     public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            AnsiConsole.MarkupLine("[bold red]Error:[/] native-snap currently requires Windows (ConPTY). The Unix PTY backend is not wired up yet.");
-            return 1;
-        }
-
         var outputPath = settings.Output ?? "native.svg";
         if (!outputPath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
             outputPath = Path.ChangeExtension(outputPath, ".svg");
@@ -84,7 +78,7 @@ public sealed class NativeSnapCommand : AsyncCommand<NativeSnapCommand.Settings>
             sw.Stop();
 
             var size = new FileInfo(outputPath).Length / 1024.0;
-            AnsiConsole.MarkupLine("[green]✓[/] Rendered with [bold]no browser and no ttyd[/] (in-process ConPTY + VT parser)");
+            AnsiConsole.MarkupLine("[green]✓[/] Rendered with [bold]no browser and no ttyd[/] (in-process PTY + VT parser)");
             AnsiConsole.MarkupLineInterpolated($"  [dim]•[/] {Path.GetFileName(outputPath)} ({size:F1} KB) in {sw.ElapsedMilliseconds} ms");
             return 0;
         }
@@ -136,7 +130,7 @@ public sealed class NativeSnapCommand : AsyncCommand<NativeSnapCommand.Settings>
         sw.Stop();
 
         var size = new FileInfo(outputPath).Length / 1024.0;
-        AnsiConsole.MarkupLine("[green]✓[/] Recorded an [bold]animated SVG with no browser and no ttyd[/] (ConPTY + VT parser, polled at framerate)");
+        AnsiConsole.MarkupLine("[green]✓[/] Recorded an [bold]animated SVG with no browser and no ttyd[/] (PTY + VT parser, polled at framerate)");
         AnsiConsole.MarkupLineInterpolated($"  [dim]•[/] {Path.GetFileName(outputPath)} ({size:F1} KB), {states.Count} frames over {totalDuration:F1}s @ {fps}fps in {sw.ElapsedMilliseconds} ms");
         return 0;
     }

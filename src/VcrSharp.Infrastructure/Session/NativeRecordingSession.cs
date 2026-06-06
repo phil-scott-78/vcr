@@ -24,9 +24,6 @@ public sealed class NativeRecordingSession(SessionOptions options)
     public async Task<Result> RecordAsync(List<ICommand> commands, IReadOnlyList<string> outputPaths,
         double framerate, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
-        if (!OperatingSystem.IsWindows())
-            throw new PlatformNotSupportedException("Native recording requires Windows (ConPTY).");
-
         var cols = options.Cols ?? 80;
         var rows = options.Rows ?? 24;
         var execCommands = commands.OfType<ExecCommand>().ToList();
@@ -35,15 +32,19 @@ public sealed class NativeRecordingSession(SessionOptions options)
         var interactive = commands.Any(c => c is TypeCommand or KeyCommand or ModifierCommand or RunCommand);
 
         // Honor `Set Shell` via the same ShellConfiguration the browser path uses, so bash/zsh/cmd/fish
-        // tapes run the right shell with the same args, prompt, and env. Native defaults to pwsh (the
-        // generic fallback is bash, which is wrong on Windows where ConPTY lives).
-        var shellConfig = ShellConfiguration.GetConfiguration(string.IsNullOrWhiteSpace(options.Shell) ? "pwsh" : options.Shell);
+        // tapes run the right shell with the same args, prompt, and env. The unspecified-shell default is
+        // platform-appropriate: pwsh on Windows (where ConPTY lives), bash on Unix.
+        var defaultShell = OperatingSystem.IsWindows() ? "pwsh" : "bash";
+        var shellConfig = ShellConfiguration.GetConfiguration(string.IsNullOrWhiteSpace(options.Shell) ? defaultShell : options.Shell);
 
         var env = new Dictionary<string, string> { ["TERM"] = "xterm-256color", ["COLORTERM"] = "truecolor" };
         foreach (var (k, v) in shellConfig.Environment) env[k] = v;   // shell-specific (e.g. zsh PROMPT)
         foreach (var (k, v) in options.Environment) env[k] = v;       // tape Env overrides
 
-        var pty = ConPtyProcess.Start(BuildCommandLine(shellConfig, interactive, execCommands), cols, rows, env, options.WorkingDirectory);
+        var pty = PtyProcess.Start(
+            BuildCommandLine(shellConfig, interactive, execCommands),
+            BuildUnixArgv(shellConfig, interactive, execCommands),
+            cols, rows, env, options.WorkingDirectory);
         var screen = new VtScreen(cols, rows);
         var gate = new object();
 
@@ -188,6 +189,23 @@ public sealed class NativeRecordingSession(SessionOptions options)
         var extent = ContentExtent.Measure(content);
         renderer.SetContentExtent(extent.Cols, extent.Rows);
         await renderer.RenderStaticAsync(outPath, content, cancellationToken);
+    }
+
+    /// <summary>
+    /// The Unix equivalent of <see cref="BuildCommandLine"/>: an argv vector for <c>posix_spawn</c> (no
+    /// shell-string re-parsing). Interactive reuses the shell's exact invocation parts; non-interactive
+    /// runs the joined Exec command(s) via the shell's execution flag and exits.
+    /// </summary>
+    private static IReadOnlyList<string> BuildUnixArgv(ShellConfiguration config, bool interactive, List<ExecCommand> execCommands)
+    {
+        if (interactive)
+            return config.BuildTtydCommand();
+
+        if (execCommands.Count == 0)
+            return [config.Name];
+
+        var joined = string.Join("; ", execCommands.Select(e => e.Command));
+        return [config.Name, config.ExecutionFlag, joined];
     }
 
     private static string BuildCommandLine(ShellConfiguration config, bool interactive, List<ExecCommand> execCommands)

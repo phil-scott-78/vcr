@@ -178,6 +178,18 @@ public class TapeParser
         from path in FilePath
         select (ICommand)new OutputCommand(path);
 
+    // Use command: Use doc  (pulls a preset from a discovered vcr.toml)
+    private static readonly TokenListParser<TapeToken, ICommand> UseCommand =
+        from keyword in Token.EqualTo(TapeToken.Use)
+        from name in FilePath
+        select (ICommand)new Ast.UseCommand(name, keyword.Position.Line);
+
+    // Run command: Run "./example Alice"  (sugar for Type + Enter + Wait)
+    private static readonly TokenListParser<TapeToken, ICommand> RunCommand =
+        from keyword in Token.EqualTo(TapeToken.Run)
+        from text in QuotedString
+        select (ICommand)new Ast.RunCommand(text, keyword.Position.Line);
+
     // Require command: Require npm
     private static readonly TokenListParser<TapeToken, ICommand> RequireCommand =
         from keyword in Token.EqualTo(TapeToken.Require)
@@ -327,16 +339,23 @@ public class TapeParser
         from value in QuotedString
         select (ICommand)new EnvCommand(key, value);
 
-    // Exec command: Exec "ls -la"
+    // Exec command: Exec "ls -la"  (literal)  OR  Exec showcase table  (macro form)
     private static readonly TokenListParser<TapeToken, ICommand> ExecCommand =
         from keyword in Token.EqualTo(TapeToken.Exec)
-        from command in QuotedString
-        select (ICommand)new ExecCommand(command);
+        from body in QuotedString.Select(s => (ICommand)new Ast.ExecCommand(s, keyword.Position.Line))
+            .Or(
+                from name in Identifier
+                from arg in QuotedString.Or(Identifier)!.OptionalOrDefault()
+                select (ICommand)Ast.ExecCommand.Macro(name, arg, keyword.Position.Line)
+            )
+        select body;
 
     // Combined command parser - order matters!
     private static readonly TokenListParser<TapeToken, ICommand> Command =
         SetCommand
         .Or(OutputCommand)
+        .Or(UseCommand)
+        .Or(RunCommand)
         .Or(RequireCommand)
         .Or(SourceCommand)
         .Or(TypeCommand)
@@ -386,6 +405,12 @@ public class TapeParser
         "StartBuffer", "EndBuffer", "StartupDelay",
         "ScreenshotWaitForInactivity", "ScreenshotInactivityTimeout", "StaticOutput"
     };
+
+    /// <summary>
+    /// Returns true if <paramref name="name"/> is a recognized Set setting name (case-insensitive).
+    /// Used by <see cref="Config.PresetResolver"/> to validate keys declared in a vcr.toml preset.
+    /// </summary>
+    public static bool IsKnownSetting(string name) => ValidSettingNames.Contains(name);
 
     /// <summary>
     /// Calculates Levenshtein distance between two strings for fuzzy matching.
@@ -462,7 +487,8 @@ public class TapeParser
             // Check if this is an action command
             var isActionCommand = command is Ast.TypeCommand or Ast.KeyCommand or Ast.ModifierCommand
                 or Ast.SleepCommand or Ast.WaitCommand or Ast.HideCommand or Ast.ShowCommand
-                or Ast.ScreenshotCommand or Ast.CopyCommand or Ast.PasteCommand or Ast.ExecCommand;
+                or Ast.ScreenshotCommand or Ast.CopyCommand or Ast.PasteCommand or Ast.ExecCommand
+                or Ast.RunCommand;
 
             if (isActionCommand)
             {

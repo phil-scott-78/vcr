@@ -11,6 +11,12 @@ public enum TapeToken
     [Token(Category = "keyword", Example = "Set")]
     Set,
 
+    [Token(Category = "keyword", Example = "Use")]
+    Use,
+
+    [Token(Category = "keyword", Example = "Run")]
+    Run,
+
     [Token(Category = "keyword", Example = "Output")]
     Output,
 

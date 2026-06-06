@@ -1,6 +1,7 @@
 using Spectre.Console;
 using Spectre.Console.Cli;
 using VcrSharp.Cli.Helpers;
+using VcrSharp.Core.Config;
 using VcrSharp.Core.Parsing;
 
 namespace VcrSharp.Cli.Commands;
@@ -45,6 +46,9 @@ public class ValidateCommand : AsyncCommand<ValidateCommand.Settings>
             var parser = new TapeParser();
             var commands = await parser.ParseFileAsync(settings.TapeFile);
 
+            // Expand the config layer so Use/preset/macro references are validated too.
+            commands = PresetResolver.ResolveWithDiscovery(commands, settings.TapeFile);
+
             AnsiConsole.MarkupLineInterpolated($"[green]✓[/] Successfully parsed {commands.Count} command(s)");
             AnsiConsole.WriteLine();
 
@@ -73,6 +77,12 @@ public class ValidateCommand : AsyncCommand<ValidateCommand.Settings>
         catch (TapeParseException ex)
         {
             ErrorReporter.DisplayParseError(ex, settings.TapeFile);
+            return 1;
+        }
+        catch (VcrConfigException ex)
+        {
+            var where = ex.SourcePath is null ? "" : $" ({ex.SourcePath}{(ex.Line > 0 ? $":{ex.Line}" : "")})";
+            AnsiConsole.MarkupLineInterpolated($"[bold red]Config error:[/]{where} {ex.Message}");
             return 1;
         }
         catch (Exception ex)

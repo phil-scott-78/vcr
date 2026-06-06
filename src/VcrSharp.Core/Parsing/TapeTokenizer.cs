@@ -124,6 +124,8 @@ public static class TapeTokenizer
             // "ScreenshotWaitForInactivity" tokenize as identifiers) and requireDelimiters guards
             // the LEFT. Note: "Wait+Line" still works because "+" is a delimiter.
             .Match(Keyword("Set"), TapeToken.Set, requireDelimiters: true)
+            .Match(Keyword("Use"), TapeToken.Use, requireDelimiters: true)
+            .Match(Keyword("Run"), TapeToken.Run, requireDelimiters: true)
             .Match(Keyword("Output"), TapeToken.Output, requireDelimiters: true)
             .Match(Keyword("Require"), TapeToken.Require, requireDelimiters: true)
             .Match(Keyword("Source"), TapeToken.Source, requireDelimiters: true)

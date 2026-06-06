@@ -1,6 +1,7 @@
 using Spectre.Console;
 using Spectre.Console.Cli;
 using VcrSharp.Cli.Helpers;
+using VcrSharp.Core.Config;
 using VcrSharp.Core.Logging;
 using VcrSharp.Core.Parsing;
 using VcrSharp.Core.Parsing.Ast;
@@ -88,6 +89,10 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                 var parser = new TapeParser();
                 var commands = await parser.ParseFileAsync(settings.TapeFile);
 
+                // Expand the config layer: Use presets, Exec macros, Run sugar, derived Output
+                // (resolved against a vcr.toml discovered by walking up from the tape's directory).
+                commands = PresetResolver.ResolveWithDiscovery(commands, settings.TapeFile);
+
                 // Apply CLI overrides (--set and --output parameters)
                 commands = ApplyCliOverrides(commands, settings);
 
@@ -168,6 +173,12 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
             catch (TapeParseException ex)
             {
                 ErrorReporter.DisplayParseError(ex, settings.TapeFile);
+                return 1;
+            }
+            catch (VcrConfigException ex)
+            {
+                var where = ex.SourcePath is null ? "" : $" ({ex.SourcePath}{(ex.Line > 0 ? $":{ex.Line}" : "")})";
+                AnsiConsole.MarkupLineInterpolated($"[bold red]Config error:[/]{where} {ex.Message}");
                 return 1;
             }
             catch (Exception ex)

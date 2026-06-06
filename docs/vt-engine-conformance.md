@@ -69,8 +69,14 @@ All acceptance targets pass (0 skipped). Files at 100% include the full cursor/s
 ### Deferred product/engine follow-ups (do not affect the scoreboard)
 - **SvgRenderer**: render the new attributes (reverse / dim / strikethrough / overline / styled+colored underline) — currently populated in `TerminalCell` but not yet drawn (existing bold/italic/underline output unchanged).
 - **Engine leaf-ification**: extract `TerminalContent`/`TerminalCell` so `VcrSharp.Terminal` drops its `VcrSharp.Core` (and transitive ImageSharp) reference.
-- **P6 (animation) ✅**: `NativeTerminalRenderer.RunAndCaptureAsync` polls the live `VtScreen` at framerate → `TerminalStateWithTime[]` → `SvgRenderer.RenderAnimatedAsync`. `vcr native-snap --animate` produces a browserless animated SVG (verified end to end). Remaining P6: `ITerminalBackend` seam + `VcrSession` auto-fallback (so full `.tape` recordings prefer native), and native GIF/MP4 (rasterize states to frames).
+- **P6 (animation) ✅**: `NativeTerminalRenderer.RunAndCaptureAsync` polls the live `VtScreen` at framerate → `TerminalStateWithTime[]` → `SvgRenderer.RenderAnimatedAsync`. `vcr native-snap --animate` produces a browserless animated SVG.
+- **P6 (playback) ✅**: `NativeTerminalPage`/`NativeFrameCapture` implement the `ITerminalPage`/`IFrameCapture` seam over ConPTY + `VtScreen`, so the existing tape commands run unchanged — `Type`/`Key`/`Modifier` write to the pseudo-console stdin and the real shell echoes them; `Wait` polls the grid; `Hide`/`Show` gate capture. `NativeRecordingSession` + `vcr native-play <tape> -o out.svg` records a full tape to an animated SVG (verified end to end). **Remaining P6**: fold native/browser behind one auto-fallback front door in `VcrSession` (so plain `vcr demo.tape` prefers native per the fallback rules below), and native GIF/MP4 (rasterize states to frames).
 - **P7**: Unix `forkpty` sibling backend.
+
+### Native fallback rules (when `vcr demo.tape` must use the browser)
+- **Statically detectable (pre-run):** not Windows · `Output` is not `.svg` (GIF/MP4/PNG need rasterisation) · *(future, once richer)* tapes using features the native engine doesn't claim.
+- **Render fidelity (best decided by the Gate-4 browser-equivalence diff):** SVG rendering of reverse/dim/strike/overline/styled-underline (engine tracks them; renderer follow-up pending), OSC 8 hyperlinks, OSC 4/10-12 palette changes, sixel/kitty/iTerm2 images, double-width lines, DECSLRM, selective erase.
+- **Now supported natively:** Type/Key/Modifier/Sleep/Wait/Hide/Show/Copy/Paste/Screenshot(svg)/Exec/Set + static & animated SVG.
 
 ---
 

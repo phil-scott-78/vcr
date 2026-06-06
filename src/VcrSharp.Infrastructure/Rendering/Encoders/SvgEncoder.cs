@@ -65,6 +65,14 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
             throw new InvalidOperationException("No snapshots found after filtering.");
         }
 
+        // Capture the end of the recording BEFORE collapsing the trailing tail. The collapse
+        // below drops frames identical to the final frame (e.g. the EndBuffer hold after a program
+        // finishes) so the file stays small, but we still want the final frame to remain on screen
+        // for that held duration. Using this timestamp for totalDuration stretches the final
+        // visibility interval to the true end, so a looping SVG pauses on the final frame for the
+        // captured hold (the EndBuffer window) instead of flashing it and instantly restarting.
+        var lastFrameTimestamp = snapshots[^1].Timestamp;
+
         // Content-aware re-baseline: drop leading fully-blank frames (so a looping SVG starts
         // on content instead of flashing empty each cycle) and collapse a trailing static tail.
         var (keepStart, keepEnd) = ContentAnalysis.TrimBlankLoopRange(
@@ -76,9 +84,12 @@ public class SvgEncoder(SessionOptions options, FrameStorage storage) : EncoderB
 
         progress?.Report($"Processing {snapshots.Count} frames with SMIL row-diffing...");
 
-        // Calculate baseline and duration
+        // Calculate baseline and duration. The duration runs to the last captured frame (the end of
+        // any trailing static hold), not just the last content change, so the held final frame is
+        // preserved as the closing visibility interval; the collapsed snapshot list above still
+        // avoids emitting the duplicate trailing frames.
         var baselineTimestamp = snapshots[0].Timestamp;
-        var totalDuration = (snapshots[^1].Timestamp - baselineTimestamp).TotalSeconds / Options.PlaybackSpeed;
+        var totalDuration = (lastFrameTimestamp - baselineTimestamp).TotalSeconds / Options.PlaybackSpeed;
 
         // Convert to TerminalStateWithTime format
         var states = snapshots.Select(s => new TerminalStateWithTime

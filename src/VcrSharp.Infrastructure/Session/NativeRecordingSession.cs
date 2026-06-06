@@ -67,11 +67,9 @@ public sealed class NativeRecordingSession(SessionOptions options)
             if (interactive)
             {
                 progress?.Report("Starting shell...");
+                // PSReadLine prediction is off and the screen cleared via the shell's -NoExit -Command
+                // startup (see BuildCommandLine), so no setup leaks into the capture; just wait for the prompt.
                 await page.WaitForBufferContentAsync(3000);
-                // Quiet PSReadLine's predictive/edit redraws so the typed demo reads cleanly.
-                await page.TypeAsync("Set-PSReadLineOption -PredictionSource None 2>$null; Clear-Host", 0);
-                await page.PressKeyAsync("Enter");
-                await frameCapture.WaitForBufferStableAsync(TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(3), cancellationToken);
 
                 // Exec commands run as live input alongside the typed demo.
                 foreach (var exec in execCommands)
@@ -175,7 +173,11 @@ public sealed class NativeRecordingSession(SessionOptions options)
     private static string BuildCommandLine(bool interactive, List<ExecCommand> execCommands)
     {
         const string shell = "pwsh -NoLogo -NoProfile";
-        if (interactive || execCommands.Count == 0) return shell;
+        if (interactive)
+            // Disable PSReadLine prediction and clear the screen as part of the shell's STARTUP (so the
+            // setup never gets typed into — and captured by — the recording), then stay interactive.
+            return $"{shell} -NoExit -Command \"Set-PSReadLineOption -PredictionSource None -ErrorAction SilentlyContinue; Clear-Host\"";
+        if (execCommands.Count == 0) return shell;
         // Run the Exec command(s) directly (no REPL) — output only, no prompt, no echoed command line.
         var joined = string.Join("; ", execCommands.Select(e => e.Command));
         return $"{shell} -Command \"{joined.Replace("\"", "`\"")}\"";

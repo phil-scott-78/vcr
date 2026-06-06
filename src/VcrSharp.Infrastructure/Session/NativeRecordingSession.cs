@@ -174,9 +174,10 @@ public sealed class NativeRecordingSession(SessionOptions options)
     {
         const string shell = "pwsh -NoLogo -NoProfile";
         if (interactive)
-            // Disable PSReadLine prediction and clear the screen as part of the shell's STARTUP (so the
-            // setup never gets typed into — and captured by — the recording), then stay interactive.
-            return $"{shell} -NoExit -Command \"Set-PSReadLineOption -PredictionSource None -ErrorAction SilentlyContinue; Clear-Host\"";
+            // Match the browser's shell setup exactly (ShellConfiguration["pwsh"]): a clean '> ' prompt
+            // and no PSReadLine prediction, applied at STARTUP via -Command so nothing is typed into —
+            // or captured by — the recording. -NoExit then keeps the session interactive.
+            return $"{shell} -NoExit -Command \"Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None; function prompt {{ '> ' }}\"";
         if (execCommands.Count == 0) return shell;
         // Run the Exec command(s) directly (no REPL) — output only, no prompt, no echoed command line.
         var joined = string.Join("; ", execCommands.Select(e => e.Command));

@@ -827,11 +827,25 @@ public sealed class VtScreen
 
     private void EscIntermediateDispatch(char intermediate, char final)
     {
+        if (intermediate == '#')
+        {
+            if (final == '8') DecAlign(); // DECALN: fill the screen with 'E' (vttest alignment pattern)
+            return;                        // '#' 3/4/5/6 (double-width/height lines) are out of scope
+        }
+
         // Charset designation: ESC ( c → G0, ESC ) c → G1 (c == '0' selects DEC special graphics).
         var cs = final == '0' ? Charset.SpecialGraphics : Charset.Ascii;
         if (intermediate == '(') _charsets[0] = cs;
         else if (intermediate == ')') _charsets[1] = cs;
-        // '*'/'+' (G2/G3) and '#' (DECDHL/DECALN) are accepted/ignored for now.
+        // '*'/'+' (G2/G3) accepted/ignored for now.
+    }
+
+    private void DecAlign()
+    {
+        for (var r = 0; r < _rows; r++)
+            for (var c = 0; c < _cols; c++)
+                _grid[r][c] = new Cell { Char = "E" };
+        _row = 0; _col = 0; _wrapPending = false;
     }
 
     private static bool IsCombining(Rune rune)

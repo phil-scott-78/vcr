@@ -156,7 +156,7 @@ public static class LibVtermHarness
                 var nums = ParseInts(args);
                 if (nums.Count < 1) { ctx.Result.Skipped++; return; }
                 var row = nums[0];
-                AssertText(row, 0, row + 1, ctx.Cols, rhs, $"screen_row {row}", ctx);
+                AssertText(row, 0, row + 1, ctx.Cols, rhs, $"screen_row {row}", ctx, utf8Bytes: false);
                 return;
             }
             case "screen_chars":
@@ -167,7 +167,8 @@ public static class LibVtermHarness
                 if (nums.Count >= 4) { sr = nums[0]; sc = nums[1]; er = nums[2]; ec = nums[3]; }
                 else if (nums.Count == 1) { sr = nums[0]; sc = 0; er = sr + 1; ec = ctx.Cols; } // screen_chars row form
                 else { ctx.Result.Skipped++; return; }
-                AssertText(sr, sc, er, ec, rhs, $"{verb} {args}", ctx);
+                // screen_text encodes the expected as UTF-8 bytes; screen_chars/screen_row use codepoints.
+                AssertText(sr, sc, er, ec, rhs, $"{verb} {args}", ctx, utf8Bytes: verb == "screen_text");
                 return;
             }
             // ?pen / ?lineinfo / ?screen_cell / ?screen_eol / ?screen_attrs_extent — not yet modelled.
@@ -206,9 +207,9 @@ public static class LibVtermHarness
             ctx.Fail($"?cursor expected {wantRow},{wantCol} actual {snap.CursorY},{snap.CursorX}");
     }
 
-    private static void AssertText(int sr, int sc, int er, int ec, string rhs, string label, Ctx ctx)
+    private static void AssertText(int sr, int sc, int er, int ec, string rhs, string label, Ctx ctx, bool utf8Bytes)
     {
-        var expected = ParseExpectedText(rhs);
+        var expected = ParseExpectedText(rhs, utf8Bytes);
         var actual = BuildText(ctx.Snapshot(), sr, sc, er, ec);
         if (actual == expected)
             ctx.Result.Passed++;
@@ -268,26 +269,29 @@ public static class LibVtermHarness
 
     // ---- expected-value parsing ----
 
-    /// <summary>Expected RHS is either a Perl string ("…"), a comma list of 0xNN/decimal codepoints,
-    /// or empty.</summary>
-    private static string ParseExpectedText(string rhs)
+    /// <summary>Expected RHS is a Perl string ("…"), a comma list of 0xNN values, or empty. For
+    /// screen_text the 0xNN values are UTF-8 bytes; for screen_chars/screen_row they are codepoints.</summary>
+    private static string ParseExpectedText(string rhs, bool utf8Bytes)
     {
         rhs = rhs.Trim();
         if (rhs.Length == 0) return "";
         if (rhs[0] == '"') return PerlBytes.DecodeToString(rhs);
 
-        var sb = new StringBuilder();
+        var values = new List<int>();
         foreach (var tokRaw in rhs.Split(',', StringSplitOptions.RemoveEmptyEntries))
         {
             var tok = tokRaw.Trim();
             if (tok.Length == 0) continue;
-            int cp;
-            if (tok.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
-                cp = int.Parse(tok[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture);
-            else
-                cp = int.Parse(tok, CultureInfo.InvariantCulture);
-            sb.Append(char.ConvertFromUtf32(cp));
+            values.Add(tok.StartsWith("0x", StringComparison.OrdinalIgnoreCase)
+                ? int.Parse(tok[2..], NumberStyles.HexNumber, CultureInfo.InvariantCulture)
+                : int.Parse(tok, CultureInfo.InvariantCulture));
         }
+
+        if (utf8Bytes)
+            return Encoding.UTF8.GetString(values.Select(v => (byte)v).ToArray());
+
+        var sb = new StringBuilder();
+        foreach (var cp in values) sb.Append(char.ConvertFromUtf32(cp));
         return sb.ToString();
     }
 

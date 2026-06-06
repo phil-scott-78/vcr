@@ -158,7 +158,7 @@ public sealed class NativeTerminalRenderer
 
     /// <summary>A cheap content fingerprint for frame de-duplication (cursor + every cell's glyph and
     /// rendering-relevant attributes).</summary>
-    private static string Signature(TerminalContent c)
+    internal static string Signature(TerminalContent c)
     {
         var sb = new StringBuilder(c.Cols * c.Rows + 16);
         sb.Append(c.CursorVisible ? '1' : '0').Append(c.CursorX).Append(',').Append(c.CursorY).Append(';');

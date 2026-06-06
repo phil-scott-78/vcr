@@ -27,7 +27,7 @@ public sealed class ParserCorrectnessTests
     private static string Row(TerminalContent c, int row) =>
         string.Concat(c.Cells[row].Select(cell => cell.Character.Length == 0 ? "" : cell.Character)).TrimEnd();
 
-    [Fact(Skip = Skip_P1)]
+    [Fact]
     public void OscFollowedByCsi_AppliesTheCsi()
     {
         // BUG today: after the OSC's terminating ESC, the parser drops the next byte ('['), so "31m"
@@ -37,7 +37,7 @@ public sealed class ParserCorrectnessTests
         c.Cells[0][0].ForegroundColor.ShouldBe("1"); // red
     }
 
-    [Fact(Skip = Skip_P1)]
+    [Fact]
     public void ColonSubParams_TrueColor_Applies()
     {
         // BUG today: ':' (0x3A) is unhandled in CSI param state → the sequence aborts and prints as text.

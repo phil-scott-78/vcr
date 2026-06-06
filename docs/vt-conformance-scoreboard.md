@@ -2,7 +2,7 @@
 
 > Corpus: **43** vendored libvterm `*.test` files (MIT). Rate = passed / evaluated; *skipped* assertions depend on engine features not yet modelled (callback events, pen/cell colors, line info). See docs/vt-engine-conformance.md §4.
 
-## Overall: 230/385 evaluated assertions pass (**59.7%**) · 875 skipped · 0 errors
+## Overall: 236/385 evaluated assertions pass (**61.3%**) · 875 skipped · 0 errors
 
 | File | Pass | Fail | Skip | Err | Rate |
 |---|---:|---:|---:|---:|---:|
@@ -23,7 +23,7 @@
 | 25state_input.test | 0 | 0 | 53 | 0 | — |
 | 26state_query.test | 0 | 0 | 13 | 0 | — |
 | 27state_reset.test | 1 | 3 | 2 | 0 | 25% |
-| 28state_dbl_wh.test | 0 | 4 | 29 | 0 | 0% |
+| 28state_dbl_wh.test | 3 | 1 | 29 | 0 | 75% |
 | 29state_fallback.test | 0 | 0 | 7 | 0 | — |
 | 30state_pen.test | 0 | 0 | 60 | 0 | — |
 | 31state_rep.test | 0 | 0 | 94 | 0 | — |
@@ -42,14 +42,14 @@
 | 69screen_reflow.test | 13 | 29 | 10 | 0 | 31% |
 | 90vttest_01-movement-1.test | 3 | 22 | 0 | 0 | 12% |
 | 90vttest_01-movement-2.test | 1 | 19 | 0 | 0 | 5% |
-| 90vttest_01-movement-3.test | 1 | 4 | 0 | 0 | 20% |
+| 90vttest_01-movement-3.test | 4 | 1 | 0 | 0 | 80% |
 | 90vttest_01-movement-4.test | 1 | 0 | 0 | 0 | 100% |
 | 90vttest_02-screen-1.test | 3 | 2 | 0 | 0 | 60% |
 | 90vttest_02-screen-2.test | 2 | 1 | 0 | 0 | 67% |
 | 90vttest_02-screen-3.test | 0 | 2 | 0 | 0 | 0% |
 | 90vttest_02-screen-4.test | 2 | 0 | 0 | 0 | 100% |
 | 92lp1640917.test | 0 | 0 | 3 | 0 | — |
-| **TOTAL** | **230** | **155** | **875** | **0** | **59.7%** |
+| **TOTAL** | **236** | **149** | **875** | **0** | **61.3%** |
 
 ## Sample failures (screen tests)
 

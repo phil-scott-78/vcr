@@ -34,10 +34,16 @@ public sealed class NativeRecordingSession(SessionOptions options)
         // command non-interactively (like ttyd's startup script) so there is no prompt or echoed command line.
         var interactive = commands.Any(c => c is TypeCommand or KeyCommand or ModifierCommand or RunCommand);
 
-        var env = new Dictionary<string, string> { ["TERM"] = "xterm-256color", ["COLORTERM"] = "truecolor" };
-        foreach (var (k, v) in options.Environment) env[k] = v;
+        // Honor `Set Shell` via the same ShellConfiguration the browser path uses, so bash/zsh/cmd/fish
+        // tapes run the right shell with the same args, prompt, and env. Native defaults to pwsh (the
+        // generic fallback is bash, which is wrong on Windows where ConPTY lives).
+        var shellConfig = ShellConfiguration.GetConfiguration(string.IsNullOrWhiteSpace(options.Shell) ? "pwsh" : options.Shell);
 
-        var pty = ConPtyProcess.Start(BuildCommandLine(interactive, execCommands), cols, rows, env, options.WorkingDirectory);
+        var env = new Dictionary<string, string> { ["TERM"] = "xterm-256color", ["COLORTERM"] = "truecolor" };
+        foreach (var (k, v) in shellConfig.Environment) env[k] = v;   // shell-specific (e.g. zsh PROMPT)
+        foreach (var (k, v) in options.Environment) env[k] = v;       // tape Env overrides
+
+        var pty = ConPtyProcess.Start(BuildCommandLine(shellConfig, interactive, execCommands), cols, rows, env, options.WorkingDirectory);
         var screen = new VtScreen(cols, rows);
         var gate = new object();
 
@@ -179,17 +185,24 @@ public sealed class NativeRecordingSession(SessionOptions options)
         await renderer.RenderStaticAsync(outPath, content, cancellationToken);
     }
 
-    private static string BuildCommandLine(bool interactive, List<ExecCommand> execCommands)
+    private static string BuildCommandLine(ShellConfiguration config, bool interactive, List<ExecCommand> execCommands)
     {
-        const string shell = "pwsh -NoLogo -NoProfile";
         if (interactive)
-            // Match the browser's shell setup exactly (ShellConfiguration["pwsh"]): a clean '> ' prompt
-            // and no PSReadLine prediction, applied at STARTUP via -Command so nothing is typed into —
-            // or captured by — the recording. -NoExit then keeps the session interactive.
-            return $"{shell} -NoExit -Command \"Set-PSReadLineOption -HistorySaveStyle SaveNothing -PredictionSource None; function prompt {{ '> ' }}\"";
-        if (execCommands.Count == 0) return shell;
-        // Run the Exec command(s) directly (no REPL) — output only, no prompt, no echoed command line.
-        var joined = string.Join("; ", execCommands.Select(e => e.Command));
-        return $"{shell} -Command \"{joined.Replace("\"", "`\"")}\"";
+        {
+            // Reuse the shell's exact interactive invocation (flags + clean '> ' prompt + init) — the
+            // same one the browser/ttyd path uses — so input and prompt match across backends.
+            var parts = config.BuildTtydCommand();
+            return string.Join(" ", parts.Select((p, i) => i > 0 && p.Contains(' ') ? $"\"{p}\"" : p));
+        }
+
+        if (execCommands.Count == 0) return config.Name;
+
+        // Non-interactive: run the Exec command(s) and exit — output only, no prompt, no echoed line.
+        var sep = config.Name.StartsWith("cmd", StringComparison.OrdinalIgnoreCase) ? " & " : "; ";
+        var joined = string.Join(sep, execCommands.Select(e => e.Command));
+        var quoted = $"\"{joined.Replace("\"", "`\"")}\"";
+        return config.Name is "pwsh" or "powershell"
+            ? $"{config.Name} -NoLogo -NoProfile {config.ExecutionFlag} {quoted}"
+            : $"{config.Name} {config.ExecutionFlag} {quoted}";
     }
 }

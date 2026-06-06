@@ -892,8 +892,13 @@ public class SvgRenderer
 
     private void CalculateDimensions()
     {
-        _charWidth = _options.ActualCellWidth ?? _options.FontSize * 0.55;
-        _charHeight = _options.ActualCellHeight ?? _options.FontSize * 1.2;
+        // With a measured cell size (browser path) use it as-is. Without one (native/browserless path)
+        // estimate from the font size — and ROUND to whole pixels: a fractional cell width makes every
+        // background rect land on a sub-pixel boundary, so adjacent same-color cells (e.g. bar-chart
+        // fills) anti-alias independently and show hairline seams. Integer cells tile cleanly and match
+        // the browser's measured advance (~0.6 × font-size for typical monospace fonts).
+        _charWidth = _options.ActualCellWidth ?? Math.Round(_options.FontSize * 0.6);
+        _charHeight = _options.ActualCellHeight ?? Math.Round(_options.FontSize * 1.2);
 
         // Canvas defaults to the configured viewport. When FitToContent supplies a
         // content extent, the canvas shrinks to fit measured content plus padding.

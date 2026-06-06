@@ -20,6 +20,11 @@ public sealed class NativeTerminalPage(ConPtyProcess pty, VtScreen screen, objec
     private string _clipboard = string.Empty;
     private bool _cursorHidden;
 
+    // A small pause after each key so a TUI redraws (and the drain captures the new frame) before the
+    // next key — the browser gets this for free from input-pipeline latency; native is instant, so rapid
+    // key bursts (e.g. four Downs with no Sleep) would otherwise collapse into one captured frame.
+    private const int KeyPaceMs = 24;
+
     public Task TypeAsync(string text, int delayMs) => TypeAsync(text, delayMs, CancellationToken.None);
 
     private async Task TypeAsync(string text, int delayMs, CancellationToken cancellationToken)
@@ -31,16 +36,16 @@ public sealed class NativeTerminalPage(ConPtyProcess pty, VtScreen screen, objec
         }
     }
 
-    public Task PressKeyAsync(string key)
+    public async Task PressKeyAsync(string key)
     {
         Write(NativeKeyMap.ForKey(key));
-        return Task.CompletedTask;
+        await Task.Delay(KeyPaceMs);
     }
 
-    public Task PressKeyCombinationAsync(List<string> modifiers, string key, CancellationToken cancellationToken)
+    public async Task PressKeyCombinationAsync(List<string> modifiers, string key, CancellationToken cancellationToken)
     {
         Write(NativeKeyMap.ForCombination(modifiers, key));
-        return Task.CompletedTask;
+        await Task.Delay(KeyPaceMs, cancellationToken);
     }
 
     public async Task<bool> WaitForPatternAsync(Regex pattern, string scope, int timeoutMs, CancellationToken cancellationToken)

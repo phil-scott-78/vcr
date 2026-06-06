@@ -41,6 +41,22 @@ public sealed class NativeRecordingSession(SessionOptions options)
         var screen = new VtScreen(cols, rows);
         var gate = new object();
 
+        var page = new NativeTerminalPage(pty, screen, gate, options);
+        var frameCapture = new NativeFrameCapture(page, options);
+        var state = new SessionState { IsCapturing = true };
+
+        // Event-driven capture: the drain thread snapshots after EVERY output chunk (not on a fixed
+        // framerate timer), so no on-screen state is dropped — native sees every byte, so it must never
+        // miss a frame the way periodic sampling does (e.g. rapid arrow-key navigation). Frames are
+        // de-duplicated, so the stream is exactly the sequence of distinct screen states. `capturing`
+        // gates it on after the startup setup so the shell init never enters the recording.
+        var capturedFrames = new List<TerminalStateWithTime>();
+        var framesLock = new object();
+        var captureSw = new Stopwatch();
+        var capturing = false;
+        string? lastSignature = null;
+        const int MaxFrames = 6000;
+
         var decoder = Encoding.UTF8.GetDecoder();
         var readTask = Task.Run(() =>
         {
@@ -50,17 +66,23 @@ public sealed class NativeRecordingSession(SessionOptions options)
             while ((n = pty.Output.Read(bytes, 0, bytes.Length)) > 0)
             {
                 var count = decoder.GetChars(bytes, 0, n, chars, 0);
-                if (count > 0)
+                if (count == 0) continue;
+                lock (gate) screen.Feed(new string(chars, 0, count));
+
+                bool cap;
+                lock (framesLock) cap = capturing;
+                if (!cap || !state.IsCapturing) continue;
+
+                var content = page.Snapshot();
+                var signature = NativeTerminalRenderer.Signature(content);
+                lock (framesLock)
                 {
-                    var text = new string(chars, 0, count);
-                    lock (gate) screen.Feed(text);
+                    if (signature == lastSignature || capturedFrames.Count >= MaxFrames) continue;
+                    lastSignature = signature;
+                    capturedFrames.Add(new TerminalStateWithTime { Content = content, TimestampSeconds = captureSw.Elapsed.TotalSeconds });
                 }
             }
         }, cancellationToken);
-
-        var page = new NativeTerminalPage(pty, screen, gate, options);
-        var frameCapture = new NativeFrameCapture(page, options);
-        var state = new SessionState { IsCapturing = true };
 
         try
         {
@@ -80,30 +102,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
             }
 
             progress?.Report("Recording (native, no browser)...");
-            var states = new List<TerminalStateWithTime>();
-            string? lastSignature = null;
-            var sw = Stopwatch.StartNew();
-            var intervalMs = Math.Max(1, (int)Math.Round(1000.0 / Math.Max(1, framerate)));
-            using var stop = new CancellationTokenSource();
-
-            var pollTask = Task.Run(async () =>
-            {
-                while (!stop.IsCancellationRequested)
-                {
-                    if (state.IsCapturing)
-                    {
-                        var content = page.Snapshot();
-                        var signature = NativeTerminalRenderer.Signature(content);
-                        if (signature != lastSignature)
-                        {
-                            lastSignature = signature;
-                            states.Add(new TerminalStateWithTime { Content = content, TimestampSeconds = sw.Elapsed.TotalSeconds });
-                        }
-                    }
-                    try { await Task.Delay(intervalMs, stop.Token); }
-                    catch (OperationCanceledException) { break; }
-                }
-            }, CancellationToken.None);
+            lock (framesLock) { capturing = true; lastSignature = null; capturedFrames.Clear(); captureSw.Restart(); }
 
             var context = new Core.Parsing.Ast.ExecutionContext(options, state, page, frameCapture);
             foreach (var command in commands)
@@ -118,9 +117,19 @@ public sealed class NativeRecordingSession(SessionOptions options)
             var minWait = execCommands.Count > 0 ? TimeSpan.FromSeconds(2) : TimeSpan.Zero;
             await frameCapture.WaitForBufferStableAsync(options.InactivityTimeout, options.MaxWaitForInactivity, minWait, cancellationToken);
 
-            stop.Cancel();
-            await pollTask;
-            var totalSeconds = sw.Elapsed.TotalSeconds;
+            // Add the settled final frame, then stop capturing and snapshot the frame list for encoding.
+            var finalContent = page.Snapshot();
+            List<TerminalStateWithTime> states;
+            double totalSeconds;
+            lock (framesLock)
+            {
+                var sig = NativeTerminalRenderer.Signature(finalContent);
+                if (sig != lastSignature && capturedFrames.Count < MaxFrames)
+                    capturedFrames.Add(new TerminalStateWithTime { Content = finalContent, TimestampSeconds = captureSw.Elapsed.TotalSeconds });
+                capturing = false;
+                totalSeconds = captureSw.Elapsed.TotalSeconds;
+                states = new List<TerminalStateWithTime>(capturedFrames);
+            }
 
             progress?.Report("Encoding...");
             var written = new List<string>();

@@ -1,0 +1,88 @@
+using System.ComponentModel;
+using System.Diagnostics;
+using Spectre.Console;
+using Spectre.Console.Cli;
+using VcrSharp.Core.Rendering;
+using VcrSharp.Core.Session;
+using VcrSharp.Core.Settings;
+using VcrSharp.Infrastructure.Rendering;
+using VcrSharp.Infrastructure.Terminal;
+
+namespace VcrSharp.Cli.Commands;
+
+/// <summary>
+/// [experimental] Browserless static SVG: run a command in an in-process pseudoconsole (ConPTY),
+/// parse its VT output into a cell grid, and render it with the existing SvgRenderer — no ttyd, no
+/// Chromium. The proof that the SVG path never needed a browser.
+/// </summary>
+[Description("[experimental] Browserless static SVG via in-process PTY (no ttyd/Chromium)")]
+public sealed class NativeSnapCommand : AsyncCommand<NativeSnapCommand.Settings>
+{
+    public sealed class Settings : DirectCaptureSettings
+    {
+        [CommandOption("--cwd <DIR>")]
+        [Description("Working directory for the command")]
+        public string? WorkingDirectory { get; init; }
+    }
+
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            AnsiConsole.MarkupLine("[bold red]Error:[/] native-snap currently requires Windows (ConPTY). The Unix PTY backend is not wired up yet.");
+            return 1;
+        }
+
+        var outputPath = settings.Output ?? "native.svg";
+        if (!outputPath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+            outputPath = Path.ChangeExtension(outputPath, ".svg");
+
+        var cols = settings.Cols ?? 80;
+        var rows = settings.Rows ?? 24;
+
+        var options = new SessionOptions
+        {
+            Cols = cols,
+            Rows = rows,
+            FontSize = settings.FontSize ?? 22,
+            Theme = settings.Theme is null ? BuiltinThemes.Default : (BuiltinThemes.GetByName(settings.Theme) ?? BuiltinThemes.Default),
+            DisableCursor = settings.DisableCursor,
+            TransparentBackground = settings.TransparentBackground,
+            FitToContent = true, // a snapshot of finished output crops to content (Size fit)
+        };
+
+        try
+        {
+            var sw = Stopwatch.StartNew();
+
+            var content = await new NativeTerminalRenderer(cols, rows)
+                .RunAndSnapshotAsync(settings.Command, settings.WorkingDirectory, cancellationToken: cancellationToken);
+
+            var directory = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                Directory.CreateDirectory(directory);
+
+            var renderer = new SvgRenderer(options);
+            if (options.FitToContent)
+            {
+                var extent = ContentExtent.Measure(content);
+                renderer.SetContentExtent(extent.Cols, extent.Rows);
+            }
+
+            await renderer.RenderStaticAsync(outputPath, content, cancellationToken);
+            sw.Stop();
+
+            var size = new FileInfo(outputPath).Length / 1024.0;
+            AnsiConsole.MarkupLine("[green]✓[/] Rendered with [bold]no browser and no ttyd[/] (in-process ConPTY + VT parser)");
+            AnsiConsole.MarkupLineInterpolated($"  [dim]•[/] {Path.GetFileName(outputPath)} ({size:F1} KB) in {sw.ElapsedMilliseconds} ms");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            AnsiConsole.MarkupLineInterpolated($"[bold red]Error:[/] {ex.Message}");
+            if (ex.InnerException != null)
+                AnsiConsole.MarkupLineInterpolated($"[dim]{ex.InnerException.Message}[/]");
+            return 1;
+        }
+    }
+}

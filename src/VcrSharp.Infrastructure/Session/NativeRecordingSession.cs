@@ -143,22 +143,27 @@ public sealed class NativeRecordingSession(SessionOptions options)
             var frames = 0;
             foreach (var outPath in outputPaths)
             {
-                if (!outPath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+                var ext = Path.GetExtension(outPath).ToLowerInvariant();
+                switch (ext)
                 {
-                    unsupported.Add(outPath); // GIF/MP4/PNG need rasterisation — not in the native path yet
-                    continue;
+                    case ".svg" when options.StaticOutput:
+                        await RenderStaticAsync(page.Snapshot(), outPath, cancellationToken);
+                        frames = 1;
+                        written.Add(outPath);
+                        break;
+                    case ".svg":
+                        frames = await NativeSvgWriter.WriteAnimatedAsync(states, totalSeconds, options, outPath, cancellationToken);
+                        written.Add(outPath);
+                        break;
+                    case ".gif" or ".mp4" or ".webm" or ".png":
+                        // Rasterize each captured frame and feed FFmpeg (browserless GIF/MP4/WebM/PNG).
+                        frames = await NativeVideoWriter.WriteAsync(states, totalSeconds, options, outPath, cancellationToken);
+                        written.Add(outPath);
+                        break;
+                    default:
+                        unsupported.Add(outPath); // e.g. a frames/ directory — not handled natively
+                        break;
                 }
-
-                if (options.StaticOutput)
-                {
-                    await RenderStaticAsync(page.Snapshot(), outPath, cancellationToken);
-                    frames = 1;
-                }
-                else
-                {
-                    frames = await NativeSvgWriter.WriteAnimatedAsync(states, totalSeconds, options, outPath, cancellationToken);
-                }
-                written.Add(outPath);
             }
 
             return new Result(frames, totalSeconds, written, unsupported);

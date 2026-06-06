@@ -64,14 +64,14 @@ public sealed class NativePlayCommand : AsyncCommand<NativePlayCommand.Settings>
             if (settings.Output is { Length: > 0 }) outputs.AddRange(settings.Output);
             if (outputs.Count == 0) outputs.Add("output.svg");
 
-            var svgOutputs = outputs.Where(o => o.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)).Distinct().ToList();
-            var nonSvg = outputs.Where(o => !o.EndsWith(".svg", StringComparison.OrdinalIgnoreCase)).Distinct().ToList();
-            foreach (var o in nonSvg)
-                AnsiConsole.MarkupLineInterpolated($"[yellow]⚠[/] Skipping [bold]{Path.GetFileName(o)}[/] — native playback emits SVG only for now (GIF/MP4 need rasterisation).");
+            string[] supportedExts = [".svg", ".gif", ".mp4", ".webm", ".png"];
+            var renderable = outputs.Where(o => supportedExts.Contains(Path.GetExtension(o).ToLowerInvariant())).Distinct().ToList();
+            foreach (var o in outputs.Where(o => !renderable.Contains(o)).Distinct())
+                AnsiConsole.MarkupLineInterpolated($"[yellow]⚠[/] Skipping [bold]{Path.GetFileName(o)}[/] — native supports .svg/.gif/.mp4/.webm/.png.");
 
-            if (svgOutputs.Count == 0)
+            if (renderable.Count == 0)
             {
-                AnsiConsole.MarkupLine("[bold red]Error:[/] no .svg output to render. Pass `-o out.svg` or add `Output out.svg` to the tape.");
+                AnsiConsole.MarkupLine("[bold red]Error:[/] no renderable output. Pass `-o out.svg` (or .gif/.mp4/.webm/.png) or add an `Output` to the tape.");
                 return 1;
             }
 
@@ -82,7 +82,7 @@ public sealed class NativePlayCommand : AsyncCommand<NativePlayCommand.Settings>
             {
                 var progress = new Progress<string>(s => ctx.Status(s));
                 var session = new NativeRecordingSession(options);
-                result = await session.RecordAsync(commands, svgOutputs, framerate, progress, cancellationToken);
+                result = await session.RecordAsync(commands, renderable, framerate, progress, cancellationToken);
             });
 
             AnsiConsole.MarkupLine("[green]✓[/] Played tape with [bold]no ttyd and no Chromium[/] (ConPTY + VT parser)");

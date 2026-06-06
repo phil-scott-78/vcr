@@ -615,6 +615,7 @@ public class SessionOptions
                     options.StartBuffer = TimeSpan.Parse(value.ToString() ?? "500ms");
                 break;
             case "endbuffer":
+            case "holdduration": // forward name for EndBuffer
                 if (value is TimeSpan eb)
                     options.EndBuffer = eb;
                 else
@@ -637,6 +638,9 @@ public class SessionOptions
                 break;
             case "staticoutput":
                 options.StaticOutput = Convert.ToBoolean(value);
+                break;
+            case "animate": // forward name: the inverse of StaticOutput (Animate false == static)
+                options.StaticOutput = !Convert.ToBoolean(value);
                 break;
         }
     }

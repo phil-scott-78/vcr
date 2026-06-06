@@ -6,6 +6,7 @@ using VcrSharp.Core.Logging;
 using VcrSharp.Core.Parsing;
 using VcrSharp.Core.Parsing.Ast;
 using VcrSharp.Core.Session;
+using VcrSharp.Core.Settings;
 using VcrSharp.Infrastructure.Playwright;
 using VcrSharp.Infrastructure.Processes;
 using VcrSharp.Infrastructure.Session;
@@ -88,6 +89,10 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                 // Parse tape file
                 var parser = new TapeParser();
                 var commands = await parser.ParseFileAsync(settings.TapeFile);
+
+                // Surface deprecation guidance for the authored tape (non-fatal).
+                foreach (var warning in SettingDeprecations.Collect(commands))
+                    AnsiConsole.MarkupLineInterpolated($"[yellow]⚠ {warning}[/]");
 
                 // Expand the config layer: Use presets, Exec macros, Run sugar, derived Output
                 // (resolved against a vcr.toml discovered by walking up from the tape's directory).

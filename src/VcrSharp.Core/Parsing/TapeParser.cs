@@ -402,8 +402,8 @@ public class TapeParser
         // Behavior
         "Shell", "WorkingDirectory", "TypingSpeed", "WaitTimeout",
         "WaitPattern", "InactivityTimeout", "MaxWaitForInactivity", "StartWaitTimeout",
-        "StartBuffer", "EndBuffer", "StartupDelay",
-        "ScreenshotWaitForInactivity", "ScreenshotInactivityTimeout", "StaticOutput"
+        "StartBuffer", "EndBuffer", "HoldDuration", "StartupDelay",
+        "ScreenshotWaitForInactivity", "ScreenshotInactivityTimeout", "StaticOutput", "Animate"
     };
 
     /// <summary>

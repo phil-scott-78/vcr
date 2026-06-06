@@ -3,6 +3,7 @@ using Spectre.Console.Cli;
 using VcrSharp.Cli.Helpers;
 using VcrSharp.Core.Config;
 using VcrSharp.Core.Parsing;
+using VcrSharp.Core.Settings;
 
 namespace VcrSharp.Cli.Commands;
 
@@ -45,6 +46,13 @@ public class ValidateCommand : AsyncCommand<ValidateCommand.Settings>
 
             var parser = new TapeParser();
             var commands = await parser.ParseFileAsync(settings.TapeFile);
+
+            // Surface deprecation guidance for the authored tape (non-fatal).
+            var deprecations = SettingDeprecations.Collect(commands);
+            foreach (var warning in deprecations)
+                AnsiConsole.MarkupLineInterpolated($"[yellow]⚠ {warning}[/]");
+            if (deprecations.Count > 0)
+                AnsiConsole.WriteLine();
 
             // Expand the config layer so Use/preset/macro references are validated too.
             commands = PresetResolver.ResolveWithDiscovery(commands, settings.TapeFile);

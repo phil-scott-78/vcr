@@ -104,22 +104,6 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                 // Extract session options from Set commands
                 var options = SessionOptions.FromCommands(commands);
 
-                // Validate Require commands from tape file
-                var requireCommands = commands.OfType<RequireCommand>().ToList();
-                if (requireCommands.Count > 0)
-                {
-                    var missingPrograms = requireCommands
-                        .Where(r => !ProcessHelper.IsProgramAvailable(r.ProgramName))
-                        .Select(r => r.ProgramName)
-                        .ToList();
-
-                    if (missingPrograms.Count > 0)
-                    {
-                        AnsiConsole.MarkupLineInterpolated($"[bold red]Error:[/] Required programs not found: {string.Join(", ", missingPrograms)}");
-                        return 1;
-                    }
-                }
-
                 // Ensure Playwright drivers and browsers are installed (auto-installs/updates if needed)
                 await PlaywrightBrowser.EnsureBrowsersInstalled();
 

@@ -469,12 +469,6 @@ public class SessionOptions
         switch (name.ToLowerInvariant())
         {
             // Terminal dimensions
-            case "width":
-                options.Width = Convert.ToInt32(value);
-                break;
-            case "height":
-                options.Height = Convert.ToInt32(value);
-                break;
             case "cols":
                 options.Cols = Convert.ToInt32(value);
                 break;
@@ -548,9 +542,6 @@ public class SessionOptions
             case "transparentbackground":
                 options.TransparentBackground = Convert.ToBoolean(value);
                 break;
-            case "cssvariables":
-                options.CssVariables = Convert.ToBoolean(value);
-                break;
             case "svgintrinsicsize":
                 options.SvgIntrinsicSize = Convert.ToBoolean(value);
                 break;
@@ -583,12 +574,6 @@ public class SessionOptions
                     options.WaitTimeout = wt;
                 else
                     options.WaitTimeout = TimeSpan.Parse(value.ToString() ?? "15s");
-                break;
-            case "waitpattern":
-                if (value is Regex regex)
-                    options.WaitPattern = regex;
-                else
-                    options.WaitPattern = new Regex(value.ToString() ?? "/>$/");
                 break;
             case "inactivitytimeout":
                 if (value is TimeSpan it)

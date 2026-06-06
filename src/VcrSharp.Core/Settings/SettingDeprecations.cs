@@ -11,34 +11,23 @@ namespace VcrSharp.Core.Settings;
 /// </summary>
 public static class SettingDeprecations
 {
-    /// <summary>Deprecated <c>Set</c> names → guidance shown to the author.</summary>
+    /// <summary>
+    /// Deprecated <c>Set</c> names → guidance. Only the two still kept for migration compatibility
+    /// remain: <c>StaticOutput</c>/<c>FitToContent</c> still parse (so <c>vcr migrate</c> can read
+    /// legacy tapes and rewrite them) but are superseded by <c>Mode</c>/<c>Size</c>. The genuinely
+    /// dead names (Width/Height/WaitPattern/CssVariables) and commands (Require/Source/Copy/Paste)
+    /// have been removed from the grammar outright.
+    /// </summary>
     public static readonly IReadOnlyDictionary<string, string> Settings =
         new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
         {
-            // Superseded by the terminal-grid sizing model
-            ["Width"] = "use Cols (Width is only a fallback when Cols is unset)",
-            ["Height"] = "use Rows (Height is only a fallback when Rows is unset)",
-
-            // Renamed to the clear capture/sizing front-ends
             ["StaticOutput"] = "use 'Set Mode static' (Mode is animated|static)",
             ["FitToContent"] = "use 'Set Size fit' (Size is grid|fit)",
-
-            // Redundant with the Wait command itself
-            ["WaitPattern"] = "pass a regex directly to Wait, e.g. 'Wait /pattern/'",
-
-            // Speculative theming knob, effectively unused
-            ["CssVariables"] = "removed from the per-tape surface",
         };
 
-    /// <summary>Deprecated command keywords → guidance shown to the author.</summary>
+    /// <summary>No commands are deprecated-but-parseable; removed ones are now parse errors.</summary>
     public static readonly IReadOnlyDictionary<string, string> Commands =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["Require"] = "a clear runtime error already covers the missing-program case",
-            ["Source"] = "use 'Use <preset>' with a vcr.toml instead",
-            ["Copy"] = "clipboard commands are being removed",
-            ["Paste"] = "clipboard commands are being removed",
-        };
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
     private static readonly IReadOnlyDictionary<string, string[]> EnumSettings =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)

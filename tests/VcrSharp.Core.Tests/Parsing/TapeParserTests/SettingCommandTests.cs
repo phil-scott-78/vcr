@@ -147,21 +147,6 @@ public class SettingCommandTests
     }
 
     [Fact]
-    public void ParseTape_SetCssVariables_ParsesAndApplies()
-    {
-        var parser = new TapeParser();
-
-        var commands = parser.ParseTape("Set CssVariables true");
-        var cmd = commands[0].ShouldBeOfType<SetCommand>();
-        cmd.SettingName.ShouldBe("CssVariables");
-        cmd.Value.ShouldBe("True");
-
-        SessionOptions.FromCommands(commands).CssVariables.ShouldBeTrue();
-        SessionOptions.FromCommands(parser.ParseTape("Set CssVariables false")).CssVariables.ShouldBeFalse();
-        new SessionOptions().CssVariables.ShouldBeFalse(); // default
-    }
-
-    [Fact]
     public void ParseTape_SetSvgMetadataAndIntrinsicSize_ParsesAndApplies()
     {
         var parser = new TapeParser();
@@ -269,35 +254,4 @@ public class SettingCommandTests
         cmd.FilePath.ShouldBe("path with spaces.mp4");
     }
 
-    [Fact]
-    public void ParseTape_RequireCommand_ParsesCorrectly()
-    {
-        // Arrange
-        var parser = new TapeParser();
-        var source = "Require npm";
-
-        // Act
-        var commands = parser.ParseTape(source);
-
-        // Assert
-        commands.Count.ShouldBe(1);
-        var cmd = commands[0].ShouldBeOfType<RequireCommand>();
-        cmd.ProgramName.ShouldBe("npm");
-    }
-
-    [Fact]
-    public void ParseTape_SourceCommand_ParsesCorrectly()
-    {
-        // Arrange
-        var parser = new TapeParser();
-        var source = "Source script.tape";
-
-        // Act
-        var commands = parser.ParseTape(source);
-
-        // Assert
-        commands.Count.ShouldBe(1);
-        var cmd = commands[0].ShouldBeOfType<SourceCommand>();
-        cmd.FilePath.ShouldBe("script.tape");
-    }
 }

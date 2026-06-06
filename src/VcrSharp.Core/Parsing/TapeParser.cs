@@ -191,18 +191,6 @@ public class TapeParser
         from text in QuotedString
         select (ICommand)new Ast.RunCommand(text, keyword.Position.Line);
 
-    // Require command: Require npm
-    private static readonly TokenListParser<TapeToken, ICommand> RequireCommand =
-        from keyword in Token.EqualTo(TapeToken.Require)
-        from program in Identifier
-        select (ICommand)new RequireCommand(program);
-
-    // Source command: Source other.tape
-    private static readonly TokenListParser<TapeToken, ICommand> SourceCommand =
-        from keyword in Token.EqualTo(TapeToken.Source)
-        from path in FilePath
-        select (ICommand)new SourceCommand(path);
-
     // Type command: Type "hello" or Type@500ms "hello"
     private static readonly TokenListParser<TapeToken, ICommand> TypeCommand =
         from keyword in Token.EqualTo(TapeToken.Type)
@@ -322,17 +310,6 @@ public class TapeParser
         from path in FilePath
         select (ICommand)new ScreenshotCommand(path);
 
-    // Copy command: Copy "text"
-    private static readonly TokenListParser<TapeToken, ICommand> CopyCommand =
-        from keyword in Token.EqualTo(TapeToken.Copy)
-        from text in QuotedString
-        select (ICommand)new CopyCommand(text);
-
-    // Paste command: Paste
-    private static readonly TokenListParser<TapeToken, ICommand> PasteCommand =
-        from keyword in Token.EqualTo(TapeToken.Paste)
-        select (ICommand)new PasteCommand();
-
     // Env command: Env KEY "value"
     private static readonly TokenListParser<TapeToken, ICommand> EnvCommand =
         from keyword in Token.EqualTo(TapeToken.Env)
@@ -357,16 +334,12 @@ public class TapeParser
         .Or(OutputCommand)
         .Or(UseCommand)
         .Or(RunCommand)
-        .Or(RequireCommand)
-        .Or(SourceCommand)
         .Or(TypeCommand)
         .Or(SleepCommand)
         .Or(WaitCommand)
         .Or(HideCommand)
         .Or(ShowCommand)
         .Or(ScreenshotCommand)
-        .Or(CopyCommand)
-        .Or(PasteCommand)
         .Or(EnvCommand)
         .Or(ExecCommand)
         .Or(ModifierCommand)
@@ -387,7 +360,7 @@ public class TapeParser
     private static readonly HashSet<string> ValidSettingNames = new(StringComparer.OrdinalIgnoreCase)
     {
         // Terminal dimensions
-        "Width", "Height", "Cols", "Rows", "FitToContent",
+        "Cols", "Rows", "FitToContent",
 
         // Font settings
         "FontSize", "FontFamily", "LetterSpacing", "LineHeight",
@@ -398,14 +371,14 @@ public class TapeParser
         // Styling
         "Theme", "Padding", "Margin", "MarginFill", "WindowBarSize",
         "BorderRadius", "CursorBlink", "DisableCursor", "TransparentBackground",
-        "CssVariables", "SvgIntrinsicSize", "SvgMetadata",
+        "SvgIntrinsicSize", "SvgMetadata",
 
         // Capture + sizing (the two clear front-ends over StaticOutput/FitToContent)
         "Mode", "Size",
 
         // Behavior
         "Shell", "WorkingDirectory", "TypingSpeed", "WaitTimeout",
-        "WaitPattern", "InactivityTimeout", "MaxWaitForInactivity", "StartWaitTimeout",
+        "InactivityTimeout", "MaxWaitForInactivity", "StartWaitTimeout",
         "StartBuffer", "EndBuffer", "HoldDuration", "StartupDelay",
         "ScreenshotWaitForInactivity", "ScreenshotInactivityTimeout", "StaticOutput"
     };
@@ -491,8 +464,7 @@ public class TapeParser
             // Check if this is an action command
             var isActionCommand = command is Ast.TypeCommand or Ast.KeyCommand or Ast.ModifierCommand
                 or Ast.SleepCommand or Ast.WaitCommand or Ast.HideCommand or Ast.ShowCommand
-                or Ast.ScreenshotCommand or Ast.CopyCommand or Ast.PasteCommand or Ast.ExecCommand
-                or Ast.RunCommand;
+                or Ast.ScreenshotCommand or Ast.ExecCommand or Ast.RunCommand;
 
             if (isActionCommand)
             {

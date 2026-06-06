@@ -194,28 +194,12 @@ public class SetCommandValidationTests
     }
 
     [Fact]
-    public void ParseTape_SetAfterCopyCommand_ThrowsTapeParseException()
+    public void ParseTape_SetAfterRunCommand_ThrowsTapeParseException()
     {
         // Arrange
         var parser = new TapeParser();
         var source = """
-            Copy "text"
-            Set FontSize 32
-            """;
-
-        // Act & Assert
-        var exception = Should.Throw<TapeParseException>(() => parser.ParseTape(source));
-        exception.Message.ShouldContain("appears after action commands");
-        exception.Line.ShouldBe(2);
-    }
-
-    [Fact]
-    public void ParseTape_SetAfterPasteCommand_ThrowsTapeParseException()
-    {
-        // Arrange
-        var parser = new TapeParser();
-        var source = """
-            Paste
+            Run "./example"
             Set FontSize 32
             """;
 
@@ -233,7 +217,7 @@ public class SetCommandValidationTests
         var source = """
             Set FontSize 32
             Output test.gif
-            Require npm
+            Use base
             Env VAR "value"
             Set Theme "Dracula"
             """;
@@ -245,7 +229,7 @@ public class SetCommandValidationTests
         commands.Count.ShouldBe(5);
         commands[0].ShouldBeOfType<SetCommand>();
         commands[1].ShouldBeOfType<OutputCommand>();
-        commands[2].ShouldBeOfType<RequireCommand>();
+        commands[2].ShouldBeOfType<UseCommand>();
         commands[3].ShouldBeOfType<EnvCommand>();
         commands[4].ShouldBeOfType<SetCommand>();
     }
@@ -259,8 +243,8 @@ public class SetCommandValidationTests
             Set FontSize 32
             Set Theme "Dracula"
             Set Shell "bash"
-            Set Width 1200
-            Set Height 800
+            Set Cols 80
+            Set Rows 24
             """;
 
         // Act
@@ -326,8 +310,7 @@ public class SetCommandValidationTests
             Set FontSize 32
             Output demo.gif
             Env VAR "value"
-            Require npm
-            Source other.tape
+            Use base
             Type "test"
             """;
 
@@ -335,8 +318,8 @@ public class SetCommandValidationTests
         var commands = parser.ParseTape(source);
 
         // Assert
-        commands.Count.ShouldBe(6);
-        // Output, Env, Require, Source are not subject to SET validation rules
+        commands.Count.ShouldBe(5);
+        // Output, Env, Use are not subject to SET validation rules
         // Only SET commands must be unique and before actions
     }
 }

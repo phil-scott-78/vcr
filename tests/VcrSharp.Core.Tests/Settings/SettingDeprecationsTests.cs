@@ -43,11 +43,13 @@ public class SettingDeprecationsTests
     }
 
     [Fact]
-    public void Collect_FlagsTrulyDeadSettings()
+    public void RemovedSettings_AreParseErrors()
     {
-        var warnings = SettingDeprecations.Collect(Parser.ParseTape("Set Width 1200\nSet CssVariables true\nExec \"x\""));
-        warnings.ShouldContain(w => w.Contains("Width") && w.Contains("Cols"));
-        warnings.ShouldContain(w => w.Contains("CssVariables"));
+        // The genuinely dead names were removed from the grammar outright.
+        Should.Throw<TapeParseException>(() => Parser.ParseTape("Set Width 1200"));
+        Should.Throw<TapeParseException>(() => Parser.ParseTape("Set Height 800"));
+        Should.Throw<TapeParseException>(() => Parser.ParseTape("Set CssVariables true"));
+        Should.Throw<TapeParseException>(() => Parser.ParseTape("Set WaitPattern \"x\""));
     }
 
     [Fact]
@@ -60,13 +62,14 @@ public class SettingDeprecationsTests
     }
 
     [Fact]
-    public void Collect_FlagsRemovedCommands_ButNotHideShow()
+    public void RemovedCommands_AreParseErrors_ButHideShowStay()
     {
-        SettingDeprecations.Collect(Parser.ParseTape("Source other.tape"))
-            .ShouldContain(w => w.Contains("Source") && w.Contains("Use"));
-        SettingDeprecations.Collect(Parser.ParseTape("Require npm"))
-            .ShouldContain(w => w.Contains("Require"));
-        // Hide/Show are legitimate animation frame-gating tools — not deprecated.
+        // Require/Source/Copy/Paste were removed from the grammar.
+        Should.Throw<TapeParseException>(() => Parser.ParseTape("Require npm"));
+        Should.Throw<TapeParseException>(() => Parser.ParseTape("Source other.tape"));
+        Should.Throw<TapeParseException>(() => Parser.ParseTape("Copy \"x\""));
+        Should.Throw<TapeParseException>(() => Parser.ParseTape("Paste"));
+        // Hide/Show are legitimate animation frame-gating tools — they stay, with no warning.
         SettingDeprecations.Collect(Parser.ParseTape("Hide\nType \"x\"\nShow")).ShouldBeEmpty();
     }
 

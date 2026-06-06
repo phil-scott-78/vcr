@@ -496,7 +496,7 @@ public class VcrSession : IAsyncDisposable
             }
 
             // Skip setting commands (already processed)
-            if (command is SetCommand or OutputCommand or RequireCommand or SourceCommand or EnvCommand or ExecCommand)
+            if (command is SetCommand or OutputCommand or UseCommand or EnvCommand or ExecCommand)
             {
                 continue;
             }

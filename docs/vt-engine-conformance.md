@@ -39,6 +39,41 @@ Repo test totals after Phase 0: Core.Tests **351** green, Terminal.Tests **71** 
 
 ---
 
+## Build progress (P1–P5 landed ✅)
+
+Every planned conformance phase shipped, each gated by the scoreboard + acceptance tests, **0 errors and 0 regressions throughout**. Conformance = passed / *evaluated* (grid-observable) libvterm assertions.
+
+| Step | What | Scoreboard |
+|---|---|---:|
+| Phase 0 | engine project + scoreboard | 59.7% |
+| **P1** | parser → canonical Williams VT500 DFA | 61.3% |
+| **P2** | scroll region, IL/DL/SU/SD, tabs, DECSC/DECRC, DECSTR/RIS, scrollback | 72.2% |
+| **P4** | DEC modes, alt screen, real cursor visibility, IRM/LNM/DECOM | 80.5% |
+| **P3** | full SGR attrs, line-drawing charset, combining marks, `?pen` grading | 82.4% |
+| **P5** | content-preserving resize (+ phantom cursor), HPB/VPB | 89.5% |
+| edge | DECALN, `?screen_text` UTF-8, Perl `x`-repeat in harness | **92.2%** |
+
+All acceptance targets pass (0 skipped). Files at 100% include the full cursor/scroll/edit/tabs/save/reset/mode/pen/resize/line-draw/unicode/alt-screen/DECALN suites and most of vttest.
+
+### Remaining gap (the un-ground tail, ~33 evaluated assertions)
+
+| Bucket | Fails | Disposition |
+|---|---:|---|
+| `69screen_reflow` | 24 | **Reflow on resize** — deferred (project-sized feature; user-deferred). |
+| `63screen_resize` pop | 4 | **Not grid-gradable** — depends on libvterm's *fake* `sb_popline` callback (fabricates content from an empty ring); no real terminal state to match. |
+| `28state_dbl_wh` | 1 | **Double-width lines** — out of scope by [§0](#0-locked-scope-decisions)/§7 (we no-op, as WT renders them). |
+| `15state_mode` | 1 | DECSLRM (left/right margins, mode 69) — deferred (P2 §2.6, single-assertion payoff). |
+| `65screen_protect` | 1 | Selective erase (DECSCA + DECSED/DECSEL) — deferred (P2 §2.5). |
+| vttest spacing | 2 | `?screen_chars` keeps a *written* trailing space; needs a per-cell "written" bit to distinguish from default blanks. |
+
+### Deferred product/engine follow-ups (do not affect the scoreboard)
+- **SvgRenderer**: render the new attributes (reverse / dim / strikethrough / overline / styled+colored underline) — currently populated in `TerminalCell` but not yet drawn (existing bold/italic/underline output unchanged).
+- **Engine leaf-ification**: extract `TerminalContent`/`TerminalCell` so `VcrSharp.Terminal` drops its `VcrSharp.Core` (and transitive ImageSharp) reference.
+- **P6**: animation poll-at-framerate + `ITerminalBackend` seam + browser auto-fallback (wires the engine into the real render pipeline).
+- **P7**: Unix `forkpty` sibling backend.
+
+---
+
 ## 1. Reality check
 
 The current `VtScreen` is a deliberate proof-of-concept (~440 lines; its own banner says "minimal" and "intentionally ignored for now"). Verified against source, it correctly handles printable text with autowrap + wide-char detection, four C0 controls (CR / LF+VT+FF / BS / HT), a single-buffer full-screen scroll, basic SGR (16/256/truecolor fg+bg, bold/italic/underline + their resets), absolute/relative cursor moves (CUP/CUU/CUD/CUF/CUB/CHA/VPA), erase (ED 0/1/2/3, EL 0/1/2), and three edit ops (ECH/ICH/DCH). It blindly gobbles OSC/DCS/SOS/PM/APC and charset designators so they don't leak into the grid. That is genuinely useful for simple Spectre.Console-style TUI playback — but it is roughly **~30% of Windows Terminal's parser** by surface area, and the gaps are not cosmetic: **no DEC private mode state at all** (cursor visibility, alt screen, autowrap, bracketed paste, mouse), **no scroll region** (so `less`, `tmux`, `vim` status lines, and any pane-isolated scrolling render wrong), **no IL/DL/SU/SD**, **no DECSC/DECRC**, **no charset *switching*** (line-drawing box characters render as letters), and a **cell model missing ~7 attributes** (reverse / dim / blink / strikethrough / double+colored underline / conceal / overline / hyperlink).

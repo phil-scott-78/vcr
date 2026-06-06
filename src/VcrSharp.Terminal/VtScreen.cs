@@ -61,8 +61,8 @@ public sealed class VtScreen
         public int Width = 1;
     }
 
-    private readonly int _cols;
-    private readonly int _rows;
+    private int _cols;            // mutable: changed by Resize
+    private int _rows;
     private Cell[][] _grid;        // active buffer (points at _main or _alt)
     private Cell[][] _main;
     private Cell[][] _alt;
@@ -179,6 +179,68 @@ public sealed class VtScreen
     {
         foreach (var rune in text.EnumerateRunes())
             FeedRune(rune);
+    }
+
+    /// <summary>
+    /// Resizes the screen, preserving content top-left-anchored (no reflow). Growing adds blank rows
+    /// at the bottom / blank columns at the right. Shrinking truncates blank bottom rows/right columns;
+    /// if the cursor or bottom content would be cut, the top is scrolled into the scrollback ring just
+    /// enough to keep them on screen (matching xterm/libvterm without reflow).
+    /// </summary>
+    public void Resize(int newCols, int newRows)
+    {
+        newCols = Math.Max(1, newCols);
+        newRows = Math.Max(1, newRows);
+        if (newCols == _cols && newRows == _rows) return;
+
+        if (newRows < _rows)
+        {
+            var scroll = Math.Max(0, Math.Max(LowestNonBlankRow(), _row) - (newRows - 1));
+            for (var i = 0; i < scroll; i++)
+            {
+                PushScrollback(_grid[0]);
+                for (var r = 0; r < _rows - 1; r++) _grid[r] = _grid[r + 1];
+                _grid[_rows - 1] = NewBlankRow();
+            }
+            _row -= scroll;
+        }
+
+        _main = ResizeBuffer(_main, newCols, newRows);
+        _alt = ResizeBuffer(_alt, newCols, newRows);
+        _grid = _onAlt ? _alt : _main;
+        _cols = newCols;
+        _rows = newRows;
+        _row = Math.Clamp(_row, 0, _rows - 1);
+        _col = Math.Clamp(_col, 0, _cols - 1);
+        _top = 0;
+        _bottom = _rows - 1;
+        _tabs = BuildDefaultTabs();
+        _wrapPending = false;
+    }
+
+    private static Cell[][] ResizeBuffer(Cell[][] old, int newCols, int newRows)
+    {
+        var oldRows = old.Length;
+        var oldCols = oldRows > 0 ? old[0].Length : 0;
+        var g = new Cell[newRows][];
+        for (var r = 0; r < newRows; r++)
+        {
+            g[r] = new Cell[newCols];
+            for (var c = 0; c < newCols; c++)
+                g[r][c] = r < oldRows && c < oldCols ? old[r][c] : new Cell();
+        }
+        return g;
+    }
+
+    private int LowestNonBlankRow()
+    {
+        for (var r = _rows - 1; r >= 0; r--)
+            for (var c = 0; c < _cols; c++)
+            {
+                var ch = _grid[r][c].Char;
+                if (ch.Length > 0 && ch != " ") return r;
+            }
+        return 0;
     }
 
     // ---- Williams VT500 parser ----

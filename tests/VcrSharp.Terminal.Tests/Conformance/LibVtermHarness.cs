@@ -80,10 +80,11 @@ public static class LibVtermHarness
                 break;
             case "RESIZE":
             {
-                // "RESIZE rows, cols"  (engine has no content-preserving resize yet — recreate)
+                // "RESIZE rows, cols" — content-preserving.
                 var nums = ParseInts(rest);
                 if (nums.Count >= 2) { ctx.Rows = nums[0]; ctx.Cols = nums[1]; }
-                ctx.Screen = new VtScreen(ctx.Cols, ctx.Rows);
+                if (ctx.Screen is null) ctx.Screen = new VtScreen(ctx.Cols, ctx.Rows);
+                else ctx.Screen.Resize(ctx.Cols, ctx.Rows);
                 break;
             }
             case "PUSH":

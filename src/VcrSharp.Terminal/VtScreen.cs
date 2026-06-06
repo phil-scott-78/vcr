@@ -435,8 +435,9 @@ public sealed class VtScreen
 
     private void Print(Rune rune)
     {
-        // Combining marks attach to the previous base cell rather than occupying a new cell.
-        if (IsCombining(rune)) { AppendCombining(rune); return; }
+        // Combining marks, emoji modifiers/joiners, and the emoji following a ZWJ all attach to the
+        // previous base cell (one grapheme cluster) rather than occupying new cells.
+        if (IsCombining(rune) || IsEmojiExtender(rune) || PrecededByZwj()) { AppendCombining(rune); return; }
 
         // DEC special-graphics (line drawing) maps ASCII into box-drawing glyphs when active.
         if (_charsets[_gl] == Charset.SpecialGraphics) rune = MapSpecialGraphics(rune);
@@ -856,13 +857,34 @@ public sealed class VtScreen
             or UnicodeCategory.EnclosingMark;
     }
 
+    /// <summary>Column of the most recently written base cell (skipping wide-char continuations), or -1.</summary>
+    private int LastBaseCol()
+    {
+        var col = _wrapPending ? _col : _col - 1;
+        while (col >= 0 && _grid[_row][col].Width == 0) col--;
+        return col;
+    }
+
     private void AppendCombining(Rune rune)
     {
-        // Attach to the most recently written base cell; ignore if there isn't one.
-        var col = _wrapPending ? _col : _col - 1;
-        while (col >= 0 && _grid[_row][col].Width == 0) col--; // skip wide-char continuation
-        if (col < 0) return;
-        _grid[_row][col].Char += rune.ToString();
+        var col = LastBaseCol();
+        if (col >= 0) _grid[_row][col].Char += rune.ToString();
+    }
+
+    /// <summary>True if the previous grapheme ends with a ZWJ, so the next emoji joins it (e.g. 👨‍👩‍👧).</summary>
+    private bool PrecededByZwj()
+    {
+        var col = LastBaseCol();
+        return col >= 0 && _grid[_row][col].Char.Length > 0 && _grid[_row][col].Char[^1] == (char)0x200D;
+    }
+
+    /// <summary>Zero-width emoji extenders: ZWJ, skin-tone modifiers, and variation selectors.</summary>
+    private static bool IsEmojiExtender(Rune rune)
+    {
+        var cp = rune.Value;
+        return cp == 0x200D
+            || (cp >= 0x1F3FB && cp <= 0x1F3FF)
+            || (cp >= 0xFE00 && cp <= 0xFE0F);
     }
 
     private static Rune MapSpecialGraphics(Rune rune)

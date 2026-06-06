@@ -368,9 +368,51 @@ public sealed class ConformanceResult
 /// <summary>Decoder for the Perl double-quoted byte/string literals used in libvterm test files.</summary>
 internal static class PerlBytes
 {
-    public static byte[] Decode(string literal)
+    /// <summary>Evaluates a Perl string expression as upstream's run-test.pl does: one or more quoted
+    /// literals joined by '.', each optionally repeated with 'xN' (e.g. <c>"\n"x24</c>, <c>"a"."b"x3</c>).</summary>
+    public static byte[] Decode(string expr)
     {
-        var s = Unquote(literal);
+        var s = expr.Trim();
+        var bytes = new List<byte>();
+        var i = 0;
+        while (i < s.Length)
+        {
+            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+            if (i >= s.Length) break;
+            if (s[i] != '"' && s[i] != '\'') break; // not a string term — stop
+
+            var quote = s[i++];
+            var content = new StringBuilder();
+            while (i < s.Length && s[i] != quote)
+            {
+                if (s[i] == '\\' && i + 1 < s.Length) { content.Append(s[i]); content.Append(s[i + 1]); i += 2; }
+                else content.Append(s[i++]);
+            }
+            if (i < s.Length) i++; // closing quote
+
+            var term = DecodeContent(content.ToString());
+
+            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+            if (i < s.Length && s[i] == 'x') // repetition: "..."xN
+            {
+                i++;
+                while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+                var n = 0; var has = false;
+                while (i < s.Length && char.IsDigit(s[i])) { n = n * 10 + (s[i] - '0'); i++; has = true; }
+                if (has) { var rep = new List<byte>(n * term.Length); for (var k = 0; k < n; k++) rep.AddRange(term); term = rep.ToArray(); }
+            }
+
+            bytes.AddRange(term);
+
+            while (i < s.Length && char.IsWhiteSpace(s[i])) i++;
+            if (i < s.Length && s[i] == '.') i++; // concatenation
+        }
+        return bytes.ToArray();
+    }
+
+    /// <summary>Decodes the escape sequences inside a single (already unquoted) Perl string literal.</summary>
+    private static byte[] DecodeContent(string s)
+    {
         var bytes = new List<byte>(s.Length);
         for (var i = 0; i < s.Length;)
         {
@@ -422,13 +464,6 @@ internal static class PerlBytes
     }
 
     public static string DecodeToString(string literal) => Encoding.UTF8.GetString(Decode(literal));
-
-    private static string Unquote(string s)
-    {
-        s = s.Trim();
-        if (s.Length >= 2 && (s[0] == '"' || s[0] == '\'') && s[^1] == s[0]) return s[1..^1];
-        return s;
-    }
 
     private static string TakeHex(string s, ref int i, int max)
     {

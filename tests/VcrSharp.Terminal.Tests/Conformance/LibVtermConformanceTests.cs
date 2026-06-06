@@ -71,16 +71,14 @@ public sealed class LibVtermConformanceTests(ITestOutputHelper output)
         }
         sb.AppendLine($"| **TOTAL** | **{totalPass}** | **{totalFail}** | **{totalSkip}** | **{totalErr}** | **{overall:F1}%** |");
 
-        // A few representative failures from the highest-value screen tests, to make gaps concrete.
-        var samples = results
-            .Where(r => r.Failed > 0 && r.File.StartsWith("6", StringComparison.Ordinal))
-            .Take(4);
+        // Sample failures from every file with fails, to make the remaining gaps concrete.
+        var samples = results.Where(r => r.Failed > 0).OrderByDescending(r => r.Failed);
         var any = false;
         foreach (var r in samples)
         {
-            if (!any) { sb.AppendLine(); sb.AppendLine("## Sample failures (screen tests)"); any = true; }
+            if (!any) { sb.AppendLine(); sb.AppendLine("## Sample failures"); any = true; }
             sb.AppendLine();
-            sb.AppendLine($"**{r.File}**");
+            sb.AppendLine($"**{r.File}** ({r.Failed} failing)");
             foreach (var f in r.Failures.Take(3)) sb.AppendLine($"- {f}");
         }
         return sb.ToString();

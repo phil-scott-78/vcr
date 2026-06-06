@@ -215,7 +215,9 @@ public sealed class VtScreen
         _top = 0;
         _bottom = _rows - 1;
         _tabs = BuildDefaultTabs();
-        _wrapPending = false;
+        // A deferred wrap (phantom cursor pinned at the right margin) becomes a real position when a
+        // wider resize makes room — libvterm "doesn't cancel the phantom".
+        if (_wrapPending && _col + 1 < _cols) { _col++; _wrapPending = false; }
     }
 
     private static Cell[][] ResizeBuffer(Cell[][] old, int newCols, int newRows)
@@ -527,6 +529,8 @@ public sealed class VtScreen
             case 'G':
             case '`': _col = Math.Clamp(Param(0, 1) - 1, 0, _cols - 1); _wrapPending = false; break;  // CHA / HPA
             case 'a': _col = Math.Min(_cols - 1, _col + Param(0, 1)); _wrapPending = false; break;     // HPR
+            case 'j': _col = Math.Max(0, _col - Param(0, 1)); _wrapPending = false; break;             // HPB
+            case 'k': _row = Math.Max(0, _row - Param(0, 1)); _wrapPending = false; break;             // VPB
             case 'd': _row = RowFromParam(Param(0, 1)); _wrapPending = false; break;   // VPA
             case 'e': _row = Math.Min(_rows - 1, _row + Param(0, 1)); _wrapPending = false; break;     // VPR
             case 'J': EraseInDisplay(Param(0, 0)); break;

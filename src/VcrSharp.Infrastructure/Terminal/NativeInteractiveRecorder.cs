@@ -36,7 +36,7 @@ public sealed class NativeInteractiveRecorder
         var pty = PtyProcess.Start(windowsCmd, parts, cols, rows, env, options.WorkingDirectory);
 
         var events = new List<InputEvent>();
-        var eventsLock = new object();
+        var eventsLock = new Lock();
         var sw = Stopwatch.StartNew();
         var childExited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 

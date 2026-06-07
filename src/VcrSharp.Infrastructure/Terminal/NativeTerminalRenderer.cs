@@ -110,7 +110,7 @@ public sealed class NativeTerminalRenderer
 
         var pty = StartPty(command, workingDirectory);
         var screen = new VtScreen(_cols, _rows);
-        var gate = new object();
+        var gate = new Lock();
 
         var decoder = Encoding.UTF8.GetDecoder();
         var ptyOutput = pty.Output;

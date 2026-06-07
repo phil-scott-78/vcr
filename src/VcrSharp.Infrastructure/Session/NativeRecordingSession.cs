@@ -57,7 +57,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
             BuildUnixArgv(shellConfig, bareRepl, execCommands),
             cols, rows, env, options.WorkingDirectory);
         var screen = new VtScreen(cols, rows);
-        var gate = new object();
+        var gate = new Lock();
 
         var page = new NativeTerminalPage(pty, screen, gate, options);
         var state = new SessionState { IsCapturing = true };
@@ -270,7 +270,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
     /// </summary>
     private sealed class CaptureState
     {
-        public readonly object Lock = new();
+        public readonly Lock Lock = new();
         public readonly List<TerminalStateWithTime> Frames = [];
         public readonly Stopwatch Sw = new();
         public bool Capturing;

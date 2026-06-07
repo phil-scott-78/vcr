@@ -8,13 +8,13 @@ using VcrSharp.Terminal;
 namespace VcrSharp.Infrastructure.Terminal;
 
 /// <summary>
-/// <see cref="ITerminalPage"/> backed by an in-process ConPTY + <see cref="VtScreen"/> instead of a
-/// browser. Tape commands (Type/Key/Modifier/Wait/Copy/Paste/Hide…) run against this exactly as they
-/// do against the Playwright page: input is written to the pseudo-console's stdin and the real shell
-/// echoes it back through the parser; reads come from the live cell grid. <paramref name="gate"/> is the
-/// lock shared with the drain thread so a snapshot never tears against an in-flight <c>Feed</c>.
+/// <see cref="ITerminalPage"/> backed by an in-process PTY (ConPTY/Unix) + <see cref="VtScreen"/>.
+/// Tape commands (Type/Key/Modifier/Wait/Hide/Show) run against this surface: input is written to the
+/// pseudo-terminal's stdin and the real shell echoes it back through the parser; reads come from the live
+/// cell grid. <paramref name="gate"/> is the lock shared with the drain thread so a snapshot never tears
+/// against an in-flight <c>Feed</c>.
 /// </summary>
-public sealed class NativeTerminalPage(IPtyProcess pty, VtScreen screen, object gate, SessionOptions options)
+public sealed class NativeTerminalPage(IPtyProcess pty, VtScreen screen, Lock gate, SessionOptions options)
     : ITerminalPage
 {
     private string _clipboard = string.Empty;

@@ -29,15 +29,6 @@ app.Configure(config =>
         .WithExample(new[] { "capture", "\"npm install\"", "-o", "install.svg" })
         .WithExample(new[] { "capture", "\"git status\"", "--cols", "80", "--rows", "24" });
 
-    config.AddCommand<NativeSnapCommand>("native-snap")
-        .WithDescription("[experimental] Browserless static SVG via in-process PTY (no ttyd/Chromium)")
-        .WithExample(new[] { "native-snap", "\"echo Hello\"", "-o", "hello.svg" })
-        .WithExample(new[] { "native-snap", "\"dotnet --info\"", "--cols", "100", "--theme", "Dracula" });
-
-    config.AddCommand<NativePlayCommand>("native-play")
-        .WithDescription("[experimental] Play a .tape to an animated SVG with no ttyd/Chromium (native ConPTY)")
-        .WithExample(new[] { "native-play", "demo.tape", "-o", "demo.svg" });
-
     config.AddCommand<RecordInteractiveCommand>("record")
         .WithDescription("Interactively record keystrokes in a real shell and generate a .tape file")
         .WithExample(new[] { "record", "demo.tape" })

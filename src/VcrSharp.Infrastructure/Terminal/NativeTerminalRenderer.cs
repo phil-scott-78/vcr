@@ -167,13 +167,22 @@ public sealed class NativeTerminalRenderer
         foreach (var row in c.Cells)
             foreach (var cell in row)
             {
+                // Every attribute the renderers actually draw must be in the fingerprint, or two frames
+                // that differ ONLY in (e.g.) strike/overline/dim/conceal would be collapsed and dropped.
                 sb.Append(cell.Character)
                   .Append(cell.ForegroundColor).Append('/')
                   .Append(cell.BackgroundColor).Append('/')
+                  .Append(cell.UnderlineColor).Append('/')
                   .Append(cell.IsBold ? 'b' : '-')
                   .Append(cell.IsItalic ? 'i' : '-')
                   .Append(cell.IsUnderline ? 'u' : '-')
+                  .Append((char)('0' + (cell.UnderlineStyle & 0xF)))
                   .Append(cell.IsReverse ? 'r' : '-')
+                  .Append(cell.IsDim ? 'd' : '-')
+                  .Append(cell.IsBlink ? 'k' : '-')
+                  .Append(cell.IsConceal ? 'c' : '-')
+                  .Append(cell.IsStrikethrough ? 's' : '-')
+                  .Append(cell.IsOverline ? 'o' : '-')
                   .Append('|');
             }
         return sb.ToString();

@@ -2,18 +2,17 @@ using System.ComponentModel;
 using Spectre.Console;
 using Spectre.Console.Cli;
 using VcrSharp.Core.Logging;
+using VcrSharp.Core.Recording;
 using VcrSharp.Core.Session;
 using VcrSharp.Core.Settings;
-using VcrSharp.Infrastructure.Playwright;
-using VcrSharp.Infrastructure.Processes;
-using VcrSharp.Infrastructure.Session;
+using VcrSharp.Infrastructure.Terminal;
 
 namespace VcrSharp.Cli.Commands;
 
 /// <summary>
 /// Records an interactive shell session, capturing the user's keystrokes and writing them out as a
-/// replayable <c>.tape</c> file. A terminal window opens for the user to type into; the session ends
-/// when the user exits the shell (<c>exit</c> / Ctrl+D) or closes the window.
+/// replayable <c>.tape</c> file. The shell runs in-process over a real PTY (no ttyd, no Chromium): you
+/// type directly in this terminal, and the session ends when you exit the shell (<c>exit</c> / Ctrl+D).
 /// </summary>
 [Description("Interactively record keystrokes in a real shell and generate a .tape file")]
 public class RecordInteractiveCommand : AsyncCommand<RecordInteractiveCommand.Settings>
@@ -29,7 +28,7 @@ public class RecordInteractiveCommand : AsyncCommand<RecordInteractiveCommand.Se
         public string? Shell { get; init; }
 
         [CommandOption("--theme <THEME>")]
-        [Description("Terminal theme to apply during recording")]
+        [Description("Terminal theme to record into the generated tape header")]
         public string? Theme { get; init; }
 
         [CommandOption("--cols <COLS>")]
@@ -55,61 +54,56 @@ public class RecordInteractiveCommand : AsyncCommand<RecordInteractiveCommand.Se
 
         try
         {
-            // ttyd is required; FFmpeg is not (this mode only writes a tape file).
-            var missing = DependencyValidator.ValidateDependencies(requireTtyd: true, requireFfmpeg: false);
-            if (missing.Count > 0)
-            {
-                AnsiConsole.MarkupLine("[bold red]Error:[/] Missing required dependencies:");
-                foreach (var dep in missing)
-                {
-                    AnsiConsole.MarkupLineInterpolated($"  [red]✗[/] {dep}");
-                }
-                return 1;
-            }
-
             var outputTape = settings.OutputTape ?? "recording.tape";
-
             var options = BuildOptions(settings);
 
-            await PlaywrightBrowser.EnsureBrowsersInstalled();
-
-            // Explain the popup-window workflow before launching it.
+            // Explain the in-terminal workflow before switching into the recorded shell.
             var panel = new Panel(
-                "A terminal window will open. [green]Type your commands there.[/]\n" +
-                "When finished, type [yellow]exit[/] (or press [yellow]Ctrl+D[/]) — or just close the window.\n" +
-                $"Your keystrokes will be saved to [blue]{Markup.Escape(outputTape)}[/].")
+                "You're about to drop into a [green]recorded shell[/] right here.\n" +
+                "Type your commands; when finished, type [yellow]exit[/] (or press [yellow]Ctrl+D[/]).\n" +
+                $"Your keystrokes will be saved to [blue]{Markup.Escape(outputTape)}[/] (no ttyd, no Chromium).")
             {
                 Header = new PanelHeader("vcr record"),
                 Border = BoxBorder.Rounded
             };
             AnsiConsole.Write(panel);
-            AnsiConsole.MarkupLine("[dim]Recording… finish in the terminal window to write the tape.[/]");
 
             var progress = new Progress<string>(status => VcrLogger.Logger.Information("{Status}", status));
 
-            await using var session = new VcrSession(options);
-            var result = await session.RecordInteractiveAsync(outputTape, progress, cancellationToken);
+            var recording = await NativeInteractiveRecorder.RecordAsync(options, progress, cancellationToken);
 
-            if (File.Exists(result.TapeFile))
+            // Convert the captured input stream to tape text (shell-agnostic, pure function).
+            var converterOptions = new InputToTapeOptions
             {
-                var fileSize = new FileInfo(result.TapeFile).Length / 1024.0;
-                AnsiConsole.MarkupLineInterpolated($"[green]✓[/] Tape written: {Path.GetFileName(result.TapeFile)} ({fileSize:F1} KB)");
-                AnsiConsole.MarkupLineInterpolated($"[dim]Replay it with:[/] vcr {result.TapeFile}");
-            }
-            else
+                Shell = options.Shell,
+                DefaultShell = new SessionOptions().Shell,
+                Header = options
+            };
+            var tape = InputToTapeConverter.Convert(recording.Events, converterOptions);
+
+            if (recording.Events.Count == 0 || string.IsNullOrWhiteSpace(tape))
             {
                 AnsiConsole.MarkupLine("[yellow]No tape file was written (no input captured).[/]");
+                return 0;
             }
 
+            var directory = Path.GetDirectoryName(Path.GetFullPath(outputTape));
+            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+                Directory.CreateDirectory(directory);
+
+            // Write without the cancellation token so a cancelled session still saves its partial tape.
+            await File.WriteAllTextAsync(outputTape, tape, CancellationToken.None);
+
+            var fileSize = new FileInfo(outputTape).Length / 1024.0;
+            AnsiConsole.MarkupLineInterpolated($"[green]✓[/] Tape written: {Path.GetFileName(outputTape)} ({fileSize:F1} KB)");
+            AnsiConsole.MarkupLineInterpolated($"[dim]Replay it with:[/] vcr {outputTape}");
             return 0;
         }
         catch (Exception ex)
         {
             AnsiConsole.MarkupLineInterpolated($"[bold red]Error:[/] {ex.Message}");
             if (ex.InnerException != null)
-            {
                 AnsiConsole.MarkupLineInterpolated($"[dim]{ex.InnerException.Message}[/]");
-            }
             return 1;
         }
         finally
@@ -123,25 +117,15 @@ public class RecordInteractiveCommand : AsyncCommand<RecordInteractiveCommand.Se
         var options = new SessionOptions();
 
         if (!string.IsNullOrWhiteSpace(settings.Shell))
-        {
             options.Shell = settings.Shell;
-        }
         if (settings.Cols.HasValue)
-        {
             options.Cols = settings.Cols;
-        }
         if (settings.Rows.HasValue)
-        {
             options.Rows = settings.Rows;
-        }
         if (settings.FontSize.HasValue)
-        {
             options.FontSize = settings.FontSize.Value;
-        }
         if (!string.IsNullOrWhiteSpace(settings.Theme))
-        {
             options.Theme = BuiltinThemes.GetByName(settings.Theme) ?? BuiltinThemes.Default;
-        }
 
         return options;
     }

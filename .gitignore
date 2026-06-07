@@ -488,6 +488,7 @@ artifacts-dotnet-releaser/
 
 # Scratch / native demo recordings (local only)
 .native-demo/
+scratch/
 
 # Claude Code local state (runtime + machine-local settings)
 .claude/settings.local.json

@@ -40,7 +40,10 @@ public sealed class ConPtyProcess : IPtyProcess
             throw new PlatformNotSupportedException("ConPtyProcess requires Windows (ConPTY).");
 
         var p = new ConPtyProcess();
-        p.StartCore(commandLine, cols, rows, environment, workingDirectory);
+        // If anything after allocating the pseudoconsole / attribute list throws (e.g. CreateProcess
+        // fails), Dispose() frees them — otherwise the HPC handle + HGLOBAL attribute list would leak.
+        try { p.StartCore(commandLine, cols, rows, environment, workingDirectory); }
+        catch { p.Dispose(); throw; }
         return p;
     }
 
@@ -134,9 +137,11 @@ public sealed class ConPtyProcess : IPtyProcess
     public bool WaitForExit(int timeoutMs)
         => _processInfo.hProcess != IntPtr.Zero && WaitForSingleObject(_processInfo.hProcess, (uint)timeoutMs) == 0;
 
+    // Liveness from the wait state, NOT the exit code: a process that legitimately exits with code 259
+    // would otherwise be reported as forever-running (STILL_ACTIVE collision). WAIT_OBJECT_0 (0) = signaled.
     public bool HasExited =>
         _processInfo.hProcess == IntPtr.Zero ||
-        (GetExitCodeProcess(_processInfo.hProcess, out var code) && code != 259 /* STILL_ACTIVE */);
+        WaitForSingleObject(_processInfo.hProcess, 0) == 0;
 
     /// <summary>
     /// Closes the pseudoconsole, which flushes the child's remaining output and makes the output read
@@ -158,6 +163,15 @@ public sealed class ConPtyProcess : IPtyProcess
         _disposed = true;
 
         CloseChild();
+
+        // ConPTY does not kill the attached child when its pseudoconsole closes — a runaway or
+        // close-ignoring child would be orphaned (and CloseHandle below only drops our handle reference,
+        // it does not stop the process). Give it a brief grace to exit on its own, then force-terminate,
+        // mirroring the Unix backend's SIGKILL+reap so behavior matches across platforms.
+        if (_processInfo.hProcess != IntPtr.Zero && !WaitForExit(200))
+        {
+            try { TerminateProcess(_processInfo.hProcess, 1); } catch { /* already gone */ }
+        }
 
         try { Input.Dispose(); } catch { /* ignore */ }
         try { Output.Dispose(); } catch { /* ignore */ }
@@ -234,7 +248,7 @@ public sealed class ConPtyProcess : IPtyProcess
     private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
 
     [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
+    private static extern bool TerminateProcess(IntPtr hProcess, uint uExitCode);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);

@@ -53,6 +53,15 @@ internal static class NativeKeyMap
 
         if (shift && key == "Tab") return $"{Esc}[Z"; // back-tab (CBT)
 
+        // Named special keys (arrows/Home/End/Delete/PageUp-Down/Insert/function keys) carry their
+        // modifiers as an xterm CSI parameter — e.g. Ctrl+Right is ESC[1;5C, not ESC ESC[C. Without this,
+        // the modifier was silently dropped (single-char ctrl-folding/alt-prefix only worked for plain keys).
+        if (ctrl || alt || shift)
+        {
+            var modified = ModifiedSpecialKey(key, ctrl, alt, shift);
+            if (modified != null) return modified;
+        }
+
         var seq = ForKey(key);
 
         if (ctrl && seq.Length == 1)
@@ -66,5 +75,40 @@ internal static class NativeKeyMap
         if (alt) seq = Esc + seq; // Alt prefixes ESC
 
         return seq;
+    }
+
+    /// <summary>
+    /// Builds the xterm-style modified sequence for a named special key, or null if <paramref name="key"/>
+    /// is not a CSI/SS3 special key (so the caller falls back to the plain ctrl-fold / alt-prefix path).
+    /// The modifier parameter is 1 + Shift(1) + Alt(2) + Ctrl(4).
+    /// </summary>
+    private static string? ModifiedSpecialKey(string key, bool ctrl, bool alt, bool shift)
+    {
+        var mod = 1 + (shift ? 1 : 0) + (alt ? 2 : 0) + (ctrl ? 4 : 0);
+
+        // CSI <final> keys → ESC[1;<mod><final>
+        var final = key switch
+        {
+            "ArrowUp" => 'A', "ArrowDown" => 'B', "ArrowRight" => 'C', "ArrowLeft" => 'D',
+            "Home" => 'H', "End" => 'F',
+            _ => '\0'
+        };
+        if (final != '\0') return $"{Esc}[1;{mod}{final}";
+
+        // CSI <num> ~ keys → ESC[<num>;<mod>~
+        var num = key switch
+        {
+            "Insert" => 2, "Delete" => 3, "PageUp" => 5, "PageDown" => 6,
+            "F5" => 15, "F6" => 17, "F7" => 18, "F8" => 19, "F9" => 20,
+            "F10" => 21, "F11" => 23, "F12" => 24,
+            _ => 0
+        };
+        if (num != 0) return $"{Esc}[{num};{mod}~";
+
+        // SS3 function keys F1–F4 take the CSI modified form → ESC[1;<mod>{P,Q,R,S}
+        var ss3 = key switch { "F1" => 'P', "F2" => 'Q', "F3" => 'R', "F4" => 'S', _ => '\0' };
+        if (ss3 != '\0') return $"{Esc}[1;{mod}{ss3}";
+
+        return null;
     }
 }

@@ -47,7 +47,16 @@ public sealed class RasterRenderer
     public Image<Rgba32> Render(TerminalContent content)
     {
         var pad = _options.Padding;
-        var image = new Image<Rgba32>(Width(content), Height(content));
+        int width = Width(content), height = Height(content);
+
+        // Guard against an absurd pixel budget (huge Cols/Rows or FontSize) before ImageSharp tries to
+        // allocate it — fail with a clear message instead of an OutOfMemoryException.
+        const long MaxPixels = 100_000_000; // ~10k×10k
+        if (width < 1 || height < 1 || (long)width * height > MaxPixels)
+            throw new InvalidOperationException(
+                $"Raster output {width}×{height}px is outside the supported range; reduce Cols/Rows or FontSize.");
+
+        var image = new Image<Rgba32>(width, height);
 
         image.Mutate(ctx =>
         {
@@ -161,6 +170,10 @@ public sealed class RasterRenderer
         foreach (var name in new[] { requested, "Cascadia Mono", "Cascadia Code", "Consolas", "Courier New", "DejaVu Sans Mono" })
             if (!string.IsNullOrWhiteSpace(name) && SystemFonts.TryGet(name, out var family))
                 return family;
-        return SystemFonts.Families.First();
+        // First() throws an opaque InvalidOperationException on a system with no fonts — give an actionable one.
+        var families = SystemFonts.Families;
+        if (families.Any()) return families.First();
+        throw new InvalidOperationException(
+            "No fonts are installed; raster output (GIF/MP4/WebM/PNG) needs a monospace font (e.g. Cascadia Mono). Use SVG output, or install a font.");
     }
 }

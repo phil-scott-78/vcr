@@ -7,7 +7,6 @@ using VcrSharp.Core.Parsing;
 using VcrSharp.Core.Parsing.Ast;
 using VcrSharp.Core.Session;
 using VcrSharp.Core.Settings;
-using VcrSharp.Infrastructure.Playwright;
 using VcrSharp.Infrastructure.Processes;
 using VcrSharp.Infrastructure.Session;
 
@@ -65,18 +64,6 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         {
             Logo.WriteLogo();
 
-            // Validate dependencies
-            var missing = DependencyValidator.ValidateDependencies();
-            if (missing.Count > 0)
-            {
-                AnsiConsole.MarkupLine("[bold red]Error:[/] Missing required dependencies:");
-                foreach (var dep in missing)
-                {
-                    AnsiConsole.MarkupLineInterpolated($"  [red]✗[/] {dep}");
-                }
-                return 1;
-            }
-
             // Validate tape file exists
             if (!File.Exists(settings.TapeFile))
             {
@@ -104,24 +91,41 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                 // Extract session options from Set commands
                 var options = SessionOptions.FromCommands(commands);
 
-                // Ensure Playwright drivers and browsers are installed (auto-installs/updates if needed)
-                await PlaywrightBrowser.EnsureBrowsersInstalled();
+                // Collect outputs declared by the tape (and any appended via --output).
+                var outputs = commands.OfType<OutputCommand>().Select(o => o.FilePath).Distinct().ToList();
 
-                // Record the tape with progress reporting
-                RecordingResult? result = null;
+                // FFmpeg is only needed for video outputs (GIF/MP4/WebM); SVG/PNG/frames don't use it.
+                string[] videoExts = [".gif", ".mp4", ".webm"];
+                if (outputs.Any(o => videoExts.Contains(Path.GetExtension(o).ToLowerInvariant())))
+                {
+                    var missing = DependencyValidator.ValidateDependencies(requireFfmpeg: true);
+                    if (missing.Count > 0)
+                    {
+                        AnsiConsole.MarkupLine("[bold red]Error:[/] Missing required dependencies:");
+                        foreach (var dep in missing)
+                            AnsiConsole.MarkupLineInterpolated($"  [red]✗[/] {dep}");
+                        return 1;
+                    }
+                }
+
+                // Record the tape with the native browserless backend (in-process PTY + VT engine).
+                NativeRecordingSession.Result? result = null;
                 await AnsiConsole.Status()
                     .StartAsync("Initializing...", async ctx =>
                     {
                         var progress = new Progress<string>(status => ctx.Status(status));
 
-                        await using var session = new VcrSession(options);
-                        result = await session.RecordAsync(commands, progress, cancellationToken);
+                        var session = new NativeRecordingSession(options);
+                        result = await session.RecordAsync(commands, outputs, options.Framerate, progress, cancellationToken);
                     });
 
                 // Display results
                 AnsiConsole.MarkupLine("[green]✓[/] Recording complete");
                 AnsiConsole.MarkupLineInterpolated($"[dim]Frames captured:[/] {result!.FrameCount}");
-                AnsiConsole.MarkupLineInterpolated($"[dim]Duration:[/] {result.Duration.TotalSeconds:F2}s");
+                AnsiConsole.MarkupLineInterpolated($"[dim]Duration:[/] {result.DurationSeconds:F2}s");
+
+                foreach (var skipped in result.UnsupportedOutputs)
+                    AnsiConsole.MarkupLineInterpolated($"[yellow]⚠[/] Skipped [bold]{Path.GetFileName(skipped)}[/] — native supports .svg/.gif/.mp4/.webm/.png and frame directories.");
 
                 if (result.OutputFiles.Count > 0)
                 {

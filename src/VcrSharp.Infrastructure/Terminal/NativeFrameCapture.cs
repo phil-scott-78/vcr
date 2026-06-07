@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using SixLabors.ImageSharp;
 using VcrSharp.Core.Rendering;
 using VcrSharp.Core.Session;
 using VcrSharp.Infrastructure.Rendering;
@@ -7,16 +8,19 @@ namespace VcrSharp.Infrastructure.Terminal;
 
 /// <summary>
 /// <see cref="IFrameCapture"/> for the native (browserless) path. <c>Screenshot</c> snapshots the live
-/// grid and renders it with the existing <see cref="SvgRenderer"/> (SVG only — there is no rasteriser
-/// in this path yet); the buffer-settle poll reads the grid directly.
+/// grid and renders it with the existing <see cref="SvgRenderer"/> (SVG) or <see cref="RasterRenderer"/>
+/// (PNG) — both in-process, no browser. Captured screenshot paths are recorded on the shared
+/// <see cref="SessionState"/> so the recording result can report them. The buffer-settle poll reads the
+/// grid directly.
 /// </summary>
-public sealed class NativeFrameCapture(NativeTerminalPage page, SessionOptions options) : IFrameCapture
+public sealed class NativeFrameCapture(NativeTerminalPage page, SessionOptions options, SessionState state) : IFrameCapture
 {
     public async Task CaptureScreenshotAsync(string filePath)
     {
-        if (!filePath.EndsWith(".svg", StringComparison.OrdinalIgnoreCase))
+        var ext = Path.GetExtension(filePath).ToLowerInvariant();
+        if (ext is not (".svg" or ".png"))
             throw new NotSupportedException(
-                $"Native recording can only screenshot to .svg (got '{Path.GetFileName(filePath)}').");
+                $"Native recording can screenshot to .svg or .png (got '{Path.GetFileName(filePath)}').");
 
         var content = page.Snapshot();
 
@@ -24,13 +28,23 @@ public sealed class NativeFrameCapture(NativeTerminalPage page, SessionOptions o
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
 
-        var renderer = new SvgRenderer(options);
-        if (options.FitToContent)
+        if (ext == ".png")
         {
-            var extent = ContentExtent.Measure(content);
-            renderer.SetContentExtent(extent.Cols, extent.Rows);
+            using var img = new RasterRenderer(options).Render(content);
+            await img.SaveAsPngAsync(filePath);
         }
-        await renderer.RenderStaticAsync(filePath, content);
+        else
+        {
+            var renderer = new SvgRenderer(options);
+            if (options.FitToContent)
+            {
+                var extent = ContentExtent.Measure(content);
+                renderer.SetContentExtent(extent.Cols, extent.Rows);
+            }
+            await renderer.RenderStaticAsync(filePath, content);
+        }
+
+        state.ScreenshotFiles.Add(filePath);
     }
 
     public Task WaitForBufferStableAsync(TimeSpan inactivityTimeout, TimeSpan maxWait,

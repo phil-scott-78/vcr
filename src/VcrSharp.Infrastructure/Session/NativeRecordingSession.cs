@@ -19,13 +19,23 @@ namespace VcrSharp.Infrastructure.Session;
 public sealed class NativeRecordingSession(SessionOptions options)
 {
     public sealed record Result(int FrameCount, double DurationSeconds,
-        IReadOnlyList<string> OutputFiles, IReadOnlyList<string> UnsupportedOutputs);
+        IReadOnlyList<string> OutputFiles, IReadOnlyList<string> ScreenshotFiles,
+        IReadOnlyList<string> UnsupportedOutputs);
 
     public async Task<Result> RecordAsync(List<ICommand> commands, IReadOnlyList<string> outputPaths,
         double framerate, IProgress<string>? progress = null, CancellationToken cancellationToken = default)
     {
         var cols = options.Cols ?? 80;
         var rows = options.Rows ?? 24;
+
+        // Guard the terminal size before it reaches the PTY: a 0/negative size yields a cryptic
+        // "CreatePseudoConsole failed" Win32 error, and an absurd size risks OOM in the rasteriser.
+        const int MaxDim = 10000;
+        if (cols < 1 || rows < 1)
+            throw new ArgumentException($"Terminal size must be at least 1x1 (got {cols}x{rows}). Check `Set Cols`/`Set Rows`.");
+        if (cols > MaxDim || rows > MaxDim)
+            throw new ArgumentException($"Terminal size {cols}x{rows} exceeds the supported {MaxDim}x{MaxDim} limit.");
+
         var execCommands = commands.OfType<ExecCommand>().ToList();
         // Launch shape keys off Exec presence, NOT Type/Key presence (see ShouldUseBareRepl): an Exec tape
         // launches the command as the shell's hidden foreground process; a no-Exec tape types its own
@@ -50,8 +60,8 @@ public sealed class NativeRecordingSession(SessionOptions options)
         var gate = new object();
 
         var page = new NativeTerminalPage(pty, screen, gate, options);
-        var frameCapture = new NativeFrameCapture(page, options);
         var state = new SessionState { IsCapturing = true };
+        var frameCapture = new NativeFrameCapture(page, options, state);
 
         // Event-driven capture: the drain thread snapshots after EVERY output chunk (not on a fixed
         // framerate timer), so no on-screen state is dropped — native sees every byte, so it must never
@@ -129,8 +139,14 @@ public sealed class NativeRecordingSession(SessionOptions options)
             lock (framesLock)
             {
                 var sig = NativeTerminalRenderer.Signature(finalContent);
-                if (sig != lastSignature && capturedFrames.Count < MaxFrames)
-                    capturedFrames.Add(new TerminalStateWithTime { Content = finalContent, TimestampSeconds = captureSw.Elapsed.TotalSeconds });
+                if (sig != lastSignature)
+                {
+                    var finalFrame = new TerminalStateWithTime { Content = finalContent, TimestampSeconds = captureSw.Elapsed.TotalSeconds };
+                    // Always preserve the settled END state: append if there's room, else overwrite the last
+                    // captured frame so a recording that hit MaxFrames still ends on its final output, not mid-stream.
+                    if (capturedFrames.Count < MaxFrames) capturedFrames.Add(finalFrame);
+                    else if (capturedFrames.Count > 0) capturedFrames[^1] = finalFrame;
+                }
                 capturing = false;
                 totalSeconds = captureSw.Elapsed.TotalSeconds;
                 states = new List<TerminalStateWithTime>(capturedFrames);
@@ -159,13 +175,19 @@ public sealed class NativeRecordingSession(SessionOptions options)
                         frames = await NativeVideoWriter.WriteAsync(states, totalSeconds, options, outPath, cancellationToken);
                         written.Add(outPath);
                         break;
+                    case "":
+                        // Extension-less path = a frames/ directory: rasterize each frame to a PNG sequence
+                        // plus an FFmpeg concat manifest (browserless equivalent of the old FramesEncoder).
+                        frames = await NativeVideoWriter.WriteFramesDirectoryAsync(states, totalSeconds, options, outPath, cancellationToken);
+                        written.Add(outPath);
+                        break;
                     default:
-                        unsupported.Add(outPath); // e.g. a frames/ directory — not handled natively
+                        unsupported.Add(outPath);
                         break;
                 }
             }
 
-            return new Result(frames, totalSeconds, written, unsupported);
+            return new Result(frames, totalSeconds, written, state.ScreenshotFiles, unsupported);
         }
         finally
         {

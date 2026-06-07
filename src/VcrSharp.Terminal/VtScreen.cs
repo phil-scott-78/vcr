@@ -310,7 +310,9 @@ public sealed class VtScreen
 
             case State.CsiEntry:
             case State.CsiParam:
-                if (cp is >= 0x30 and <= 0x39) { _cur = Math.Min(_cur * 10 + (cp - 0x30), 0x0FFFFFFF); _curHasDigits = true; _state = State.CsiParam; return; }
+                // Saturate BEFORE multiplying: once at the cap, stop accumulating so `_cur * 10` can never
+                // overflow int and wrap negative (a 10+ digit param otherwise defeated the Math.Min cap).
+                if (cp is >= 0x30 and <= 0x39) { _cur = _cur >= 0x0FFFFFFF ? 0x0FFFFFFF : Math.Min(_cur * 10 + (cp - 0x30), 0x0FFFFFFF); _curHasDigits = true; _state = State.CsiParam; return; }
                 if (cp == ';') { CommitParam(); _pendingSub = false; _state = State.CsiParam; return; }
                 if (cp == ':') { CommitParam(); _pendingSub = true; _state = State.CsiParam; return; }
                 if (cp is >= 0x3C and <= 0x3F) // private/leader bytes < = > ?

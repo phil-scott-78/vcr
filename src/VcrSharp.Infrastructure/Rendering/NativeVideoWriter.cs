@@ -63,7 +63,8 @@ public static class NativeVideoWriter
             var manifestPath = Path.Combine(temp.FullName, "frames.txt");
             await File.WriteAllTextAsync(manifestPath, manifest.ToString(), cancellationToken);
 
-            var speed = options.PlaybackSpeed.ToString(CultureInfo.InvariantCulture);
+            // PlaybackSpeed feeds setpts=PTS/{speed}; 0 or negative would be a divide-by-zero in the filtergraph.
+            var speed = (options.PlaybackSpeed > 0 ? options.PlaybackSpeed : 1.0).ToString(CultureInfo.InvariantCulture);
             var fps = options.Framerate;
             var bg = options.Theme.Background;
 
@@ -84,6 +85,47 @@ public static class NativeVideoWriter
         }
     }
 
+    /// <summary>
+    /// Writes the captured states to <paramref name="outputDir"/> as a numbered PNG sequence plus a
+    /// <c>frames.txt</c> FFmpeg concat manifest (per-frame durations) — the browserless equivalent of the
+    /// old FramesEncoder, but single-layer (composited) since the native raster path has no separate
+    /// text/cursor layers. Returns the number of frames written.
+    /// </summary>
+    public static async Task<int> WriteFramesDirectoryAsync(IReadOnlyList<TerminalStateWithTime> raw, double totalSeconds,
+        SessionOptions options, string outputDir, CancellationToken cancellationToken = default)
+    {
+        if (raw.Count == 0) return 0;
+
+        var (keepStart, keepEnd) = ContentAnalysis.TrimBlankLoopRange(raw.Select(s => s.Content).ToList());
+        var kept = raw.Skip(keepStart).Take(keepEnd - keepStart + 1).ToList();
+        if (kept.Count == 0) return 0;
+        var baseline = kept[0].TimestampSeconds;
+        var total = Math.Max(kept[^1].TimestampSeconds - baseline, totalSeconds - baseline);
+
+        Directory.CreateDirectory(outputDir);
+        var renderer = new RasterRenderer(options);
+        var manifest = new StringBuilder();
+        string? lastName = null;
+
+        for (var i = 0; i < kept.Count; i++)
+        {
+            var name = $"frame-{i:D5}.png";
+            using (var img = renderer.Render(kept[i].Content))
+                await img.SaveAsPngAsync(Path.Combine(outputDir, name), cancellationToken);
+            lastName = name;
+
+            var ts = kept[i].TimestampSeconds - baseline;
+            var next = i < kept.Count - 1 ? kept[i + 1].TimestampSeconds - baseline : total;
+            var duration = Math.Max(0.04, next - ts);
+            manifest.Append("file '").Append(name).Append("'\n");
+            manifest.Append("duration ").Append(duration.ToString("0.###", CultureInfo.InvariantCulture)).Append('\n');
+        }
+        manifest.Append("file '").Append(lastName!).Append("'\n"); // concat needs the last file repeated
+
+        await File.WriteAllTextAsync(Path.Combine(outputDir, "frames.txt"), manifest.ToString(), cancellationToken);
+        return kept.Count;
+    }
+
     private static void ConfigureOutput(FFMpegArgumentOptions o, string ext, int fps, string speed, int maxColors, int loop, string bg)
     {
         switch (ext)
@@ -91,7 +133,8 @@ public static class NativeVideoWriter
             case ".gif":
                 o.WithCustomArgument(
                         $"-filter_complex \"[0:v]fps={fps},setpts=PTS/{speed}[s];" +
-                        $"[s]split[a][b];[a]palettegen=max_colors={maxColors}[p];[b][p]paletteuse\"")
+                        // palettegen rejects max_colors below 4 — clamp so `Set MaxColors 2` still encodes.
+                        $"[s]split[a][b];[a]palettegen=max_colors={Math.Max(4, maxColors)}[p];[b][p]paletteuse\"")
                     .WithCustomArgument($"-loop {loop}")
                     .ForceFormat("gif");
                 break;

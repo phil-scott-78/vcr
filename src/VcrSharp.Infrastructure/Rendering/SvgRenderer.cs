@@ -660,7 +660,8 @@ public class SvgRenderer
                 cell.IsUnderline != currentRun.IsUnderline ||
                 cell.IsReverse != currentRun.IsReverse ||
                 cell.IsDim != currentRun.IsDim ||
-                cell.IsStrikethrough != currentRun.IsStrikethrough
+                cell.IsStrikethrough != currentRun.IsStrikethrough ||
+                cell.IsOverline != currentRun.IsOverline
             );
 
             if (needNewSegment)
@@ -679,6 +680,7 @@ public class SvgRenderer
                 currentRun.IsReverse = cell.IsReverse;
                 currentRun.IsDim = cell.IsDim;
                 currentRun.IsStrikethrough = cell.IsStrikethrough;
+                currentRun.IsOverline = cell.IsOverline;
                 currentRun.IsCustomGlyph = isGlyph;
                 currentIsGlyph = isGlyph;
             }
@@ -1068,6 +1070,7 @@ public class SvgRenderer
             sb.Append(cell.IsReverse ? "v" : "");
             sb.Append(cell.IsDim ? "d" : "");
             sb.Append(cell.IsStrikethrough ? "s" : "");
+            sb.Append(cell.IsOverline ? "o" : "");
         }
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var hash = MD5.HashData(bytes);
@@ -1117,6 +1120,7 @@ public class SvgRenderer
     {
         var lines = new List<string>();
         if (run.IsUnderline) lines.Add("underline");
+        if (run.IsOverline) lines.Add("overline");
         if (run.IsStrikethrough) lines.Add("line-through");
         return lines.Count > 0 ? string.Join(" ", lines) : null;
     }
@@ -1259,6 +1263,7 @@ public class SvgRenderer
         public bool IsReverse { get; set; }
         public bool IsDim { get; set; }
         public bool IsStrikethrough { get; set; }
+        public bool IsOverline { get; set; }
         /// <summary>
         /// Total cell width of this run (accounts for wide characters taking 2 cells).
         /// </summary>

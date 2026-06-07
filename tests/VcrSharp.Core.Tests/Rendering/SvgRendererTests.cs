@@ -418,4 +418,20 @@ public class SvgRendererTests
         // Both lines survive — the whole point of one combined declaration.
         svg.ShouldContain("text-decoration=\"underline line-through\"");
     }
+
+    [Fact]
+    public async Task Overline_EmitsOverlineDecoration_AndCombinesWithUnderline()
+    {
+        var options = DeterministicOptions();
+        var content = Content(3, 1,
+        [
+            new TerminalCell { Character = "o", IsOverline = true, Width = 1 },
+            new TerminalCell { Character = "b", IsOverline = true, IsUnderline = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("text-decoration=\"overline\"");
+        svg.ShouldContain("text-decoration=\"underline overline\"");
+    }
 }

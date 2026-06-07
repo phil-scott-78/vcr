@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using VcrSharp.Core.Rendering;
@@ -246,7 +245,7 @@ public class SvgRenderer
         for (var row = 0; row < rows; row++)
         {
             var rowStates = new List<RowStateInterval>();
-            string? currentHash = null;
+            ulong? currentHash = null;
             TerminalCell[]? currentCells = null;
             double intervalStart = 0;
 
@@ -265,7 +264,7 @@ public class SvgRenderer
                         rowStates.Add(new RowStateInterval
                         {
                             Cells = currentCells,
-                            Hash = currentHash,
+                            Hash = currentHash.Value,
                             StartTime = intervalStart,
                             EndTime = timestamp
                         });
@@ -284,7 +283,7 @@ public class SvgRenderer
                 rowStates.Add(new RowStateInterval
                 {
                     Cells = currentCells,
-                    Hash = currentHash,
+                    Hash = currentHash.Value,
                     StartTime = intervalStart,
                     EndTime = totalDuration
                 });
@@ -341,7 +340,7 @@ public class SvgRenderer
             var y = row * _charHeight;
 
             // Group unique row states by hash to avoid rendering duplicates
-            var uniqueStates = new Dictionary<string, (TerminalCell[] Cells, List<(double Start, double End)> Intervals)>();
+            var uniqueStates = new Dictionary<ulong, (TerminalCell[] Cells, List<(double Start, double End)> Intervals)>();
 
             foreach (var interval in intervals)
             {
@@ -832,6 +831,16 @@ public class SvgRenderer
         // attribute per run (see BuildTextDecoration), so no decoration CSS class is needed here.
         css.Append(".bold{font-weight:bold}.italic{font-style:italic}.dim{fill-opacity:0.55}");
 
+        // Box-drawing line styles. The stroke width, square linecap and fill:none are identical across
+        // every light/heavy box glyph, so CustomGlyphRenderer emits class="bl"/"bh" and they live here
+        // once instead of inline on each path — the single biggest SVG-size lever on glyph-heavy output
+        // (e.g. a truecolor gradient progress bar is tens of thousands of these paths). Widths must match
+        // the per-row formula in RenderRowContentAsync.
+        var lightStroke = Math.Max(1, _charHeight * 0.08);
+        var heavyStroke = Math.Max(2, _charHeight * 0.16);
+        css.Append($".bl{{fill:none;stroke-linecap:square;stroke-width:{FormatStroke(lightStroke)}}}");
+        css.Append($".bh{{fill:none;stroke-linecap:square;stroke-width:{FormatStroke(heavyStroke)}}}");
+
         // Cursor (follows the foreground/--vcr-fg, matching legacy behavior)
         if (!_options.DisableCursor)
         {
@@ -1066,26 +1075,47 @@ public class SvgRenderer
         }
     }
 
-    private static string ComputeRowHash(TerminalCell[] cells)
+    /// <summary>
+    /// A fast 64-bit content fingerprint for a row, used only as a dedup/equality key when collapsing
+    /// identical row states across frames. Covers exactly the fields the SVG renderer draws per row.
+    /// FNV-1a (not a crypto hash) — this runs per row per frame, so MD5's allocation + digest cost was
+    /// pure overhead; 64-bit collision odds are negligible for the handful of distinct states per row.
+    /// </summary>
+    private static ulong ComputeRowHash(TerminalCell[] cells)
     {
-        var sb = new StringBuilder();
+        const ulong fnvOffset = 14695981039346656037UL;
+        const ulong fnvPrime = 1099511628211UL;
+
+        var hash = fnvOffset;
+
+        static ulong MixString(ulong h, string? s)
+        {
+            if (s != null)
+                foreach (var ch in s)
+                    h = (h ^ ch) * fnvPrime;
+            // Field separator so adjacent fields can't merge into a colliding key (e.g. fg "a"+bg "b"
+            // vs fg "ab"+bg "").
+            return (h ^ 0xFFFF) * fnvPrime;
+        }
+
         foreach (var cell in cells)
         {
-            sb.Append(cell.Character);
-            sb.Append(cell.ForegroundColor ?? "");
-            sb.Append(cell.BackgroundColor ?? "");
-            sb.Append(cell.IsBold ? "b" : "");
-            sb.Append(cell.IsItalic ? "i" : "");
-            sb.Append(cell.IsUnderline ? "u" : "");
-            sb.Append(cell.IsReverse ? "v" : "");
-            sb.Append(cell.IsDim ? "d" : "");
-            sb.Append(cell.IsStrikethrough ? "s" : "");
-            sb.Append(cell.IsOverline ? "o" : "");
-            sb.Append(cell.IsConceal ? "c" : "");
+            hash = MixString(hash, cell.Character);
+            hash = MixString(hash, cell.ForegroundColor);
+            hash = MixString(hash, cell.BackgroundColor);
+
+            var flags = (cell.IsBold ? 1 : 0)
+                      | (cell.IsItalic ? 1 << 1 : 0)
+                      | (cell.IsUnderline ? 1 << 2 : 0)
+                      | (cell.IsReverse ? 1 << 3 : 0)
+                      | (cell.IsDim ? 1 << 4 : 0)
+                      | (cell.IsStrikethrough ? 1 << 5 : 0)
+                      | (cell.IsOverline ? 1 << 6 : 0)
+                      | (cell.IsConceal ? 1 << 7 : 0);
+            hash = (hash ^ (uint)flags) * fnvPrime;
         }
-        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        var hash = MD5.HashData(bytes);
-        return Convert.ToHexString(hash);
+
+        return hash;
     }
 
     private static string BuildCssClasses(StyleRun run)
@@ -1174,6 +1204,16 @@ public class SvgRenderer
         return seconds.ToString("F3", CultureInfo.InvariantCulture);
     }
 
+    /// <summary>
+    /// Formats a stroke width for the box-drawing CSS classes. Mirrors <c>CustomGlyphRenderer.F</c>
+    /// (whole numbers bare, otherwise two decimals) so the class width equals what the glyph paths
+    /// were previously emitting inline.
+    /// </summary>
+    private static string FormatStroke(double value) =>
+        Math.Abs(value % 1) < 0.001
+            ? ((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture)
+            : value.ToString("F2", CultureInfo.InvariantCulture);
+
     private static string OptimizeHexColor(string color)
     {
         if (color.Length == 7 && color[0] == '#' &&
@@ -1250,7 +1290,7 @@ public class SvgRenderer
     private sealed class RowStateInterval
     {
         public required TerminalCell[] Cells { get; init; }
-        public required string Hash { get; init; }
+        public required ulong Hash { get; init; }
         public required double StartTime { get; init; }
         public required double EndTime { get; init; }
     }

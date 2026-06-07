@@ -101,40 +101,28 @@ public static class CustomGlyphRenderer
         var segments = GetBoxDrawingSegments(c);
         if (segments == BoxSegments.None) return;
 
-        // Build path data
+        // Build path data for the light lines, coalescing an opposite pair (left+right / up+down) into a
+        // single full-span line so a plain '─'/'│' emits one command instead of two half-cell subpaths.
         var pathData = new StringBuilder();
-
-        // Light horizontal line (left to center or center to right)
-        if ((segments & BoxSegments.LightLeft) != 0)
-            pathData.Append($"M{F(x)} {F(centerY)}H{F(centerX)}");
-        if ((segments & BoxSegments.LightRight) != 0)
-            pathData.Append($"M{F(centerX)} {F(centerY)}H{F(x + w)}");
-        if ((segments & BoxSegments.LightUp) != 0)
-            pathData.Append($"M{F(centerX)} {F(y)}V{F(centerY)}");
-        if ((segments & BoxSegments.LightDown) != 0)
-            pathData.Append($"M{F(centerX)} {F(centerY)}V{F(y + h)}");
+        AppendLineSegments(pathData, segments, x, y, w, h, centerX, centerY,
+            BoxSegments.LightLeft, BoxSegments.LightRight, BoxSegments.LightUp, BoxSegments.LightDown);
 
         if (pathData.Length > 0)
         {
-            sb.Append(
-                $"<path d=\"{pathData}\" stroke=\"{color}\" stroke-width=\"{F(lightStroke)}\" stroke-linecap=\"square\" fill=\"none\"/>");
+            // stroke-width, square linecap and fill:none live in the shared `.bl`/`.bh` CSS classes
+            // (SvgRenderer.WriteStylesAsync). Inlining them on every glyph path was the dominant
+            // contributor to SVG size on glyph-heavy recordings (e.g. gradient progress bars).
+            sb.Append($"<path d=\"{pathData}\" stroke=\"{color}\" class=\"bl\"/>");
         }
 
-        // Heavy lines (thicker stroke)
+        // Heavy lines (thicker stroke -> shared `.bh` class)
         var heavyPath = new StringBuilder();
-        if ((segments & BoxSegments.HeavyLeft) != 0)
-            heavyPath.Append($"M{F(x)} {F(centerY)}H{F(centerX)}");
-        if ((segments & BoxSegments.HeavyRight) != 0)
-            heavyPath.Append($"M{F(centerX)} {F(centerY)}H{F(x + w)}");
-        if ((segments & BoxSegments.HeavyUp) != 0)
-            heavyPath.Append($"M{F(centerX)} {F(y)}V{F(centerY)}");
-        if ((segments & BoxSegments.HeavyDown) != 0)
-            heavyPath.Append($"M{F(centerX)} {F(centerY)}V{F(y + h)}");
+        AppendLineSegments(heavyPath, segments, x, y, w, h, centerX, centerY,
+            BoxSegments.HeavyLeft, BoxSegments.HeavyRight, BoxSegments.HeavyUp, BoxSegments.HeavyDown);
 
         if (heavyPath.Length > 0)
         {
-            sb.Append(
-                $"<path d=\"{heavyPath}\" stroke=\"{color}\" stroke-width=\"{F(heavyStroke)}\" stroke-linecap=\"square\" fill=\"none\"/>");
+            sb.Append($"<path d=\"{heavyPath}\" stroke=\"{color}\" class=\"bh\"/>");
         }
 
         // Double lines (two parallel lines) - for straight segments only
@@ -710,6 +698,34 @@ public static class CustomGlyphRenderer
         if (Math.Abs(value % 1) < 0.001)
             return ((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture);
         return value.ToString("F2", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Appends the M/H/V subpaths for one stroke weight, coalescing a left+right pair into a single
+    /// full-width horizontal and an up+down pair into a single full-height vertical. A glyph that uses
+    /// both halves of an axis (the common '─'/'│' bar case) thus emits one line command, not two.
+    /// </summary>
+    private static void AppendLineSegments(StringBuilder path, BoxSegments segments,
+        double x, double y, double w, double h, double centerX, double centerY,
+        BoxSegments left, BoxSegments right, BoxSegments up, BoxSegments down)
+    {
+        var hasLeft = (segments & left) != 0;
+        var hasRight = (segments & right) != 0;
+        if (hasLeft && hasRight)
+            path.Append($"M{F(x)} {F(centerY)}H{F(x + w)}");
+        else if (hasLeft)
+            path.Append($"M{F(x)} {F(centerY)}H{F(centerX)}");
+        else if (hasRight)
+            path.Append($"M{F(centerX)} {F(centerY)}H{F(x + w)}");
+
+        var hasUp = (segments & up) != 0;
+        var hasDown = (segments & down) != 0;
+        if (hasUp && hasDown)
+            path.Append($"M{F(centerX)} {F(y)}V{F(y + h)}");
+        else if (hasUp)
+            path.Append($"M{F(centerX)} {F(y)}V{F(centerY)}");
+        else if (hasDown)
+            path.Append($"M{F(centerX)} {F(centerY)}V{F(y + h)}");
     }
 
     #endregion

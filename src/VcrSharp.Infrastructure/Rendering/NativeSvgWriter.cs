@@ -25,6 +25,14 @@ public static class NativeSvgWriter
         var states = kept
             .Select(s => new TerminalStateWithTime { Content = s.Content, TimestampSeconds = s.TimestampSeconds - baseline })
             .ToList();
+
+        // Thin the captured states down to the configured framerate. Capture is uncapped event-driven
+        // (a frame per distinct grid state), which for fast emitters like progress bars yields far more
+        // distinct states than an SVG needs — and SVG file size scales with the number of distinct
+        // row-states. Sampling at Framerate fps coalesces sub-frame-interval states with no visible loss
+        // (the final settled frame is always kept so end values survive).
+        states = QuantizeToFramerate(states, options.Framerate);
+
         var totalDuration = Math.Max(states[^1].TimestampSeconds, totalSeconds - baseline);
 
         var directory = Path.GetDirectoryName(outputPath);
@@ -39,5 +47,32 @@ public static class NativeSvgWriter
         }
         await renderer.RenderAnimatedAsync(outputPath, states, totalDuration, cancellationToken);
         return states.Count;
+    }
+
+    /// <summary>
+    /// Down-samples a timestamp-ordered state stream to at most <paramref name="fps"/> frames per second
+    /// by keeping the first state in each 1/fps window and skipping everything until the window elapses.
+    /// The final state is always kept so the settled end-of-recording output is never dropped. Returns
+    /// the input unchanged when there is nothing to thin (fps &lt;= 0 or two-or-fewer states).
+    /// </summary>
+    internal static List<TerminalStateWithTime> QuantizeToFramerate(List<TerminalStateWithTime> states, int fps)
+    {
+        if (fps <= 0 || states.Count <= 2) return states;
+
+        var minInterval = 1.0 / fps;
+        var result = new List<TerminalStateWithTime>(states.Count);
+        var lastKept = double.NegativeInfinity;
+
+        for (var i = 0; i < states.Count; i++)
+        {
+            var isLast = i == states.Count - 1;
+            if (isLast || states[i].TimestampSeconds - lastKept >= minInterval)
+            {
+                result.Add(states[i]);
+                lastKept = states[i].TimestampSeconds;
+            }
+        }
+
+        return result;
     }
 }

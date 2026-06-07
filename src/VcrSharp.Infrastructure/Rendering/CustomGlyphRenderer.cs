@@ -52,7 +52,7 @@ public static class CustomGlyphRenderer
         {
             // Determine glyph type and render
             case >= '\u2500' and <= '\u257F':
-                RenderBoxDrawing(sb, c, x, y, cellWidth, cellHeight, foregroundColor, lightStrokeWidth);
+                RenderBoxDrawing(sb, c, x, y, cellWidth, cellHeight, foregroundColor, lightStrokeWidth, heavyStrokeWidth);
                 break;
             case >= '\u2580' and <= '\u259F':
                 RenderBlockElement(sb, c, x, y, cellWidth, cellHeight, foregroundColor);
@@ -130,11 +130,20 @@ public static class CustomGlyphRenderer
     // We use a lookup table for the ~128 characters
 
     private static void RenderBoxDrawing(StringBuilder sb, char c, double x, double y,
-        double w, double h, string color, double lightStroke)
+        double w, double h, string color, double lightStroke, double heavyStroke)
     {
         var centerX = x + w / 2;
         var centerY = y + h / 2;
         var gap = lightStroke * 1.5; // gap between double lines
+
+        // Diagonals (╱ ╲ ╳) are real diagonal strokes, not horizontal bars.
+        if (TryRenderDiagonal(sb, c, x, y, w, h, color))
+            return;
+
+        // Dashed/dotted lines (light + heavy weight; 2-, 3-, and 4-dash) carry an explicit
+        // stroke-width + dasharray, so they live in their own handler rather than the segment table.
+        if (TryRenderDashed(sb, c, x, y, w, h, color, lightStroke, heavyStroke))
+            return;
 
         switch (c)
         {
@@ -193,19 +202,6 @@ public static class CustomGlyphRenderer
         {
             sb.Append(
                 $"<path d=\"M{F(centerX - gap)} {F(y)}V{F(y + h)}M{F(centerX + gap)} {F(y)}V{F(y + h)}\" stroke=\"{color}\" stroke-width=\"{F(lightStroke)}\" fill=\"none\"/>");
-        }
-
-        // Dashed lines
-        if ((segments & BoxSegments.DashedHorizontal) != 0)
-        {
-            sb.Append(
-                $"<path d=\"M{F(x)} {F(centerY)}H{F(x + w)}\" stroke=\"{color}\" stroke-width=\"{F(lightStroke)}\" stroke-dasharray=\"{F(w / 4)} {F(w / 8)}\" fill=\"none\"/>");
-        }
-
-        if ((segments & BoxSegments.DashedVertical) != 0)
-        {
-            sb.Append(
-                $"<path d=\"M{F(centerX)} {F(y)}V{F(y + h)}\" stroke=\"{color}\" stroke-width=\"{F(lightStroke)}\" stroke-dasharray=\"{F(h / 4)} {F(h / 8)}\" fill=\"none\"/>");
         }
 
         // Rounded corners (arc instead of sharp corner)
@@ -405,8 +401,6 @@ public static class CustomGlyphRenderer
         HeavyDown = 1 << 7,
         DoubleHorizontal = 1 << 8,
         DoubleVertical = 1 << 9,
-        DashedHorizontal = 1 << 10,
-        DashedVertical = 1 << 11,
         RoundedCorner = 1 << 12,
     }
 
@@ -490,15 +484,8 @@ public static class CustomGlyphRenderer
         '\u2549' => BoxSegments.LightLeft | BoxSegments.HeavyRight | BoxSegments.HeavyUp | BoxSegments.HeavyDown, // ╉
         '\u254A' => BoxSegments.HeavyLeft | BoxSegments.LightRight | BoxSegments.HeavyUp | BoxSegments.HeavyDown, // ╊
 
-        // Dashed lines
-        '\u2504' => BoxSegments.DashedHorizontal, // ┄ (triple dash)
-        '\u2505' => BoxSegments.DashedHorizontal, // ┅ (triple dash heavy)
-        '\u2506' => BoxSegments.DashedVertical, // ┆ (triple dash)
-        '\u2507' => BoxSegments.DashedVertical, // ┇ (triple dash heavy)
-        '\u2508' => BoxSegments.DashedHorizontal, // ┈ (quadruple dash)
-        '\u2509' => BoxSegments.DashedHorizontal, // ┉ (quadruple dash heavy)
-        '\u250A' => BoxSegments.DashedVertical, // ┊ (quadruple dash)
-        '\u250B' => BoxSegments.DashedVertical, // ┋ (quadruple dash heavy)
+        // Dashed/dotted lines (triple/quadruple/double dash, light + heavy) are handled
+        // by TryRenderDashed before this lookup, so they have no segment entry.
 
         // Double lines
         '\u2550' => BoxSegments.DoubleHorizontal, // ═
@@ -539,10 +526,7 @@ public static class CustomGlyphRenderer
         '\u256F' => BoxSegments.RoundedCorner, // ╯
         '\u2570' => BoxSegments.RoundedCorner, // ╰
 
-        // Diagonal lines (approximated with lines)
-        '\u2571' => BoxSegments.LightLeft | BoxSegments.LightRight, // ╱ (diagonal, draw as special)
-        '\u2572' => BoxSegments.LightLeft | BoxSegments.LightRight, // ╲
-        '\u2573' => BoxSegments.LightLeft | BoxSegments.LightRight, // ╳
+        // Diagonal lines are handled by TryRenderDiagonal before this lookup.
 
         // Half lines
         '\u2574' => BoxSegments.LightLeft, // ╴ left
@@ -746,6 +730,80 @@ public static class CustomGlyphRenderer
         var indent = w * 0.3;
         return
             $"M{F(x + w)} {F(y)}L{F(x + indent)} {F(y)}L{F(x)} {F(y + h / 2)}L{F(x + indent)} {F(y + h)}L{F(x + w)} {F(y + h)}Z";
+    }
+
+    /// <summary>
+    /// Renders the diagonal box-drawing glyphs (╱ ╲ ╳) as true diagonal strokes. Returns false for
+    /// every other character so the caller falls through to the segment-based path. Uses the shared
+    /// <c>.bl</c> class (stroke-width / square linecap / fill:none), matching the straight light lines.
+    /// </summary>
+    private static bool TryRenderDiagonal(StringBuilder sb, char c, double x, double y,
+        double w, double h, string color)
+    {
+        var left = x;
+        var right = x + w;
+        var top = y;
+        var bottom = y + h;
+
+        var path = c switch
+        {
+            '╱' => $"M{F(right)} {F(top)}L{F(left)} {F(bottom)}", // ╱ upper-right to lower-left
+            '╲' => $"M{F(left)} {F(top)}L{F(right)} {F(bottom)}", // ╲ upper-left to lower-right
+            // ╳ both diagonals
+            '╳' => $"M{F(right)} {F(top)}L{F(left)} {F(bottom)}M{F(left)} {F(top)}L{F(right)} {F(bottom)}",
+            _ => ""
+        };
+
+        if (path.Length == 0) return false;
+        sb.Append($"<path d=\"{path}\" stroke=\"{color}\" class=\"bl\"/>");
+        return true;
+    }
+
+    /// <summary>
+    /// Renders the dashed/dotted box-drawing glyphs as a single straight line with an explicit
+    /// stroke-dasharray: the light (┄┆┈┊ / ╌╎) and heavy (┅┇┉┋ / ╍╏) families in 2-, 3-, and 4-dash
+    /// densities. Heavy variants stroke at <paramref name="heavyStroke"/> so they read as heavy rather
+    /// than light (the old segment-table path drew every dash at the light weight). Returns false for
+    /// non-dashed characters. The dash/gap math generalizes the historical triple-dash pattern
+    /// (w/4 dash, w/8 gap): for N dashes with gaps half a dash long, dash = 2·len/(3N−1), gap = dash/2.
+    /// </summary>
+    private static bool TryRenderDashed(StringBuilder sb, char c, double x, double y,
+        double w, double h, string color, double lightStroke, double heavyStroke)
+    {
+        // (vertical, heavy, dashCount)
+        (bool vertical, bool heavy, int count)? spec = c switch
+        {
+            '┄' => (false, false, 3), // ┄ light triple dash horizontal
+            '┅' => (false, true, 3),  // ┅ heavy triple dash horizontal
+            '┆' => (true, false, 3),  // ┆ light triple dash vertical
+            '┇' => (true, true, 3),   // ┇ heavy triple dash vertical
+            '┈' => (false, false, 4), // ┈ light quadruple dash horizontal
+            '┉' => (false, true, 4),  // ┉ heavy quadruple dash horizontal
+            '┊' => (true, false, 4),  // ┊ light quadruple dash vertical
+            '┋' => (true, true, 4),   // ┋ heavy quadruple dash vertical
+            '╌' => (false, false, 2), // ╌ light double dash horizontal (wide)
+            '╍' => (false, true, 2),  // ╍ heavy double dash horizontal (wide)
+            '╎' => (true, false, 2),  // ╎ light double dash vertical (wide)
+            '╏' => (true, true, 2),   // ╏ heavy double dash vertical (wide)
+            _ => null
+        };
+
+        if (spec is not { } s) return false;
+
+        var stroke = s.heavy ? heavyStroke : lightStroke;
+        var len = s.vertical ? h : w;
+        var dash = 2 * len / (3 * s.count - 1);
+        var gap = dash / 2;
+        var centerX = x + w / 2;
+        var centerY = y + h / 2;
+
+        var d = s.vertical
+            ? $"M{F(centerX)} {F(y)}V{F(y + h)}"
+            : $"M{F(x)} {F(centerY)}H{F(x + w)}";
+
+        sb.Append(
+            $"<path d=\"{d}\" stroke=\"{color}\" stroke-width=\"{F(stroke)}\" stroke-dasharray=\"{F(dash)} {F(gap)}\" fill=\"none\"/>");
+        return true;
     }
 
 

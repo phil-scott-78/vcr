@@ -27,9 +27,10 @@ public sealed class NativeRecordingSession(SessionOptions options)
         var cols = options.Cols ?? 80;
         var rows = options.Rows ?? 24;
         var execCommands = commands.OfType<ExecCommand>().ToList();
-        // Interactive (Type/Key) tapes need a live REPL to type into; pure-Exec showcase tapes run the
-        // command non-interactively (like ttyd's startup script) so there is no prompt or echoed command line.
-        var interactive = commands.Any(c => c is TypeCommand or KeyCommand or ModifierCommand or RunCommand);
+        // Launch shape keys off Exec presence, NOT Type/Key presence (see ShouldUseBareRepl): an Exec tape
+        // launches the command as the shell's hidden foreground process; a no-Exec tape types its own
+        // commands into a bare REPL.
+        var bareRepl = ShouldUseBareRepl(commands);
 
         // Honor `Set Shell` via the same ShellConfiguration the browser path uses, so bash/zsh/cmd/fish
         // tapes run the right shell with the same args, prompt, and env. The unspecified-shell default is
@@ -42,8 +43,8 @@ public sealed class NativeRecordingSession(SessionOptions options)
         foreach (var (k, v) in options.Environment) env[k] = v;       // tape Env overrides
 
         var pty = PtyProcess.Start(
-            BuildCommandLine(shellConfig, interactive, execCommands),
-            BuildUnixArgv(shellConfig, interactive, execCommands),
+            BuildCommandLine(shellConfig, bareRepl, execCommands),
+            BuildUnixArgv(shellConfig, bareRepl, execCommands),
             cols, rows, env, options.WorkingDirectory);
         var screen = new VtScreen(cols, rows);
         var gate = new object();
@@ -93,20 +94,17 @@ public sealed class NativeRecordingSession(SessionOptions options)
 
         try
         {
-            if (interactive)
+            if (bareRepl)
             {
                 progress?.Report("Starting shell...");
-                // PSReadLine prediction is off and the screen cleared via the shell's -NoExit -Command
-                // startup (see BuildCommandLine), so no setup leaks into the capture; just wait for the prompt.
+                // No-Exec tape: we type the demo's commands into a live REPL. PSReadLine prediction is off and
+                // the screen is cleared via the shell startup (see BuildCommandLine), so no setup leaks into
+                // the capture — just wait for the prompt before the command loop starts typing.
                 await page.WaitForBufferContentAsync(3000);
-
-                // Exec commands run as live input alongside the typed demo.
-                foreach (var exec in execCommands)
-                {
-                    await page.TypeAsync(exec.Command, 0);
-                    await page.PressKeyAsync("Enter");
-                }
             }
+            // Exec tape: the shell launches the Exec command directly (hidden, never echoed) and the launched
+            // app receives our Type/Key input over the PTY. There is no prompt to wait for and nothing to type
+            // here — the tape's own Wait/Sleep gate when the app is ready, exactly as the pure-showcase path.
 
             progress?.Report("Recording (native, no browser)...");
             lock (framesLock) { capturing = true; lastSignature = null; capturedFrames.Clear(); captureSw.Restart(); }
@@ -192,13 +190,22 @@ public sealed class NativeRecordingSession(SessionOptions options)
     }
 
     /// <summary>
-    /// The Unix equivalent of <see cref="BuildCommandLine"/>: an argv vector for <c>posix_spawn</c> (no
-    /// shell-string re-parsing). Interactive reuses the shell's exact invocation parts; non-interactive
-    /// runs the joined Exec command(s) via the shell's execution flag and exits.
+    /// Decides the launch shape. A bare interactive REPL is used ONLY when the tape has no Exec — there the
+    /// typed command line IS the demo and must be shown. Any tape WITH Exec launches it as the shell's
+    /// foreground command (hidden, never echoed) — whether it is a pure showcase OR then drives the launched
+    /// app with Type/Key — so a "launch the app, then answer its prompts" tape never leaks the launch line.
     /// </summary>
-    private static IReadOnlyList<string> BuildUnixArgv(ShellConfiguration config, bool interactive, List<ExecCommand> execCommands)
+    internal static bool ShouldUseBareRepl(IEnumerable<ICommand> commands)
+        => !commands.OfType<ExecCommand>().Any();
+
+    /// <summary>
+    /// The Unix equivalent of <see cref="BuildCommandLine"/>: an argv vector for <c>posix_spawn</c> (no
+    /// shell-string re-parsing). A bare REPL reuses the shell's exact invocation parts; otherwise the joined
+    /// Exec command(s) run via the shell's execution flag and exit (the launched app inherits the PTY).
+    /// </summary>
+    internal static IReadOnlyList<string> BuildUnixArgv(ShellConfiguration config, bool bareRepl, List<ExecCommand> execCommands)
     {
-        if (interactive)
+        if (bareRepl)
             return config.BuildTtydCommand();
 
         if (execCommands.Count == 0)
@@ -208,19 +215,20 @@ public sealed class NativeRecordingSession(SessionOptions options)
         return [config.Name, config.ExecutionFlag, joined];
     }
 
-    private static string BuildCommandLine(ShellConfiguration config, bool interactive, List<ExecCommand> execCommands)
+    private static string BuildCommandLine(ShellConfiguration config, bool bareRepl, List<ExecCommand> execCommands)
     {
-        if (interactive)
+        if (bareRepl)
         {
-            // Reuse the shell's exact interactive invocation (flags + clean '> ' prompt + init) — the
-            // same one the browser/ttyd path uses — so input and prompt match across backends.
+            // No-Exec tape: reuse the shell's exact interactive invocation (flags + clean '> ' prompt +
+            // init) — the same one the browser/ttyd path uses — so input and prompt match across backends.
             var parts = config.BuildTtydCommand();
             return string.Join(" ", parts.Select((p, i) => i > 0 && p.Contains(' ') ? $"\"{p}\"" : p));
         }
 
         if (execCommands.Count == 0) return config.Name;
 
-        // Non-interactive: run the Exec command(s) and exit — output only, no prompt, no echoed line.
+        // Exec tape: run the Exec command(s) and exit — output only, no prompt, no echoed launch line. The
+        // launched app inherits the PTY, so any Type/Key the tape sends afterward flows straight to it.
         var sep = config.Name.StartsWith("cmd", StringComparison.OrdinalIgnoreCase) ? " & " : "; ";
         var joined = string.Join(sep, execCommands.Select(e => e.Command));
         var quoted = $"\"{joined.Replace("\"", "`\"")}\"";

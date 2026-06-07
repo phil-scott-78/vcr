@@ -68,11 +68,10 @@ public sealed class NativeRecordingSession(SessionOptions options)
         // miss a frame the way periodic sampling does (e.g. rapid arrow-key navigation). Frames are
         // de-duplicated, so the stream is exactly the sequence of distinct screen states. `capturing`
         // gates it on after the startup setup so the shell init never enters the recording.
-        var capturedFrames = new List<TerminalStateWithTime>();
-        var framesLock = new object();
-        var captureSw = new Stopwatch();
-        var capturing = false;
-        string? lastSignature = null;
+        // All mutable capture state lives behind one holder so the drain-thread lambda closes over a single
+        // never-reassigned reference instead of mutable locals (the command loop below also writes these).
+        // Every read/write still goes through `capture.Lock`.
+        var capture = new CaptureState();
         const int MaxFrames = 6000;
 
         var decoder = Encoding.UTF8.GetDecoder();
@@ -89,16 +88,20 @@ public sealed class NativeRecordingSession(SessionOptions options)
                 lock (gate) screen.Feed(new string(chars, 0, count));
 
                 bool cap;
-                lock (framesLock) cap = capturing;
+                lock (capture.Lock)
+                {
+                    cap = capture.Capturing;
+                }
+
                 if (!cap || !state.IsCapturing) continue;
 
                 var content = page.Snapshot();
                 var signature = NativeTerminalRenderer.Signature(content);
-                lock (framesLock)
+                lock (capture.Lock)
                 {
-                    if (signature == lastSignature || capturedFrames.Count >= MaxFrames) continue;
-                    lastSignature = signature;
-                    capturedFrames.Add(new TerminalStateWithTime { Content = content, TimestampSeconds = captureSw.Elapsed.TotalSeconds });
+                    if (signature == capture.LastSignature || capture.Frames.Count >= MaxFrames) continue;
+                    capture.LastSignature = signature;
+                    capture.Frames.Add(new TerminalStateWithTime { Content = content, TimestampSeconds = capture.Sw.Elapsed.TotalSeconds });
                 }
             }
         }, cancellationToken);
@@ -118,7 +121,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
             // here — the tape's own Wait/Sleep gate when the app is ready, exactly as the pure-showcase path.
 
             progress?.Report("Recording (native, no browser)...");
-            lock (framesLock) { capturing = true; lastSignature = null; capturedFrames.Clear(); captureSw.Restart(); }
+            lock (capture.Lock) { capture.Capturing = true; capture.LastSignature = null; capture.Frames.Clear(); capture.Sw.Restart(); }
 
             var context = new Core.Parsing.Ast.ExecutionContext(options, state, page, frameCapture);
             foreach (var command in commands)
@@ -137,20 +140,20 @@ public sealed class NativeRecordingSession(SessionOptions options)
             var finalContent = page.Snapshot();
             List<TerminalStateWithTime> states;
             double totalSeconds;
-            lock (framesLock)
+            lock (capture.Lock)
             {
                 var sig = NativeTerminalRenderer.Signature(finalContent);
-                if (sig != lastSignature)
+                if (sig != capture.LastSignature)
                 {
-                    var finalFrame = new TerminalStateWithTime { Content = finalContent, TimestampSeconds = captureSw.Elapsed.TotalSeconds };
+                    var finalFrame = new TerminalStateWithTime { Content = finalContent, TimestampSeconds = capture.Sw.Elapsed.TotalSeconds };
                     // Always preserve the settled END state: append if there's room, else overwrite the last
                     // captured frame so a recording that hit MaxFrames still ends on its final output, not mid-stream.
-                    if (capturedFrames.Count < MaxFrames) capturedFrames.Add(finalFrame);
-                    else if (capturedFrames.Count > 0) capturedFrames[^1] = finalFrame;
+                    if (capture.Frames.Count < MaxFrames) capture.Frames.Add(finalFrame);
+                    else if (capture.Frames.Count > 0) capture.Frames[^1] = finalFrame;
                 }
-                capturing = false;
-                totalSeconds = captureSw.Elapsed.TotalSeconds;
-                states = new List<TerminalStateWithTime>(capturedFrames);
+                capture.Capturing = false;
+                totalSeconds = capture.Sw.Elapsed.TotalSeconds;
+                states = new List<TerminalStateWithTime>(capture.Frames);
             }
 
             progress?.Report("Encoding...");
@@ -258,5 +261,19 @@ public sealed class NativeRecordingSession(SessionOptions options)
         return config.Name is "pwsh" or "powershell"
             ? $"{config.Name} -NoLogo -NoProfile {config.ExecutionFlag} {quoted}"
             : $"{config.Name} {config.ExecutionFlag} {quoted}";
+    }
+
+    /// <summary>
+    /// Shared capture state mutated by both the drain thread and the command loop. Holding it in one object
+    /// (rather than as separate captured locals) lets the drain-thread lambda close over a single
+    /// never-reassigned reference. All access is serialized under <see cref="Lock"/>.
+    /// </summary>
+    private sealed class CaptureState
+    {
+        public readonly object Lock = new();
+        public readonly List<TerminalStateWithTime> Frames = [];
+        public readonly Stopwatch Sw = new();
+        public bool Capturing;
+        public string? LastSignature;
     }
 }

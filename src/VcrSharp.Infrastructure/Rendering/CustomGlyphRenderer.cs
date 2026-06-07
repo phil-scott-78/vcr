@@ -52,8 +52,7 @@ public static class CustomGlyphRenderer
         {
             // Determine glyph type and render
             case >= '\u2500' and <= '\u257F':
-                RenderBoxDrawing(sb, c, x, y, cellWidth, cellHeight, foregroundColor, lightStrokeWidth,
-                    heavyStrokeWidth);
+                RenderBoxDrawing(sb, c, x, y, cellWidth, cellHeight, foregroundColor, lightStrokeWidth);
                 break;
             case >= '\u2580' and <= '\u259F':
                 RenderBlockElement(sb, c, x, y, cellWidth, cellHeight, foregroundColor);
@@ -131,7 +130,7 @@ public static class CustomGlyphRenderer
     // We use a lookup table for the ~128 characters
 
     private static void RenderBoxDrawing(StringBuilder sb, char c, double x, double y,
-        double w, double h, string color, double lightStroke, double heavyStroke)
+        double w, double h, string color, double lightStroke)
     {
         var centerX = x + w / 2;
         var centerY = y + h / 2;

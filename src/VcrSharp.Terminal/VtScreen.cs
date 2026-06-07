@@ -122,7 +122,6 @@ public sealed class VtScreen
     private bool _originMode;           // DECOM (?6)
     private bool _insertMode;           // IRM (4)
     private bool _newlineMode;          // LNM (20)
-    private readonly Dictionary<int, bool> _otherModes = new(); // tracked-only (mouse/paste/focus/…)
 
     private readonly record struct Pen(
         string? Fg, string? Bg, bool Bold, bool Italic, bool Dim, bool Blink, bool Reverse,
@@ -743,7 +742,6 @@ public sealed class VtScreen
         _tabs = BuildDefaultTabs();
         _scrollback.Clear();
         _saved = null; _altSaved = null;
-        _otherModes.Clear();
         _originMode = false; _insertMode = false; _newlineMode = false;
         _autoWrap = true; _cursorVisible = true;
         _charsets[0] = Charset.Ascii; _charsets[1] = Charset.Ascii; _gl = 0;
@@ -777,7 +775,6 @@ public sealed class VtScreen
             case 1047: AltSwitch(on, clearEnter: false, clearLeave: true, save: false); break;
             case 1048: if (on) SaveAltCursor(); else RestoreAltCursor(); break;
             case 1049: AltSwitch(on, clearEnter: true, clearLeave: false, save: true); break;
-            default: _otherModes[code] = on; break; // mouse/paste/focus/etc. — tracked only
         }
     }
 

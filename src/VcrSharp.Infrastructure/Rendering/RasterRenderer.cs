@@ -74,7 +74,7 @@ public sealed class RasterRenderer
                     var w = (cell.Width == 2 ? 2 : 1) * _cellW;
 
                     var fg = cell.ForegroundColor is { } f ? Hex(Resolve(f), _fg) : _fg;
-                    var hasBg = cell.BackgroundColor is { } b;
+                    var hasBg = cell.BackgroundColor is not null;
                     var bg = hasBg ? Hex(Resolve(cell.BackgroundColor!), _bg) : _bg;
                     if (cell.IsReverse) (fg, bg, hasBg) = (bg, fg, true);
                     if (cell.IsDim) fg = fg.WithAlpha(0.55f);
@@ -172,7 +172,8 @@ public sealed class RasterRenderer
                 return family;
         // First() throws an opaque InvalidOperationException on a system with no fonts — give an actionable one.
         var families = SystemFonts.Families;
-        if (families.Any()) return families.First();
+        var fontFamilies = families as FontFamily[] ?? families.ToArray();
+        if (fontFamilies.Length != 0) return fontFamilies.First();
         throw new InvalidOperationException(
             "No fonts are installed; raster output (GIF/MP4/WebM/PNG) needs a monospace font (e.g. Cascadia Mono). Use SVG output, or install a font.");
     }

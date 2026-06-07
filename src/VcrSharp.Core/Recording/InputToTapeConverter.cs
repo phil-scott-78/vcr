@@ -124,7 +124,7 @@ public static class InputToTapeConverter
                 // CSI: ESC [ <params> <final>
                 if (pos + 1 < input.Length && input[pos + 1] == '[')
                 {
-                    var consumed = TryReadCsi(input, pos, t, out var csiAtom, out _);
+                    var consumed = TryReadCsi(input, pos, t, out var csiAtom);
                     if (consumed > 0)
                     {
                         if (csiAtom.HasValue)
@@ -192,10 +192,9 @@ public static class InputToTapeConverter
     /// Reads a CSI sequence starting at <paramref name="pos"/> (which points at the ESC).
     /// Returns the number of characters consumed (0 if malformed/incomplete).
     /// </summary>
-    private static int TryReadCsi(string input, int pos, TimeSpan t, out Atom? atom, out bool dropped)
+    private static int TryReadCsi(string input, int pos, TimeSpan t, out Atom? atom)
     {
         atom = null;
-        dropped = false;
 
         // pos -> ESC, pos+1 -> '['
         var i = pos + 2;
@@ -239,7 +238,6 @@ public static class InputToTapeConverter
         if (key == null)
         {
             // Unknown / unmappable (function keys, query responses, etc.) — drop it.
-            dropped = true;
             return consumed;
         }
 

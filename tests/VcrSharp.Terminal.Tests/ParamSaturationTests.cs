@@ -1,6 +1,5 @@
 using Shouldly;
 using VcrSharp.Core.Rendering;
-using VcrSharp.Terminal;
 
 namespace VcrSharp.Terminal.Tests;
 

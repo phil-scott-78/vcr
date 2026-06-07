@@ -183,13 +183,13 @@ public class TapeParser
     private static readonly TokenListParser<TapeToken, ICommand> UseCommand =
         from keyword in Token.EqualTo(TapeToken.Use)
         from name in FilePath
-        select (ICommand)new Ast.UseCommand(name, keyword.Position.Line);
+        select (ICommand)new UseCommand(name, keyword.Position.Line);
 
     // Run command: Run "./example Alice"  (sugar for Type + Enter + Wait)
     private static readonly TokenListParser<TapeToken, ICommand> RunCommand =
         from keyword in Token.EqualTo(TapeToken.Run)
         from text in QuotedString
-        select (ICommand)new Ast.RunCommand(text, keyword.Position.Line);
+        select (ICommand)new RunCommand(text, keyword.Position.Line);
 
     // Type command: Type "hello" or Type@500ms "hello"
     private static readonly TokenListParser<TapeToken, ICommand> TypeCommand =
@@ -320,7 +320,7 @@ public class TapeParser
     // Exec command: Exec "ls -la"  (literal)  OR  Exec showcase table  (macro form)
     private static readonly TokenListParser<TapeToken, ICommand> ExecCommand =
         from keyword in Token.EqualTo(TapeToken.Exec)
-        from body in QuotedString.Select(s => (ICommand)new Ast.ExecCommand(s, keyword.Position.Line))
+        from body in QuotedString.Select(s => (ICommand)new ExecCommand(s, keyword.Position.Line))
             .Or(
                 from name in Identifier
                 from arg in QuotedString.Or(Identifier)!.OptionalOrDefault()

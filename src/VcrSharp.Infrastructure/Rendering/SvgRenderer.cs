@@ -162,7 +162,7 @@ public class SvgRenderer
         var rowTimeline = BuildRowTimeline(states, totalDurationSeconds);
 
         // Build cursor timeline
-        var cursorTimeline = BuildCursorTimeline(states, totalDurationSeconds);
+        var cursorTimeline = BuildCursorTimeline(states);
 
         await using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
         await using var xml = XmlWriter.Create(writer, new XmlWriterSettings
@@ -299,7 +299,7 @@ public class SvgRenderer
     /// <summary>
     /// Builds a timeline of cursor positions.
     /// </summary>
-    private List<CursorKeyframe> BuildCursorTimeline(IReadOnlyList<TerminalStateWithTime> states, double totalDuration)
+    private List<CursorKeyframe> BuildCursorTimeline(IReadOnlyList<TerminalStateWithTime> states)
     {
         var keyframes = new List<CursorKeyframe>();
         int? lastX = null;
@@ -354,7 +354,7 @@ public class SvgRenderer
             }
 
             // Render each unique row state with visibility animations
-            foreach (var (hash, (cells, intervalList)) in uniqueStates)
+            foreach (var (_, (cells, intervalList)) in uniqueStates)
             {
                 // Skip empty rows (shared blank-cell definition)
                 if (ContentAnalysis.IsBlankRow(cells))

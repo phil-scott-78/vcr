@@ -55,7 +55,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
     /// <summary>
     /// Executes the record command asynchronously.
     /// </summary>
-    public override async Task<int> ExecuteAsync(CommandContext context, RecordCommand.Settings settings, CancellationToken cancellationToken)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // Configure logging based on verbose flag
         VcrLogger.Configure(settings.Verbose);
@@ -195,7 +195,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
     /// CLI SET commands override tape file SET commands.
     /// CLI Output commands are appended to tape file Output commands.
     /// </summary>
-    private static List<Core.Parsing.Ast.ICommand> ApplyCliOverrides(List<Core.Parsing.Ast.ICommand> tapeCommands, RecordCommand.Settings settings)
+    private static List<Core.Parsing.Ast.ICommand> ApplyCliOverrides(List<Core.Parsing.Ast.ICommand> tapeCommands, Settings settings)
     {
         var result = new List<Core.Parsing.Ast.ICommand>(tapeCommands);
 

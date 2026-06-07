@@ -16,7 +16,7 @@ public sealed class ConPtyProcess : IPtyProcess
     private const int STARTF_USESTDHANDLES = 0x00000100;
     private const uint EXTENDED_STARTUPINFO_PRESENT = 0x00080000;
     private const uint CREATE_UNICODE_ENVIRONMENT = 0x00000400;
-    private static readonly IntPtr PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = (IntPtr)0x00020016;
+    private static readonly IntPtr PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE = 0x00020016;
 
     private IntPtr _pseudoConsole = IntPtr.Zero;
     private IntPtr _attributeList = IntPtr.Zero;
@@ -100,7 +100,7 @@ public sealed class ConPtyProcess : IPtyProcess
             throw new Win32Exception(Marshal.GetLastWin32Error(), "InitializeProcThreadAttributeList failed");
 
         if (!UpdateProcThreadAttribute(_attributeList, 0, PROC_THREAD_ATTRIBUTE_PSEUDOCONSOLE,
-                _pseudoConsole, (IntPtr)IntPtr.Size, IntPtr.Zero, IntPtr.Zero))
+                _pseudoConsole, IntPtr.Size, IntPtr.Zero, IntPtr.Zero))
             throw new Win32Exception(Marshal.GetLastWin32Error(), "UpdateProcThreadAttribute failed");
 
         startupInfo.lpAttributeList = _attributeList;

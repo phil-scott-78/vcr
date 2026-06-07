@@ -58,7 +58,7 @@ public static class LibVtermHarness
         }
 
         if (char.IsUpper(line[0])) { ctx.FlushCursor(); HandleCommand(line, ctx); return; }
-        if (char.IsLower(line[0])) { HandleExpectation(line, ctx); return; }
+        if (char.IsLower(line[0])) { HandleExpectation(line, ctx); }
         // anything else: ignore
     }
 
@@ -114,8 +114,6 @@ public static class LibVtermHarness
             case "DAMAGEFLUSH":
             case "SETDEFAULTCOL":
                 break;
-            default:
-                break; // unknown command verb: ignore
         }
     }
 

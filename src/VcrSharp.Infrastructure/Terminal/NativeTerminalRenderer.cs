@@ -60,12 +60,13 @@ public sealed class NativeTerminalRenderer
         var dump = string.IsNullOrEmpty(dumpPath) ? null : new StringBuilder();
 
         var decoder = Encoding.UTF8.GetDecoder();
+        var ptyOutput = pty.Output;
         var readTask = Task.Run(() =>
         {
             var bytes = new byte[8192];
             var chars = new char[8192];
             int n;
-            while ((n = pty.Output.Read(bytes, 0, bytes.Length)) > 0)
+            while ((n = ptyOutput.Read(bytes, 0, bytes.Length)) > 0)
             {
                 var count = decoder.GetChars(bytes, 0, n, chars, 0);
                 if (count > 0)
@@ -79,7 +80,7 @@ public sealed class NativeTerminalRenderer
 
         pty.WaitForExit(maxMs);
         pty.CloseChild();           // flush tail + signal EOF to the reader
-        readTask.Wait(5000);        // bounded: the drain should finish promptly after EOF
+        readTask.Wait(5000, cancellationToken);        // bounded: the drain should finish promptly after EOF
 
         var content = screen.ToTerminalContent();
         pty.Dispose();
@@ -112,12 +113,13 @@ public sealed class NativeTerminalRenderer
         var gate = new object();
 
         var decoder = Encoding.UTF8.GetDecoder();
+        var ptyOutput = pty.Output;
         var readTask = Task.Run(() =>
         {
             var bytes = new byte[8192];
             var chars = new char[8192];
             int n;
-            while ((n = pty.Output.Read(bytes, 0, bytes.Length)) > 0)
+            while ((n = ptyOutput.Read(bytes, 0, bytes.Length)) > 0)
             {
                 var count = decoder.GetChars(bytes, 0, n, chars, 0);
                 if (count > 0)
@@ -150,7 +152,7 @@ public sealed class NativeTerminalRenderer
         }
 
         pty.CloseChild();      // flush the tail + signal EOF
-        readTask.Wait(5000);
+        readTask.Wait(5000, cancellationToken);
         Capture();             // the settled final frame
         var total = sw.Elapsed.TotalSeconds;
         pty.Dispose();

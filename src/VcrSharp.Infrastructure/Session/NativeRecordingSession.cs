@@ -76,12 +76,13 @@ public sealed class NativeRecordingSession(SessionOptions options)
         const int MaxFrames = 6000;
 
         var decoder = Encoding.UTF8.GetDecoder();
+        var ptyOutput = pty.Output;
         var readTask = Task.Run(() =>
         {
             var bytes = new byte[8192];
             var chars = new char[8192];
             int n;
-            while ((n = pty.Output.Read(bytes, 0, bytes.Length)) > 0)
+            while ((n = ptyOutput.Read(bytes, 0, bytes.Length)) > 0)
             {
                 var count = decoder.GetChars(bytes, 0, n, chars, 0);
                 if (count == 0) continue;
@@ -192,7 +193,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
         finally
         {
             pty.CloseChild();
-            try { readTask.Wait(3000); } catch { /* ignore */ }
+            try { readTask.Wait(3000, cancellationToken); } catch { /* ignore */ }
             pty.Dispose();
         }
     }

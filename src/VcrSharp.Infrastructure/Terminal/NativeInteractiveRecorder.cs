@@ -45,13 +45,14 @@ public sealed class NativeInteractiveRecorder
         {
             // Output pump: child VT stream -> host console (so the user sees the live shell).
             var stdout = Console.OpenStandardOutput();
+            var ptyOutput = pty.Output;
             var outputPump = new Thread(() =>
             {
                 var buf = new byte[8192];
                 try
                 {
                     int n;
-                    while ((n = pty.Output.Read(buf, 0, buf.Length)) > 0)
+                    while ((n = ptyOutput.Read(buf, 0, buf.Length)) > 0)
                     {
                         stdout.Write(buf, 0, n);
                         stdout.Flush();
@@ -65,6 +66,7 @@ public sealed class NativeInteractiveRecorder
             // multi-byte keystroke (e.g. an arrow's ESC [ A, or Alt+char) arrives in one read, so escape
             // sequences and Alt combos stay intact for the converter.
             var stdin = Console.OpenStandardInput();
+            var ptyInput = pty.Input;
             var inputPump = new Thread(() =>
             {
                 var buf = new byte[4096];
@@ -75,7 +77,7 @@ public sealed class NativeInteractiveRecorder
                     int n;
                     while ((n = stdin.Read(buf, 0, buf.Length)) > 0)
                     {
-                        try { pty.Input.Write(buf, 0, n); pty.Input.Flush(); } catch { break; }
+                        try { ptyInput.Write(buf, 0, n); ptyInput.Flush(); } catch { break; }
                         var c = decoder.GetChars(buf, 0, n, chars, 0);
                         if (c > 0)
                         {
@@ -212,7 +214,7 @@ internal sealed class ConsoleRawMode : IDisposable
     {
         var saved = Stty("-g")?.Trim();
         Stty("raw -echo");
-        return new ConsoleRawMode(() => Stty(string.IsNullOrEmpty(saved) ? "sane" : saved!));
+        return new ConsoleRawMode(() => Stty(string.IsNullOrEmpty(saved) ? "sane" : saved));
     }
 
     private static string? Stty(string args)

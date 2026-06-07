@@ -120,7 +120,6 @@ public sealed class VtScreen
     private bool _autoWrap = true;      // DECAWM (?7)
     private bool _cursorVisible = true; // DECTCEM (?25)
     private bool _originMode;           // DECOM (?6)
-    private bool _reverseScreen;        // DECSCNM (?5) — tracked; render handled later
     private bool _insertMode;           // IRM (4)
     private bool _newlineMode;          // LNM (20)
     private readonly Dictionary<int, bool> _otherModes = new(); // tracked-only (mouse/paste/focus/…)
@@ -300,12 +299,13 @@ public sealed class VtScreen
                     case 'P': _state = State.StringConsume; return;             // DCS
                     case 'X': case '^': case '_': _state = State.StringConsume; return; // SOS/PM/APC
                 }
-                if (cp is >= 0x30 and <= 0x7E) { EscDispatch((char)cp); _state = State.Ground; return; }
+                if (cp is >= 0x30 and <= 0x7E) { EscDispatch((char)cp); _state = State.Ground;
+                }
                 return;
 
             case State.EscapeIntermediate:
                 if (cp is >= 0x20 and <= 0x2F) { _interChar = (char)cp; return; }
-                if (cp is >= 0x30 and <= 0x7E) { EscIntermediateDispatch(_interChar, (char)cp); _state = State.Ground; return; }
+                if (cp is >= 0x30 and <= 0x7E) { EscIntermediateDispatch(_interChar, (char)cp); _state = State.Ground; }
                 return;
 
             case State.CsiEntry:
@@ -321,13 +321,13 @@ public sealed class VtScreen
                     _state = State.CsiIgnore; return;
                 }
                 if (cp is >= 0x20 and <= 0x2F) { _interChar = (char)cp; _state = State.CsiIntermediate; return; }
-                if (cp is >= 0x40 and <= 0x7E) { CommitParam(); DispatchCsi((char)cp); _state = State.Ground; return; }
+                if (cp is >= 0x40 and <= 0x7E) { CommitParam(); DispatchCsi((char)cp); _state = State.Ground; }
                 return;
 
             case State.CsiIntermediate:
                 if (cp is >= 0x20 and <= 0x2F) { _interChar = (char)cp; return; }
                 if (cp is >= 0x40 and <= 0x7E) { CommitParam(); DispatchCsi((char)cp); _state = State.Ground; return; }
-                if (cp is >= 0x30 and <= 0x3F) { _state = State.CsiIgnore; return; }
+                if (cp is >= 0x30 and <= 0x3F) { _state = State.CsiIgnore; }
                 return;
 
             case State.CsiIgnore:
@@ -745,7 +745,7 @@ public sealed class VtScreen
         _saved = null; _altSaved = null;
         _otherModes.Clear();
         _originMode = false; _insertMode = false; _newlineMode = false;
-        _autoWrap = true; _cursorVisible = true; _reverseScreen = false;
+        _autoWrap = true; _cursorVisible = true;
         _charsets[0] = Charset.Ascii; _charsets[1] = Charset.Ascii; _gl = 0;
         ResetSgr();
         _row = 0; _col = 0;
@@ -768,7 +768,8 @@ public sealed class VtScreen
     {
         switch (code)
         {
-            case 5: _reverseScreen = on; break;                                            // DECSCNM
+            case 5:
+                break;                                            // DECSCNM
             case 6: _originMode = on; _row = on ? _top : 0; _col = 0; _wrapPending = false; break; // DECOM
             case 7: _autoWrap = on; break;                                                 // DECAWM
             case 25: _cursorVisible = on; break;                                           // DECTCEM

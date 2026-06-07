@@ -284,7 +284,7 @@ public static partial class TapeMigrator
         var tokens = paths
             .Select(p =>
             {
-                var name = Path.GetFileNameWithoutExtension(p) ?? "";
+                var name = Path.GetFileNameWithoutExtension(p);
                 var cut = name.IndexOfAny(new[] { '-', '_' });
                 var token = cut > 0 ? name[..cut] : name;
                 return new string(token.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();

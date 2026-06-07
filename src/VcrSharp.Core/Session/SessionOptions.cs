@@ -320,7 +320,7 @@ public class SessionOptions
         {
             foreach (var file in OutputFiles)
             {
-                if (!".svg".Equals(System.IO.Path.GetExtension(file), System.StringComparison.OrdinalIgnoreCase))
+                if (!".svg".Equals(Path.GetExtension(file), StringComparison.OrdinalIgnoreCase))
                     return true;
             }
 

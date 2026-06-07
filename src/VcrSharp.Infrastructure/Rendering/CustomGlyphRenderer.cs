@@ -93,7 +93,7 @@ public static class CustomGlyphRenderer
                 return;
             // ╬
             case '\u256C':
-                RenderDoubleCross(sb, c, x, y, w, h, color, lightStroke, gap);
+                RenderDoubleCross(sb, x, y, w, h, color, lightStroke, gap);
                 return;
         }
 
@@ -309,7 +309,7 @@ public static class CustomGlyphRenderer
     /// <summary>
     /// Renders the double cross (╬) with proper interlocking geometry.
     /// </summary>
-    private static void RenderDoubleCross(StringBuilder sb, char c, double x, double y,
+    private static void RenderDoubleCross(StringBuilder sb, double x, double y,
         double w, double h, string color, double stroke, double gap)
     {
         var left = x;
@@ -679,7 +679,6 @@ public static class CustomGlyphRenderer
     {
         // Simplified lock: rectangle with rounded top arc
         var padX = w * 0.2;
-        var padY = h * 0.15;
         var bodyTop = y + h * 0.45;
         var bodyW = w - 2 * padX;
         var bodyH = h * 0.4;

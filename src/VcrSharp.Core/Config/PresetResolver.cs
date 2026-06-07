@@ -98,7 +98,7 @@ public static class PresetResolver
                 case RunCommand run:
                     result.Add(new TypeCommand(run.Text));
                     result.Add(new KeyCommand("Enter"));
-                    result.Add(new WaitCommand(WaitScope.Buffer));
+                    result.Add(new WaitCommand());
                     break;
                 default:
                     result.Add(command);

@@ -69,6 +69,63 @@ public static class CustomGlyphRenderer
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Renders a horizontal run of <paramref name="count"/> identical glyphs as a single element spanning
+    /// the whole run, when the glyph tiles cleanly across cells: solid horizontal box lines (─ ━ ═) and
+    /// block elements that fill the full cell width (█, the horizontal half/eighth bands, and the ░▒▓
+    /// shades). Returns false — leaving the caller to render cell-by-cell — for anything that does not
+    /// tile horizontally (corners, partial-width blocks, quadrants, dashed lines, powerline). This is the
+    /// flat-color counterpart to the per-cell path: a gradient never forms a run, so it is unaffected.
+    /// </summary>
+    public static bool TryRenderHorizontalRun(char c, double x, double y, double cellWidth, double cellHeight,
+        int count, string foregroundColor, string? backgroundColor,
+        double lightStrokeWidth, double heavyStrokeWidth, out string svg)
+    {
+        svg = "";
+        var runWidth = cellWidth * count;
+        var centerY = y + cellHeight / 2;
+        string glyph;
+
+        switch (c)
+        {
+            case '─': // ─ light horizontal -> shared .bl class
+                glyph = $"<path d=\"M{F(x)} {F(centerY)}H{F(x + runWidth)}\" stroke=\"{foregroundColor}\" class=\"bl\"/>";
+                break;
+            case '━': // ━ heavy horizontal -> shared .bh class
+                glyph = $"<path d=\"M{F(x)} {F(centerY)}H{F(x + runWidth)}\" stroke=\"{foregroundColor}\" class=\"bh\"/>";
+                break;
+            case '═': // ═ double horizontal (two parallel light lines)
+            {
+                var gap = lightStrokeWidth * 1.5;
+                glyph =
+                    $"<path d=\"M{F(x)} {F(centerY - gap)}H{F(x + runWidth)}M{F(x)} {F(centerY + gap)}H{F(x + runWidth)}\" stroke=\"{foregroundColor}\" stroke-width=\"{F(lightStrokeWidth)}\" fill=\"none\"/>";
+                break;
+            }
+            default:
+                // Block elements occupying the full cell width tile into one rect; partial-width blocks
+                // (left/right fractions, quadrants) would leave gaps and are left to per-cell rendering.
+                if (c is >= '▀' and <= '▟')
+                {
+                    var (rx, ry, rw, rh, pattern) = GetBlockElementRect(c, cellWidth, cellHeight);
+                    if (rx == 0 && Math.Abs(rw - cellWidth) < 0.001 && rw > 0 && rh > 0)
+                    {
+                        glyph = pattern != null
+                            ? $"<rect x=\"{F(x)}\" y=\"{F(y + ry)}\" width=\"{F(runWidth)}\" height=\"{F(rh)}\" fill=\"url(#{pattern})\" style=\"--shade-color:{foregroundColor}\"/>"
+                            : $"<rect x=\"{F(x)}\" y=\"{F(y + ry)}\" width=\"{F(runWidth)}\" height=\"{F(rh)}\" fill=\"{foregroundColor}\"/>";
+                        break;
+                    }
+                }
+                return false;
+        }
+
+        // Background spans the whole run (drawn before the glyph, matching the per-cell order).
+        var bg = backgroundColor != null
+            ? $"<rect x=\"{F(x)}\" y=\"{F(y)}\" width=\"{F(runWidth)}\" height=\"{F(cellHeight)}\" fill=\"{backgroundColor}\"/>"
+            : "";
+        svg = bg + glyph;
+        return true;
+    }
+
     // Box drawing characters are encoded with bits indicating which directions have lines:
     // Bit layout for standard chars: [up-heavy][down-heavy][left-heavy][right-heavy][up][down][left][right]
     // We use a lookup table for the ~128 characters

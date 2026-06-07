@@ -494,23 +494,44 @@ public class SvgRenderer
 
             if (segment.IsCustomGlyph)
             {
-                // Render custom glyph characters one by one
+                // A segment is a single style run, so its colors are constant — resolve them once.
+                var fgColor = GetForegroundColorHex(segment);
+                var bgColor = segment.BackgroundColor != null ? ConvertColorToHex(segment.BackgroundColor) : null;
+
+                // Collapse a run of the SAME horizontally-tileable glyph (a solid '─'/'━'/'═' rule or a
+                // full-width '█'/half-band/shade) into ONE element spanning the run instead of one path
+                // per cell. Runs only form within a style segment, so a per-cell gradient is segments of
+                // length 1 and falls straight through to the unchanged per-glyph path below.
+                var text = segment.Text;
                 var glyphX = x;
-                foreach (var ch in segment.Text)
+                var i = 0;
+                while (i < text.Length)
                 {
-                    var fgColor = GetForegroundColorHex(segment);
-                    var bgColor = segment.BackgroundColor != null ? ConvertColorToHex(segment.BackgroundColor) : null;
+                    var ch = text[i];
+                    var runLen = 1;
+                    while (i + runLen < text.Length && text[i + runLen] == ch) runLen++;
 
-                    var glyphSvg = CustomGlyphRenderer.RenderGlyph(
-                        ch, glyphX, y, _charWidth, _charHeight,
-                        fgColor, bgColor, lightStroke, heavyStroke);
-
-                    if (glyphSvg != null)
+                    if (runLen > 1 &&
+                        CustomGlyphRenderer.TryRenderHorizontalRun(
+                            ch, glyphX, y, _charWidth, _charHeight, runLen,
+                            fgColor, bgColor, lightStroke, heavyStroke, out var runSvg))
                     {
-                        await xml.WriteRawAsync(glyphSvg);
+                        await xml.WriteRawAsync(runSvg);
+                    }
+                    else
+                    {
+                        for (var k = 0; k < runLen; k++)
+                        {
+                            var glyphSvg = CustomGlyphRenderer.RenderGlyph(
+                                ch, glyphX + k * _charWidth, y, _charWidth, _charHeight,
+                                fgColor, bgColor, lightStroke, heavyStroke);
+                            if (glyphSvg != null)
+                                await xml.WriteRawAsync(glyphSvg);
+                        }
                     }
 
-                    glyphX += _charWidth; // All custom glyphs are single-width
+                    glyphX += runLen * _charWidth; // All custom glyphs are single-width
+                    i += runLen;
                 }
             }
             else

@@ -4,9 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-VcrSharp is a .NET terminal recorder that generates GIFs and videos from `.tape` files. It is inspired by VHS but adds better Windows support and the ability to execute real commands via the `Exec` command rather than just simulating typing.
+VcrSharp (the CLI is `vcr`, styled **VCR#**) is a .NET terminal recorder that turns `.tape` scripts into GIFs, MP4/WebM videos, PNGs, and (animated or static) SVGs. It is inspired by [VHS](https://github.com/charmbracelet/vhs) but adds first-class Windows support, the ability to run real commands with `Exec`, and an interactive `record` mode that works in any shell.
 
-**Important**: This project is in early development (alpha quality). The API will change rapidly.
+**The big architectural fact:** VCR# is **browserless**. There is **no ttyd, no Playwright, no Chromium, no xterm.js, no WebSocket**. VCR# launches a real shell over an in-process pseudo-terminal (ConPTY on Windows, a Unix PTY on Linux/macOS), parses the shell's output with a from-scratch VT500 terminal engine (`VtScreen`), and rasterizes the resulting cell grid directly to frames. The only external runtime dependency is **FFmpeg**, and only when encoding GIF/MP4/WebM. SVG and PNG output need no external binaries at all. (Raster output additionally needs a monospace font installed on the system; SVG does not.)
+
+This was a ground-up rewrite (the `total-rewrite` branch / commit `0cf0885` made the native path the only backend). If you find code, docs, or comments referencing ttyd, Playwright, Chromium, browsers, or xterm.js as a *live* path, they are stale — flag and fix them.
+
+**Status:** alpha. The API and tape grammar still change.
 
 ## Common Commands
 
@@ -17,17 +21,26 @@ dotnet build VcrSharp.sln
 
 ### Run the CLI
 ```bash
-# Record a tape file
+# Record a tape file to its declared Output target(s)
 dotnet run --project src/VcrSharp.Cli -- demo.tape
 
-# Interactively record a live shell session into a .tape file (opens a terminal window)
-dotnet run --project src/VcrSharp.Cli -- record demo.tape
-
-# Validate a tape file without recording
+# Validate a tape file (parse + resolve presets) without recording
 dotnet run --project src/VcrSharp.Cli -- validate demo.tape
 
-# List available themes
+# List the built-in themes
 dotnet run --project src/VcrSharp.Cli -- themes
+
+# Interactively record a live shell session into a .tape file
+dotnet run --project src/VcrSharp.Cli -- record demo.tape
+
+# One-shot static SVG screenshot of a command's final output (no tape file)
+dotnet run --project src/VcrSharp.Cli -- snap "ls -la" -o ls.svg
+
+# One-shot animated SVG of a command start-to-finish (no tape file)
+dotnet run --project src/VcrSharp.Cli -- capture "dotnet --version" -o ver.svg
+
+# Mine a directory of tapes into a shared vcr.toml preset (dry run by default)
+dotnet run --project src/VcrSharp.Cli -- migrate samples/ --write
 ```
 
 ### Testing
@@ -35,266 +48,241 @@ dotnet run --project src/VcrSharp.Cli -- themes
 # Run all tests
 dotnet test
 
-# Run specific test project
+# Run a single test project
 dotnet test tests/VcrSharp.Core.Tests
-dotnet test tests/VcrSharp.Integration.Tests
+dotnet test tests/VcrSharp.Terminal.Tests
 
-# Run single test (example)
+# Run a single test by name
 dotnet test --filter "FullyQualifiedName~TapeParserTests"
 ```
 
-### Integration Test Setup
-Integration tests require Playwright browsers. Install them after building:
+There is **no Playwright/browser install step** anymore. The old `playwright.ps1 install chromium` instruction is gone. The terminal-engine tests run a vendored libvterm conformance corpus in-process with no external setup.
+
+### Docs site
+The docs live in `docs/VcrSharp.Docs`, a [Pennington](https://usepennington.github.io/pennington/) `DocSite` (Blazor-rendered, MonorailCSS, no Node). Content is Markdown under `Content/`, organized into four Diátaxis areas (`tutorials`, `how--to`, `explanation`, `reference`).
 ```bash
-pwsh tests/VcrSharp.Integration.Tests/bin/Debug/net10.0/playwright.ps1 install chromium --no-shell
+cd docs/VcrSharp.Docs
+dotnet run                 # dev-serve with hot reload
+dotnet run -- build        # static build; exits non-zero on any error/broken link
+dotnet run -- diag warnings  # report broken links / unresolved xrefs
 ```
 
 ## Architecture
 
-### Three-Layer Architecture
+### Four projects
 
-1. **VcrSharp.Core** - Domain logic and parsing
-   - `.tape` file parsing using Superpower parser combinators (TapeParser, TapeTokenizer)
-   - AST representation of commands (all implement `ICommand` interface)
-   - Session state management and configuration (SessionState, SessionOptions)
-   - Theme definitions (BuiltinThemes, Theme)
-   - Interactive recording: captured input → tape conversion (Recording/InputToTapeConverter, InputEvent)
+1. **VcrSharp.Core** — domain logic, parsing, and the cell-grid contract. No external-process or platform code.
+   - `.tape` parsing with Superpower combinators (`Parsing/TapeTokenizer.cs`, `TapeParser.cs`, `TapeToken.cs`)
+   - AST command nodes (`Parsing/Ast/*.cs`), all implementing `ICommand`
+   - Session config and runtime state (`Session/SessionOptions.cs`, `SessionState.cs`), shell resolution (`Session/ShellConfiguration.cs`)
+   - Terminal-grid DTOs the renderers consume (`Rendering/TerminalCell.cs`, `TerminalContent.cs`, `ContentExtent.cs`)
+   - The config layer: `vcr.toml` model + reader + preset resolver + tape migrator (`Config/*.cs`)
+   - Themes (`Settings/BuiltinThemes.cs`, `Theme.cs`), deprecation table (`Settings/SettingDeprecations.cs`)
+   - Interactive-recording conversion (`Recording/InputEvent.cs`, `InputToTapeConverter.cs`)
 
-2. **VcrSharp.Infrastructure** - External integrations
-   - Playwright browser automation (PlaywrightBrowser, TerminalPage)
-   - ttyd process management (TtydProcess)
-   - Frame capture and storage (FrameCapture, FrameStorage, FrameWriteQueue)
-   - Video encoding with FFmpeg (VideoEncoder)
-   - Activity monitoring and inactivity detection (ActivityMonitor)
+2. **VcrSharp.Terminal** — the from-scratch terminal engine. A standalone library whose single public type, `VtScreen`, is a VT500-series emulator (canonical Paul Williams state machine). It feeds on a byte/char stream and maintains a `Cols×Rows` grid of styled cells; `ToTerminalContent()` snapshots that grid into the Core DTOs. It is conformance-tested against a vendored libvterm corpus. Depends only on Core (for the `TerminalContent`/`TerminalCell` types).
 
-3. **VcrSharp.Cli** - CLI application
-   - Commands: RecordCommand, RecordInteractiveCommand, ValidateCommand, ThemesCommand, SnapCommand, CaptureCommand
-   - User interface with Spectre.Console
+3. **VcrSharp.Infrastructure** — platform integration and rendering.
+   - PTY backends behind a neutral seam: `Terminal/IPtyProcess.cs` (factory `PtyProcess.Start`), `Terminal/ConPtyProcess.cs` (Windows ConPTY), `Terminal/UnixPtyProcess.cs` (`posix_openpt` + `posix_spawn`)
+   - The native terminal surface: `Terminal/NativeTerminalPage.cs` (`ITerminalPage` over PTY+grid), `Terminal/NativeFrameCapture.cs` (`IFrameCapture`), `Terminal/NativeKeyMap.cs` (key → raw terminal bytes), `Terminal/NativeInteractiveRecorder.cs` (`vcr record`), `Terminal/NativeTerminalRenderer.cs` (standalone run-and-snapshot helpers)
+   - The orchestrator: `Session/NativeRecordingSession.cs`
+   - Rendering: `Rendering/RasterRenderer.cs` (ImageSharp/SixLabors.Fonts → frames), `Rendering/SvgRenderer.cs` (text SVG, static + animated) with `Rendering/CustomGlyphRenderer.cs`, `Rendering/NativeVideoWriter.cs` (FFmpeg via FFMpegCore), `Rendering/NativeSvgWriter.cs`
+   - `Processes/DependencyValidator.cs` (checks only FFmpeg, only when needed)
 
-### Recording Flow
+4. **VcrSharp.Cli** — the `vcr` CLI, built on Spectre.Console.Cli (`Program.cs` + `Commands/*.cs`).
 
-1. **Parse**: TapeParser reads `.tape` file and produces a list of `ICommand` objects
-2. **Initialize**: VcrSession starts ttyd (terminal server) with EXEC commands as startup script, then launches Playwright browser
-3. **Execute**: Commands execute sequentially via `ExecuteAsync(ExecutionContext, CancellationToken)` (EXEC commands are skipped - already running in background from ttyd startup)
-4. **Capture**: FrameCapture takes screenshots during execution, FrameStorage manages them
-5. **Trim**: FrameTrimmer removes blank frames at start/end
-6. **Encode**: VideoEncoder routes to format-specific encoders (GIF/MP4/WebM via FFmpeg, raw Frames, or SVG)
+### Recording flow (`vcr <tape>`)
 
-### Interactive Recording Flow (`vcr record`)
+1. **Parse** — `TapeParser` reads the `.tape` into a list of `ICommand` AST nodes.
+2. **Resolve config** — `Config/PresetResolver.ResolveWithDiscovery` walks up from the tape's directory to find a `vcr.toml`, then expands `Use` presets, the `Exec name arg` macro form, and `Run` sugar, and derives `Output` from a preset's `outDir`/`output`. CLI `--set`/`--output` overrides are then applied.
+3. **Launch** — `NativeRecordingSession` decides the launch shape from **`Exec` presence** (`ShouldUseBareRepl` = no `Exec`):
+   - **No `Exec`** → launch a bare interactive REPL; the tape `Type`s its own visible command line.
+   - **Has `Exec`** → join the `Exec` command(s) and run them as the shell's hidden foreground process (the launch line is never echoed); later `Type`/`Key` flow over the PTY to that app.
+   It opens the PTY (`PtyProcess.Start`), creates a `VtScreen`, and starts a background drain thread reading PTY output → `screen.Feed(...)`.
+4. **Capture** — capture is **event-driven**: after every output chunk the drain thread snapshots the grid and appends it if it differs from the last frame (de-duped by a content fingerprint). This is the "never miss a frame" design — periodic sampling would drop transient TUI states. Key presses are paced ~24 ms (`KeyPaceMs`) so a TUI has time to redraw between keys.
+5. **Execute** — the command loop runs the action commands (`Type`, `Key`, `Modifier`, `Wait`, `Hide`/`Show`, `Sleep`, `Screenshot`) against an `ExecutionContext`. `Set`/`Output`/`Env`/`Use`/`Exec` are no-ops at this stage — their effect was realized before/around the loop.
+6. **Settle** — after the loop, wait for output to stabilize and force-append a final frame so the recording always ends on finished output.
+7. **Encode** — per `Output` path, by extension: `.svg` → `NativeSvgWriter` (animated) or `RenderStaticAsync` (when `Mode static`); `.gif`/`.mp4`/`.webm` → `NativeVideoWriter` (rasterize frames + FFmpeg); `.png` → single final raster frame; extension-less path → a PNG frame sequence + concat manifest.
 
-A separate path (`VcrSession.RecordInteractiveAsync`, invoked by `RecordInteractiveCommand`) authors a `.tape` file from a live session instead of playing one back:
+### Interactive recording flow (`vcr record`)
 
-1. **ttyd interactive**: starts ttyd with no Exec commands (interactive shell) and `--once` (so ttyd exits when the client disconnects, signaling end-of-session)
-2. **Headed browser**: launches Playwright non-headless with a window size and `noViewport` so the user types into a real, resizable terminal window (ttyd re-fits the terminal natively)
-3. **Capture**: `TerminalPage.StartInputCaptureAsync` injects an xterm.js `onData` hook recording every keystroke (raw input byte-stream) with a timestamp; the loop drains periodically until the shell exits / window closes
-4. **Convert**: `InputToTapeConverter.Convert` (Core) turns the captured `InputEvent` stream into tape text — coalescing `Type`, mapping keys/modifiers, inserting `Sleep` from real pauses, stripping the trailing `exit`
-5. **Write**: the tape is written to disk (no `Output`/encoding — this mode produces a tape file only)
+`NativeInteractiveRecorder.RecordAsync` authors a `.tape` from a live session instead of playing one back:
 
-This works in any shell because it captures *input* (shell-agnostic), not shell output. No FrameCapture/encoding is involved.
+1. Launch the user's shell interactively over a PTY (no `Exec`).
+2. Put the host console in raw/VT pass-through mode (`ConsoleRawMode`: console-mode flags on Windows; `stty raw -echo < /dev/tty` on Unix). Falls back to cooked mode if raw can't be set.
+3. Run two pump threads: **output** (PTY → host stdout, so the user sees the live shell) and **input** (host stdin → PTY, recording every read chunk as a timestamped `InputEvent`). Because a multi-byte keystroke (an arrow's `ESC [ A`, `Alt+char`) arrives in one read, escape sequences stay intact.
+4. The session ends when the shell exits (`exit` / Ctrl+D).
+5. `InputToTapeConverter.Convert` turns the captured input byte-stream into tape text — coalescing `Type`, mapping keys/modifiers, inserting `Sleep` from real pauses, stripping the trailing `exit`. This is shell-agnostic because it operates on *input*, not output. (This converter is unchanged from before; only the capture mechanism — console pumps over a PTY — replaced the old browser hook.)
 
-### Command Architecture
+### Command architecture
 
-All tape commands implement `ICommand` with a single method:
+All tape commands implement `ICommand`:
 ```csharp
 Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken);
 ```
+`ExecutionContext` exposes `ITerminalPage` (the PTY-backed `NativeTerminalPage`), `IFrameCapture` (`NativeFrameCapture`), `SessionOptions`, and `SessionState`.
 
-ExecutionContext provides:
-- ITerminalPage (browser terminal interface)
-- IFrameCapture (screenshot capture)
-- SessionState (session configuration and runtime state)
+Command nodes in `Parsing/Ast/`:
+- **Config (no-op at runtime, applied before/around the loop):** `SetCommand`, `OutputCommand`, `EnvCommand`, `UseCommand`, `ExecCommand`
+- **Input (real actions):** `TypeCommand`, `KeyCommand`, `ModifierCommand`
+- **Control (real actions):** `SleepCommand`, `WaitCommand`, `HideCommand`, `ShowCommand`
+- **Utility (real action):** `ScreenshotCommand` (PNG and SVG)
+- **Sugar (desugared by `PresetResolver` before the loop):** `RunCommand` (→ `Type` + `Enter` + `Wait`)
 
-Command types in `VcrSharp.Core/Parsing/Ast/`:
-- Configuration: SetCommand, OutputCommand
-- Input: TypeCommand, KeyCommand, ModifierCommand (e.g., Ctrl+C)
-- Control: SleepCommand, WaitCommand, HideCommand, ShowCommand
-- Execution: ExecCommand (runs real shell commands)
-- Utility: CopyCommand, PasteCommand, ScreenshotCommand (supports PNG and SVG formats)
-- Environment: EnvCommand, RequireCommand, SourceCommand
+`Exec`'s effect happens outside the loop: literal `Exec` text is baked into the shell launch line; the `Exec name arg` macro form is expanded to a literal `Exec` by `PresetResolver` against a `[macro]` template in `vcr.toml`.
 
-### Key Components
+> **Removed commands:** `Copy`, `Paste`, `Require`, and `Source` were deleted from the grammar. They are parse errors now — do not reference them.
 
-**TapeParser** (Core): Superpower-based parser that transforms `.tape` syntax into `ICommand` AST nodes.
+### Key components
 
-**VcrSession** (Infrastructure): Main orchestrator that manages the entire recording lifecycle - ttyd, browser, terminal, frame capture, command execution, and video encoding.
+- **`VtScreen`** (`VcrSharp.Terminal`) — the in-process VT500 engine. Implements the full SGR attribute model (bold/dim/italic/underline incl. styled + colored, reverse/conceal/strike/overline/blink, 16/256/truecolor), DEC private modes, alternate screen, scroll regions, line editing, tab stops, cursor save/restore, content-preserving resize, UTF-8 + grapheme/emoji width, and DEC line-drawing. Crash-proof on pathological input (a hard fuzz gate). True reflow-on-resize is deliberately deferred — the largest remaining conformance gap.
 
-**TerminalPage** (Infrastructure): Playwright-based terminal interface that wraps browser automation for xterm.js. Handles keyboard input, screen scraping, and waiting for output patterns. For interactive record mode it also installs an xterm.js `onData` capture hook (`StartInputCaptureAsync`/`DrainInputCaptureAsync`).
+- **`NativeRecordingSession`** (Infrastructure) — the orchestrator: chooses the launch shape, runs the PTY drain + event-driven capture, runs the command loop, settles, and routes each `Output` to the right writer.
 
-**InputToTapeConverter** (Core, `Recording/`): Pure function that converts a captured `InputEvent` stream (timestamped keystrokes) into `.tape` text. Shell-agnostic (operates on the input byte-stream), with the full byte/escape-sequence → tape-command mapping, `Type` coalescing, key-repeat grouping, timestamp-based `Sleep` insertion, and trailing-`exit` stripping. Fully unit-tested in `tests/VcrSharp.Core.Tests/Recording/`.
+- **`NativeTerminalPage`** (Infrastructure) — `ITerminalPage` over the PTY + grid. `Type`/`Key`/`Modifier` write bytes to PTY stdin (the shell echoes them back through the parser); `Wait` polls the grid text against a regex (and treats a non-interactive `Exec` shell exiting as "Wait satisfied"); `Hide`/`Show` toggle capture and cursor visibility.
 
-**ExecCommand** (Core): Passes shell commands to ttyd as startup script arguments. Commands execute in background while recording captures output. Does not execute during tape playback (ExecuteAsync is a no-op).
+- **`PtyProcess` / `ConPtyProcess` / `UnixPtyProcess`** (Infrastructure) — the only platform-specific code. Everything above the `IPtyProcess` seam (engine, grid, renderers, commands, capture) is platform-neutral.
 
-**ActivityMonitor** (Infrastructure): Monitors terminal output by polling buffer every 20ms to detect output stabilization. Tracks when content stops changing based on configurable inactivity timeout.
+- **`PresetResolver`** (Core) — expands the whole config layer (`Use`, `Run`, `Exec` macros, derived `Output`) into primitive commands before recording. The engine never sees presets/macros. Fast-paths (returns input unchanged) when a tape uses none of them.
 
-**FrameStorage** (Infrastructure): Manages captured PNG frames during recording, handles concurrent writes via FrameWriteQueue, and provides cleanup.
+- **`TapeMigrator`** / **`MigrateCommand`** — mine a directory of legacy tapes for shared "house style" `Set` lines, emit a `vcr.toml` preset, and rewrite each tape to `Use` it. Every rewrite is equivalence-checked (identical realized config + action sequence) so a migration provably never changes behavior; it also rewrites deprecated `StaticOutput`/`FitToContent` into `Mode`/`Size`.
 
-**VideoEncoder** (Infrastructure): Orchestrator that routes encoding requests to format-specific encoders. Uses interface-based architecture with IEncoder implementations for each format (GIF, MP4, WebM, PNG, Frames, SVG).
+- **`RasterRenderer`** (Infrastructure) — renders a `TerminalContent` grid to a raster image with SixLabors.ImageSharp + SixLabors.Fonts (CPU). Resolves a real monospace system font (Cascadia Mono/Code, Consolas, Courier New, DejaVu Sans Mono, …) and throws an actionable error if none exists. Used for GIF/MP4/WebM/PNG.
 
-**SvgRenderer** (Infrastructure): Shared SVG rendering component used by both SvgEncoder (for animated recordings) and FrameCapture (for static screenshots). Renders terminal content as text-based SVG with full styling support. Embedding-oriented options (all SVG-only): `Set Loop false`/`Set LoopCount N` (finite `repeatCount` + `fill="freeze"` so the reveal plays once/N times and holds); `Set FitToContent true` (crop to measured content extent and relax the clip-path); `Set SvgIntrinsicSize`/`Set SvgMetadata` (explicit `width`/`height` + `data-*` metadata on the root `<svg>`, both default **on**); `Set CssVariables true` (emit `fill:var(--vcr-*,#fallback)` + a `:root` palette block). The SVG path honors `Padding` only — it ignores `Margin`/`MarginFill`/`WindowBarSize`/`BorderRadius` and captures only the visible viewport.
+- **`SvgRenderer`** (Infrastructure) — renders the grid to text-based SVG (static via `RenderStaticAsync`, animated via `RenderAnimatedAsync`). Box-drawing/block/powerline glyphs are emitted as SVG paths (`CustomGlyphRenderer`), so **SVG needs no installed font**. Embedding options (all SVG-only): `Set Loop false`/`Set LoopCount N` (finite reveal that holds), `Set Size fit` (crop to content extent), `Set SvgIntrinsicSize`/`Set SvgMetadata` (explicit `width`/`height` + `data-*`, both default on). SVG honors `Padding` only; it ignores `Margin`/`MarginFill`/`WindowBarSize`/`BorderRadius`.
 
-**ContentExtent / ContentAnalysis** (Core, `Rendering/ContentExtent.cs`): Pure helpers shared across the SVG features. `ContentAnalysis` holds the single blank-cell/blank-row/blank-content predicate (matches the renderer's row-skip) plus `TrimBlankLoopRange` (drops leading-blank frames and collapses a trailing static tail so a looping SVG starts on content and doesn't flash). `ContentExtent.Measure`/`Union` compute the cropped extent for `FitToContent` and `data-cols`/`data-rows`.
+- **`NativeVideoWriter`** (Infrastructure) — rasterizes captured frames and drives FFmpeg (via FFMpegCore) for GIF (palettegen/paletteuse), MP4 (libx264), and WebM (libvpx-vp9, alpha). Also writes the extension-less frame directory (PNG sequence + concat manifest).
 
-**BufferStabilizer** (Infrastructure, `Recording/`): Reusable buffer-settle poll extracted from `VcrSession.WaitForInactivityAsync`. Used by `Set ScreenshotWaitForInactivity true` (Screenshot waits for output to settle before capturing) and `Set StaticOutput true` (run Exec, settle, emit a single static SVG/PNG per Output with no frame loop or animation — see `VcrSession.RenderStaticOutputAsync`).
+- **`DependencyValidator`** (Infrastructure) — checks **only** for FFmpeg, and `RecordCommand` only calls it when an `Output` is `.gif`/`.mp4`/`.webm`. SVG/PNG/frames-only tapes need no external binaries.
+
+## CLI commands
+
+| Command | Purpose | Key options |
+|---|---|---|
+| `vcr <tape>` (default) | Record/play a tape to its `Output` target(s) | `-v/--verbose`, `--set KEY=VALUE` (repeatable), `-o/--output FILE` (repeatable) |
+| `vcr validate <tape>` | Parse + resolve presets and report command counts; no recording | — |
+| `vcr themes` | List the built-in themes (name/bg/fg) | — |
+| `vcr migrate <dir>` | Extract shared `Set` lines into `vcr.toml`, rewrite tapes to `Use` it (dry run by default) | `--write`, `--preset NAME` (def `doc`), `--threshold FRACTION` (def `0.6`), `-r/--recursive` |
+| `vcr snap <command>` | Static SVG screenshot of a command's final output (forces `.svg`, fit-to-content) | `-o/--output`, `--theme`, `--cols`, `--rows`, `--font-size`, `--disable-cursor`, `--transparent-background`, `--end-buffer`, `-v` |
+| `vcr capture <command>` | Animated SVG recording of a command's output (forces `.svg`) | same as `snap` |
+| `vcr record [tape]` | Interactively record keystrokes in a real shell → `.tape` (default `recording.tape`) | `--shell`, `--theme`, `--cols`, `--rows`, `--font-size`, `-v` |
 
 ## Dependencies
 
-### Runtime Requirements
-- .NET 10 SDK
-- ttyd >= 1.7.2 (terminal server)
-- FFmpeg (video encoding)
-- Playwright browsers (auto-installed on first run)
-  - **Note**: As of version 0.0.11+, all platform drivers (Windows, macOS, Linux for x64 and ARM64) are bundled in the package
-  - Package size: ~15-20MB (increased from ~5MB to ensure cross-platform compatibility)
-  - Previous versions only included drivers for the build platform, causing installation failures on other platforms
+### Runtime requirements
+- **.NET 10** runtime (the tool is a `dotnet tool`, command `vcr`).
+- **FFmpeg** on PATH — **only** for GIF/MP4/WebM output. SVG/PNG/frames need it not.
+- A **monospace font** installed — only for raster output (GIF/MP4/WebM/PNG). Usually already present (Windows: Consolas/Cascadia; Linux: DejaVu Sans Mono). SVG output needs none.
+- ~~ttyd~~, ~~Playwright/Chromium~~ — **removed**. Not dependencies.
 
-### Key NuGet Packages
-- Superpower (parser combinators)
-- Microsoft.Playwright (browser automation)
-- Spectre.Console / Spectre.Console.Cli (CLI UI)
-- SixLabors.ImageSharp (image processing)
-- FFMpegCore (FFmpeg video encoding)
+### Key NuGet packages
+- **Superpower** (parser combinators) — Core
+- **SixLabors.ImageSharp** + **SixLabors.ImageSharp.Drawing** (raster/font rendering) — Core
+- **FFMpegCore** (FFmpeg wrapper, the only external-binary-backed package) — Infrastructure
+- **Spectre.Console** / **Spectre.Console.Cli** + **Errata** (CLI UI) — Cli
+- **Serilog** (logging) — Core/Cli
 
-## Project Structure
+There is **no `Microsoft.Playwright`** reference. (A vestigial `NU5111`/Playwright comment may linger in `VcrSharp.Cli.csproj` — it is dead and safe to remove.)
+
+## Project structure
 
 ```
 src/
-├── VcrSharp.Cli/              # CLI entry point, commands
-├── VcrSharp.Core/             # Domain logic, parsing, commands, session state
-└── VcrSharp.Infrastructure/   # External integrations (Playwright, FFmpeg, ttyd)
+├── VcrSharp.Core/            # Parsing, AST, SessionOptions, config (vcr.toml), themes, grid DTOs
+├── VcrSharp.Terminal/        # VtScreen — the from-scratch VT500 engine
+├── VcrSharp.Infrastructure/  # PTY backends, NativeRecordingSession, renderers, FFmpeg writer
+└── VcrSharp.Cli/             # `vcr` CLI commands (Spectre.Console.Cli)
 
 tests/
-├── VcrSharp.Core.Tests/       # Unit tests for parsing and domain logic
-└── VcrSharp.Integration.Tests/ # End-to-end recording tests
+├── VcrSharp.Core.Tests/      # Parser, settings, config/preset/migrate, native-launch tests
+└── VcrSharp.Terminal.Tests/  # VtScreen unit tests + vendored libvterm conformance corpus
+
+docs/
+├── VcrSharp.Docs/            # Pennington DocSite (Content/ = tutorials/how--to/explanation/reference)
+├── vt-engine-conformance.md  # living spec for the VT engine (note: some historical paths)
+└── vt-conformance-scoreboard.md  # auto-generated by the conformance tests
+
+samples/                      # Example .tape files (and samples/docs/* feed the docs SVGs)
 ```
 
-## Important Implementation Details
+## Implementation details
 
-### Parser Implementation
-Uses Superpower parser combinators for `.tape` file parsing. TapeTokenizer produces a token stream and TapeParser defines grammar rules that build ICommand objects. Supports comments, quoted strings, duration literals (e.g., "500ms", "2s"), and regex patterns for Wait commands.
+### Tape grammar (current)
 
-### Wait Command Scopes
-Wait command has three scopes for pattern matching:
-- `Wait+Buffer` (default): Search in output accumulated since last Wait
-- `Wait+Line`: Search current line only
-- `Wait+Screen`: Search entire visible terminal screen
+- **Settings:** `Set <Name> <value>` (value = quoted string, duration, number, bool, or bare word). Must appear before any action command; no duplicates; unknown name is a parse error with a "Did you mean…?" suggestion.
+- **Output:** `Output <path>` — format by extension (`.svg`/`.gif`/`.mp4`/`.webm`/`.png`, or a directory for raw frames).
+- **Input:** `Type[@speed] "text"`; special keys (`Enter`, `Tab`, `Backspace`, `Delete`, `Escape`, arrows, `Home`, `End`, `PageUp/Down`, `Insert`, `Space`) with optional `@speed` and a trailing repeat count (e.g. `Backspace 5`, `Down@100ms 3`); modifier chords (`Ctrl+C`, `Alt+Enter`, `Ctrl+Alt+Shift+Tab`).
+- **Control:** `Sleep <duration>`; `Wait[+Buffer|+Line|+Screen][@timeout] [/regex/]`; `Hide` / `Show` (stop/resume frame capture — commands keep executing while hidden).
+- **Execution:** `Exec "cmd"` (run a real command) and `Exec name arg` (expand a `[macro]` from `vcr.toml`).
+- **Environment:** `Env KEY "value"`.
+- **Config sugar:** `Use <preset>` (apply a `vcr.toml` preset); `Run "cmd"` (= `Type` + `Enter` + `Wait`).
 
-### Frame Capture Strategy
-FrameCapture takes screenshots at specified framerate during recording. Hide/Show commands control whether frames are captured (commands still execute when hidden). FrameTrimmer removes blank frames at start/end based on StartBuffer/EndBuffer settings.
+### Settings worth knowing
+
+- **`Mode`** = `animated` (default) | `static`. `static` runs `Exec`, lets output settle, and emits one static frame per `Output` (`.svg`/`.png` only). Supersedes the deprecated `Set StaticOutput true`.
+- **`Size`** = `grid` (default) | `fit`. `fit` crops SVG to measured content extent. Supersedes the deprecated `Set FitToContent true`.
+- **`HoldDuration`** is an alias for `EndBuffer`.
+- Both deprecated booleans (`StaticOutput`, `FitToContent`) still parse (with a warning) so `vcr migrate` can read legacy tapes.
+- **Do not document or use `Set CssVariables`** — despite a lingering `SessionOptions.CssVariables` property, it is **not** in `ValidSettingNames`, so `Set CssVariables …` is a parse error.
+
+### `vcr.toml` (config layer)
+
+Discovered by walking up from the tape's directory. A deliberate TOML subset with two section kinds:
+```toml
+[preset.doc]            # pulled in by `Use doc`
+theme = "one dark"
+cols = 82
+transparentBackground = true
+endBuffer = 5s
+outDir = "assets"      # reserved: derive Output = assets/<tape>.svg
+
+[preset.landing]
+inherits = "doc"       # reserved: inherit base-first
+mode = static          # migrator emits Mode/Size, not StaticOutput/FitToContent
+output = "assets/{name}.png"  # reserved: explicit template, {name} = tape basename
+
+[macro]
+showcase = "dotnet run --no-build showcase {0}"   # Exec showcase <arg>
+```
+Reserved keys: `inherits`, `outDir`, `output`. Every other key is a setting (validated against the tape `Set` allow-list at resolve time). Presets/macros/`Use`/`Run` never reach the engine — `PresetResolver` expands them into `Set`/`Output`/`Type`/`Key`/`Wait`/literal `Exec`.
+
+### Wait scopes
+- `Wait+Buffer` (default): search output accumulated since the last `Wait`.
+- `Wait+Line`: current line only.
+- `Wait+Screen`: the entire visible grid.
 
 ### Exec vs Type
-- `Type`: Simulates character-by-character keyboard input (for demos)
-- `Exec`: Passes commands to ttyd startup script. Commands execute in background as shell starts, recording captures real output. VcrSession waits for output stabilization before ending.
+- `Type`: simulates character-by-character keyboard input (the typed text is part of the demo).
+- `Exec`: runs a real command as the shell's hidden foreground process. The launch shape keys off **`Exec` presence**, not Type/Key. A tape with `Exec` never echoes the launch line; a tape without `Exec` types its own visible command line into a bare REPL.
 
-### Screenshot Command
-The Screenshot command captures a single frame at any point during recording. Format is auto-detected from file extension:
-- **PNG** (`.png`): Raster screenshot using Playwright's built-in screenshot capability. Produces pixel-perfect images of the terminal. Always captures what is visually displayed.
-- **SVG** (`.svg`): Vector screenshot using SvgRenderer. Captures terminal content with full text and styling information. Benefits:
-  - Lightweight (5-50KB vs 50-500KB for PNG)
-  - Scalable (vector graphics, perfect at any zoom level)
-  - Searchable (actual text content, not pixels)
-  - Accessible (screen readers can read text)
+### Screenshot
+`Screenshot <path>` captures a single frame mid-recording. `.png` → `RasterRenderer`; `.svg` → `SvgRenderer`. With `Set ScreenshotWaitForInactivity true`, capture waits for output to settle first (`ScreenshotInactivityTimeout`).
 
-**Examples**:
-```tape
-Screenshot output.png       # PNG raster screenshot
-Screenshot output.svg       # SVG vector screenshot
-Screenshot samples/demo.svg # SVG with path
-```
+### Themes
+Built-in themes in `Settings/BuiltinThemes.cs` define foreground/background/ANSI palettes. Applied by the native renderers (raster + SVG) — there is no CSS injection anymore. `vcr themes` lists them; unknown names fall back to `Default`.
 
-**Implementation**: ScreenshotCommand delegates to IFrameCapture.CaptureScreenshotAsync(), which is implemented by FrameCapture in Infrastructure. FrameCapture detects the file extension and routes to either TerminalPage.ScreenshotAsync() (PNG) or SvgRenderer.RenderStaticAsync() (SVG).
+## Common patterns
 
-**When to use**:
-- Charm/VHS-based TUI applications
-- Vim, neovim editing sessions
-- htop, btop system monitors
-- Any full-screen ncurses/TUI application
+### Adding a new tape command
+1. Create a class in `VcrSharp.Core/Parsing/Ast/` implementing `ICommand`.
+2. Add a parser rule in `Parsing/TapeParser.cs` (and a token in `TapeTokenizer.cs` if it needs a new keyword).
+3. Implement `ExecuteAsync` against `ITerminalPage`/`IFrameCapture` (or make it a no-op if its effect is realized before the loop, like `Set`/`Output`/`Exec`).
+4. If it should be expanded before recording (like `Run`), handle it in `Config/PresetResolver.cs`.
+5. Add tests in `tests/VcrSharp.Core.Tests/Parsing/`.
 
-**Note**: This setting only affects SVG capture (screenshots and recordings). PNG screenshots always capture the visible screen content regardless of this setting.
+### Adding a new setting
+1. Add a property (with default) to `Session/SessionOptions.cs`.
+2. Add the name to `ValidSettingNames` in `Parsing/TapeParser.cs`.
+3. Add an apply case in `SessionOptions.ApplySetting`.
+4. Add validation in `SessionOptions.Validate` if needed.
+5. Add parser tests.
 
-### Theme System
-10 built-in themes in BuiltinThemes.cs. Themes define color palettes for terminal foreground/background/ANSI colors. Applied via CSS injection in PlaywrightBrowser.
+Note: setting names may begin with a command keyword (e.g. `WaitTimeout`, `ScreenshotWaitForInactivity`). `TapeTokenizer.Keyword()` guards the right boundary so such names tokenize as a single identifier.
 
-### Encoder Architecture
-VideoEncoder uses an interface-based architecture for output formats:
-- **IEncoder**: Interface defining `RenderAsync()` and `SupportsPath()` methods
-- **EncoderBase**: Abstract base class providing common functionality (frame validation, metadata access)
-- **Format-specific encoders** in `Infrastructure/Rendering/Encoders/`:
-  - **GifEncoder**: FFmpeg-based GIF with palette generation
-  - **Mp4Encoder**: FFmpeg-based H.264 MP4
-  - **WebMEncoder**: FFmpeg-based VP9 WebM (supports transparency)
-  - **PngEncoder**: Single-frame PNG output
-  - **FramesEncoder**: Raw PNG frames + manifest files to directory
-  - **SvgEncoder**: Text-based SVG animation (uses SvgRenderer for rendering)
+### Extending the terminal engine
+`VtScreen` is conformance-driven. The vendored libvterm corpus lives in `tests/VcrSharp.Terminal.Tests/Conformance/LibVterm/`; the harness (`LibVtermHarness.cs`) decodes the Perl byte literals and asserts against the grid snapshot. `EngineDoesNotCrash` + `FuzzTests` are hard robustness gates. The `Scoreboard` test regenerates `docs/vt-conformance-scoreboard.md`. When adding VT behavior, add or enable the relevant corpus assertions and keep the crash gate green.
 
-### SVG Rendering Architecture
-**SvgRenderer** (`Infrastructure/Rendering/SvgRenderer.cs`) is a shared component that renders terminal content as SVG:
-- **RenderStaticAsync()**: Generates static SVG for screenshots (no animations)
-- **RenderAnimatedAsync()**: Generates animated SVG for recordings (CSS keyframe animations)
-- **Shared rendering logic**: Both methods share core SVG generation code (dimension calculations, style CSS, terminal state rendering, background rendering, style run building)
-
-**Used by**:
-- **SvgEncoder**: Calls `RenderAnimatedAsync()` to generate animated SVG output from recordings
-- **FrameCapture**: Calls `RenderStaticAsync()` to generate SVG screenshots via Screenshot command
-
-**Architecture benefits**:
-- Single source of truth for SVG rendering
-- Consistent SVG output across animated and static use cases
-- Easier maintenance and feature additions
-
-**Adding a new encoder**:
-1. Create class implementing `IEncoder` in `Infrastructure/Rendering/Encoders/`
-2. Inherit from `EncoderBase` for common functionality
-3. Implement `SupportsPath()` to detect output format (by extension or path characteristics)
-4. Implement `RenderAsync()` to generate output
-5. Register encoder in `VideoEncoder` constructor
-
-**Output format examples**:
-```tape
-Output demo.gif          # GIF encoder (animated)
-Output demo.mp4          # MP4 encoder (animated)
-Output demo.webm         # WebM encoder (animated, supports transparency)
-Output demo.svg          # SVG encoder (animated)
-Output frames/           # Frames encoder (directory of PNG frames)
-Output screenshot.png    # PNG encoder (single frame)
-
-# Screenshot command examples
-Screenshot frame.png     # PNG screenshot (raster)
-Screenshot frame.svg     # SVG screenshot (vector)
-```
-
-## Testing Strategy
-
-- **Core.Tests**: Focus on parser correctness, command parsing, duration parsing
-- **Integration.Tests**: End-to-end recording tests with real ttyd/Playwright/FFmpeg
-
-Run integration tests locally with caution - they create actual browser instances and video files.
-
-## Common Patterns
-
-### Adding New Commands
-1. Create class in `VcrSharp.Core/Parsing/Ast/` implementing `ICommand`
-2. Add parser rule in `TapeParser.cs`
-3. Implement `ExecuteAsync` with terminal/capture logic
-4. Add tests in `VcrSharp.Core.Tests/Parsing/Ast/`
-
-### Adding New Settings
-1. Add property (with default) to `SessionOptions` in `VcrSharp.Core/Session/SessionOptions.cs`
-2. Add the setting name to `ValidSettingNames` in `TapeParser.cs`
-3. Add an apply case in `SessionOptions.ApplySetting`
-4. Add validation in `SessionOptions.Validate` if needed
-5. Add parser tests
-
-Note: setting names may begin with a command keyword (e.g. `WaitTimeout`, `ScreenshotWaitForInactivity`). `TapeTokenizer.Keyword()` guards the right boundary so a keyword is only tokenized when it isn't immediately followed by an identifier character — so such names tokenize as a single identifier. (Boolean and duration values already parse via the existing `Set X value` grammar; no grammar change is needed for new bool/int/duration settings.)
-
-### Working with Playwright Terminal
-TerminalPage wraps xterm.js terminal in browser. Key methods:
-- `TypeTextAsync()`: Send keyboard input
-- `GetVisibleTextAsync()`: Read screen content
-- `WaitForPatternAsync()`: Wait for output matching regex
-- `GetBufferAsync()`: Get scrollback buffer
-
-## Platform Considerations
-
-- **Windows**: Primary development platform, excellent PowerShell/CMD support
-- **Linux/macOS**: Fully supported, use Bash by default
-- Shell detection uses ShellConfiguration/ShellConfig for platform-specific defaults
+## Platform considerations
+- **Windows**: primary platform. PTY = ConPTY (`CreatePseudoConsole`, Windows 10 1809+). Default shell `pwsh` → `powershell` → `cmd`.
+- **Linux/macOS**: PTY = `posix_openpt` + `posix_spawn` (managed `fork`/`exec` is unsafe in a multi-threaded CLR). Default shell `bash`.
+- Everything above the `IPtyProcess` seam is identical across platforms; only PTY launch and raw-console plumbing differ. `Set Shell` is resolved through `Session/ShellConfiguration.cs` (bash/zsh/fish/sh/cmd/pwsh/powershell), which also supplies a clean `> ` prompt and profile/rc suppression.

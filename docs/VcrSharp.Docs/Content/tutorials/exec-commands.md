@@ -71,10 +71,11 @@ vcr git-workflow.tape
 Open the GIF. Notice something different from the typing demo: nothing is "typed" — the real `git status` output from
 your repository simply appears.
 
-Unlike `Type`, which simulates keystrokes, `Exec` runs a real program and captures its actual output. All `Exec`
-commands in a tape run together as a startup script when the shell launches, and their output is recorded as it appears.
-After the tape's commands finish, VCR# waits for the terminal output to settle (controlled by `InactivityTimeout`)
-before ending the recording. Here's a simple example using `dotnet --version`:
+Unlike `Type`, which simulates keystrokes, `Exec` runs a real program and captures its actual output. The `Exec`
+command runs as the shell's foreground process — the launch line itself is never echoed, so you only see the
+program's real output. When a tape has several `Exec` commands, VCR# joins them and runs them in sequence. After the
+output stops changing, VCR# waits for it to settle (controlled by `InactivityTimeout`) before ending the recording.
+Here's a simple example using `dotnet --version`:
 
 <VcrTape src="../demos/exec-real-command.svg" />
 
@@ -116,9 +117,10 @@ Watch the GIF. The commands run in order within the shell — the file is create
 appears in the log — while VCR# records the real output. The `Sleep` commands between them pace the *recording*, holding
 each result on screen long enough for viewers to read it.
 
-Because the `Exec` commands run as a single startup script rather than being typed one at a time, the `Sleep` durations
-control the recording timeline, not the commands themselves. If you need to hold the recording until specific output
-appears, use a `Wait /pattern/` command (covered next) instead of guessing with `Sleep`.
+Because the `Exec` commands run as the shell's foreground process in sequence rather than being typed one at a time,
+the `Sleep` durations control the recording timeline, not the commands themselves. If you need to hold the recording
+until specific output appears, use a `Wait /pattern/` command (covered next) instead of guessing with `Sleep`. For
+more on waiting strategies, see [How to wait for output](xref:docs.how-to.waiting).
 
 ## Step 4: Wait for Specific Output
 
@@ -171,7 +173,8 @@ Great work! You've learned to:
 - Wait for specific output with `Wait`
 - Create accurate recordings of real workflows
 
-You now know both simulated typing (from the typing demo) and real execution.
+You now know both simulated typing (from the typing demo) and real execution. For the full list of commands and their
+options, see the [tape syntax reference](xref:docs.reference.tape-syntax).
 
 ## Complete Code
 

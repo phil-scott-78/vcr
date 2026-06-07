@@ -1,104 +1,46 @@
 ---
 title: "Getting Started"
-description: "Quick start guide to creating your first terminal recording with VCR#"
+description: "Record your first terminal recording with VCR# — no browser, no extra tools."
 uid: "docs.tutorials.getting-started"
 order: 1000
 ---
 
-In this tutorial, you'll create a simple terminal recording that outputs a GIF. You'll install VCR#, write a basic tape
-file, and run your first recording. This takes about 5 minutes.
+In this tutorial we'll create our first terminal recording with VCR#. We'll install the tool, write a short tape
+file, and run it to produce an animated SVG of a shell command. It takes about five minutes, and every step succeeds.
 
-By the end, you'll have a working animated GIF showing "Hello, VCR#!" appearing in a terminal.
+By the end we'll have an SVG showing `Hello, VCR#!` appearing in a terminal.
 
-## Prerequisites
+> [!NOTE]
+> This first recording needs **no browser and no extra tools**. VCR# runs the shell in-process and renders SVG
+> directly, so all we need is the .NET runtime. FFmpeg comes later, only if we want a GIF or video.
 
-You'll need:
+## Install VCR#
 
-- .NET 10 SDK installed
-- Windows, macOS, or Linux
-- A terminal/command prompt
-
-### Installing FFmpeg
-
-[FFmpeg](https://ffmpeg.org/) is required for encoding videos and GIFs.
-
-```bash tabs=true title=Windows (using Chocolatey)
-choco install ffmpeg
-```
-
-
-```bash title=macOS (using Homebrew)
-brew install ffmpeg
-```
-
-```bash title=Linux (using apt)
-sudo apt update
-sudo apt install ffmpeg
-```
-
-Verify installation:
-```bash
-ffmpeg -version
-```
-
-### Installing ttyd
-
-[ttyd](https://github.com/tsl0922/ttyd) (>= 1.7.2) is required for terminal emulation.
-
-```bash tabs=true title=Windows
-choco install ttyd
-```
-
-
-```bash title=macOS
-brew install ttyd
-```
-
-```bash title=Linux
-sudo apt update
-sudo apt install ttyd
-```
-
-Verify installation:
-```bash
-ttyd --version
-```
-
-## Installation
-
-### Install VCR#
-
-Install VCR# globally using the .NET CLI:
+VCR# ships as a .NET global tool. We need the **.NET 10** runtime installed, then:
 
 ```bash
 dotnet tool install --global vcr
 ```
 
-### Verify Installation
+That's everything we need for SVG output. (FFmpeg is only required later for GIF, MP4, or WebM — see the final
+step.)
 
-Confirm all dependencies are installed correctly:
+Let's verify the install by listing the built-in themes:
 
 ```bash
-# Check VCR# (lists the built-in themes)
 vcr themes
-
-# Check FFmpeg
-ffmpeg -version
-
-# Check ttyd
-ttyd --version
 ```
 
-`vcr themes` should print a table of built-in themes, and the other two commands should display version information. If any command isn't found, revisit the Prerequisites section above.
+We should see a table of theme names with their background and foreground colors, including `Dracula`, which we'll
+use next. If `vcr` isn't found, confirm the .NET tools directory is on our `PATH` and try a new shell.
 
-## Your First Recording
+## Write the tape
 
-### Create a Tape File
-
-Create a new file called `hello.tape` with this content:
+A *tape* is a small script that tells VCR# what to type and record. Create a file named `hello.tape` with this
+content:
 
 ```tape
-Output hello.gif
+Output hello.svg
 
 Set Cols 80
 Set Rows 20
@@ -109,45 +51,53 @@ Enter
 Sleep 1s
 ```
 
-Let's look at what each line does:
+Each line, briefly:
 
-- `Output hello.gif` - Names your output file
-- `Set Cols/Rows` - Sets terminal size (80 columns × 20 rows)
-- `Set Theme` - Chooses the Dracula color scheme
-- `Type` - Simulates typing text character-by-character
-- `Enter` - Presses the Enter key
-- `Sleep 1s` - Pauses for 1 second
+- `Output hello.svg` — the file VCR# will write (SVG, so no FFmpeg needed).
+- `Set Cols 80` / `Set Rows 20` — the terminal size: 80 columns by 20 rows.
+- `Set Theme "Dracula"` — the color scheme.
+- `Type "echo 'Hello, VCR#!'"` — types the command, character by character.
+- `Enter` — presses Enter to run it.
+- `Sleep 1s` — pauses one second so the output stays on screen.
 
-### Run the Recording
+## Run it
 
-Now run VCR# with your tape file:
+Now run VCR# against the tape:
 
 ```bash
 vcr hello.tape
 ```
 
-You'll see VCR# start a browser, execute your commands, and encode the video. This takes 10-20 seconds.
+VCR# launches a real shell in-process, types our commands, records the output, and writes `hello.svg`. This
+finishes quickly — there's no browser to start and nothing to encode for SVG.
 
-When it finishes, VCR# prints `✓ Recording complete`, followed by a `✓ Videos rendered:` list showing `hello.gif` and its file size.
+## View the result
 
-### View Your Output
-
-Open `hello.gif` in your browser or image viewer. You should see something like this — an SVG recording produced by the same tape file rendering through VCR#'s SVG encoder:
+Open `hello.svg` in any browser or image viewer. We'll see the command typed out and its result appear, like this:
 
 <VcrTape src="../demos/hello-world.svg" />
 
-1. An empty terminal appears
-2. Text is typed: `echo 'Hello, VCR#!'`
-3. The command executes
-4. Output appears: `Hello, VCR#!`
-5. The terminal pauses briefly
+The recording plays back in three beats: an empty terminal, the command typed character by character, and then the
+`Hello, VCR#!` output. That character-by-character typing is what gives the recording its live, terminal-session
+feel.
 
-Notice how the typing appears character-by-character, just like a real terminal session. This creates the animated
-effect that makes your recordings look realistic.
+## Next: render a GIF
 
-## What's Next?
+To produce a GIF instead, change one line in `hello.tape`:
 
-Congratulations! You've created your first terminal recording.
+```tape
+Output hello.gif
+```
 
-Ready to build something more interesting? Try the [Typing Demo tutorial](typing-demo) to learn how to create
-realistic terminal interactions with navigation and editing.
+Then run `vcr hello.tape` again to write `hello.gif`.
+
+> [!NOTE]
+> GIF, MP4, and WebM output is encoded with **FFmpeg**, so it must be installed and on our `PATH` for those
+> formats. SVG and PNG need nothing extra.
+
+## Where to next
+
+- <xref:docs.tutorials.typing-demo> — build a richer demo with navigation and editing.
+- <xref:docs.tutorials.exec-commands> — record the output of a real command with `Exec`.
+- <xref:docs.reference.tape-syntax> — the full list of tape commands.
+- <xref:docs.how-to.quick-capture> — record a one-off command without writing a tape.

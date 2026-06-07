@@ -6,7 +6,7 @@
 # (raster) path.
 #
 # Run directly (eyeball in any terminal):   pwsh -NoProfile -File samples/vt-styles.ps1
-# Or record it:                             vcr native-play samples/vt-styles.tape -o vt-styles.svg
+# Or record it:                             vcr samples/vt-styles.tape -o vt-styles.svg
 
 $e = [char]27
 function Sgr([string]$codes, [string]$text) { "$e[${codes}m$text$e[0m" }

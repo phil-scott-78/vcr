@@ -7,7 +7,9 @@ order: 2700
 
 ## Overview
 
-Simulate keyboard input including typing, special keys, arrow keys, and keyboard shortcuts.
+Simulate keyboard input including typing, special keys, arrow keys, and keyboard shortcuts. VCR# writes the standard raw terminal byte sequence for every key and modifier chord, so input reaches your shell or TUI exactly as if you had typed it.
+
+For the complete grammar, see the [tape syntax reference](xref:docs.reference.tape-syntax).
 
 ## Basic Typing
 
@@ -69,6 +71,8 @@ Alt+Backspace   # Delete previous word
 Shift+Tab       # Reverse tab
 Ctrl+Alt+Delete # Multiple modifiers
 ```
+
+Chords can stack any combination of `Ctrl`, `Alt`, and `Shift` in any order, ending in a special key or letter (for example `Ctrl+Alt+Shift+Tab`). Each chord is emitted as the terminal escape sequence the application expects — `Ctrl+Right`, for instance, sends `ESC[1;5C`.
 
 ## String Quoting
 
@@ -164,22 +168,29 @@ Wait
 
 ## Troubleshooting
 
-**If Backspace doesn't work as expected:**
-The terminal may use different backspace behavior. Try `Ctrl+H` instead:
+Key encoding is deterministic: every key and modifier chord is written as the standard terminal byte sequence (for example `Backspace` sends the usual delete byte, and `Ctrl+Right` sends `ESC[1;5C`). You do not need to substitute alternate keys to coax a particular code out of the terminal.
+
+**If a TUI doesn't react to a key:**
+The application may not have finished redrawing. VCR# already paces keys roughly 24ms apart, but a busy or slow TUI can need more time between presses. Add a brief `Sleep`, or `Wait` for the screen to update, before the next key:
+
 ```tape
-Ctrl+H          # Alternative backspace
+Down            # Move the selection
+Sleep 100ms     # Give the TUI time to redraw
+Enter           # Confirm
 ```
 
 **If arrow keys don't work in TUI applications:**
-Ensure the application has fully started before sending arrow keys:
+Make sure the application has fully started before sending arrow keys. Use `Wait` to block until its prompt or menu appears:
+
 ```tape
 Exec "npm create vite@latest"
 Wait /Project name/   # Wait for the prompt
-Down 2                # Now arrow keys will work
+Down 2                # Now arrow keys land in the running app
 ```
 
 **If special characters don't appear correctly:**
 Use escape sequences in double quotes or switch to single quotes:
+
 ```tape
 Type "Path: C:\\Windows\\System32"    # Escaped backslashes
 Type 'Path: C:\Windows\System32'      # Or single quotes

@@ -1,135 +1,190 @@
 ---
 title: "How to Capture Screenshots"
-description: "Learn how to capture specific frames during your recording as standalone images"
+description: "Capture specific frames during a recording as standalone PNG or SVG images."
 uid: "docs.how-to.screenshots"
 order: 2100
 ---
 
 ## Overview
 
-Capture specific frames as standalone images during recording.
+Capture a specific frame as a standalone image while a tape records. A `Screenshot`
+command grabs whatever the terminal grid holds at that point and writes it to disk.
+The rest of your recording continues normally.
+
+> [!TIP]
+> SVG screenshots need no external tooling — no FFmpeg, no monospace font. Prefer
+> `.svg` for anything you embed in docs or a README. PNG screenshots are raster and
+> render with an installed monospace font.
 
 ## Basic Screenshot Capture
 
 ```tape
-Screenshot "filename.png"
+Screenshot "filename.svg"
 ```
 
-Supported formats: `.png` (raster, pixel-perfect) and `.svg` (vector, lightweight and searchable). Format is auto-detected from the file extension; any extension other than `.svg` is treated as PNG.
+Two formats are supported, auto-detected from the file extension:
+
+- **`.svg`** — vector, lightweight, text-selectable, scales crisply. Drawn directly
+  by VCR#'s SVG renderer (no font or FFmpeg required).
+- **`.png`** — raster, pixel-perfect. Rendered in-process; needs a monospace font.
+
+Any extension other than `.svg` is treated as PNG.
 
 ### Example
 
 ```tape
-Output "demo.gif"
+Output "demo.svg"
 
 Type "docker ps"
 Enter
 Wait
-Screenshot "containers.png"    # Capture current state
+Screenshot "containers.svg"    # Capture the current state
 ```
 
 ## Timing Your Screenshots
 
-**Capture after delay** using `Sleep`:
+A `Screenshot` captures the grid at the exact moment it runs, so place it after the
+output you want has appeared.
+
+**Capture after a fixed pause** using `Sleep`:
+
 ```tape
 Type "ls -la"
 Enter
 Wait
-Sleep 500ms                     # Let output stabilize
-Screenshot "files.png"
+Sleep 500ms                     # Let output settle
+Screenshot "files.svg"
 ```
 
-**Capture when output appears** using `Wait`:
+**Capture when specific output appears** using `Wait`:
+
 ```tape
-Exec "npm test"
-Wait /tests passed/             # Wait for completion
-Screenshot "test-results.png"
+Type "npm test"
+Enter
+Wait /tests passed/             # Block until this matches
+Screenshot "test-results.svg"
 ```
 
-**Tip:** Use `.png` for pixel-perfect raster output. Use `.svg` when you want a small, scalable, text-searchable file (great for embedding in docs).
+A bare `Wait` (no pattern) blocks until output stops changing — handy right before a
+screenshot when you don't have a reliable string to match.
 
-### Static SVG Screenshot
+### Static SVG screenshot
 
-This is an actual SVG screenshot captured mid-recording with `Screenshot "screenshot-svg.svg"` — text is selectable and the image scales crisply at any size:
+This is a real SVG screenshot captured mid-recording with
+`Screenshot "screenshot-svg.svg"`. The text is selectable and the image stays crisp at
+any size:
 
 <VcrTape src="../demos/screenshot-svg.svg" />
 
-## Capturing a Clean Frame After an `Exec` Command
+## Capturing a clean frame after an `Exec` command
 
-`Exec` runs in the background and the shell may exit (clearing the screen) before a plain `Screenshot` fires, capturing an empty terminal. Two settings fix this:
+`Exec` runs your command as the shell's foreground process and VCR# waits for its
+output to settle before the recording ends. The screen is **not** cleared out from
+under you — but a plain `Screenshot` placed too early can still fire before the command
+has finished drawing. Make sure the output is settled first.
 
-**Make `Screenshot` wait for the output to settle:**
+**Option 1 — `Wait`, then `Screenshot`:**
 
 ```tape
-Output "demo.gif"
-Set ScreenshotWaitForInactivity true     # wait for the buffer to stop changing
+Output "table.svg"
+Exec "my-tui --render-table"
+Wait                            # Block until output settles
+Screenshot "table.svg"
+```
+
+**Option 2 — make `Screenshot` settle automatically** with
+`Set ScreenshotWaitForInactivity`:
+
+```tape
+Output "table.svg"
+Set ScreenshotWaitForInactivity true     # wait for the grid to stop changing
 Exec "my-tui --render-table"
 Screenshot "table.svg"
 ```
 
-**Or produce a single static frame with no animation** (no SMIL, no command echo) — best for a widget you want to embed as a still image:
+By default `Screenshot` waits up to 500ms of inactivity; tune it with
+`Set ScreenshotInactivityTimeout`:
 
 ```tape
-Set StaticOutput true                    # run Exec, settle, emit one static frame
-Output "table.svg"                        # must be .svg or .png
+Set ScreenshotWaitForInactivity true
+Set ScreenshotInactivityTimeout 1s
+```
+
+**Option 3 — emit a single settled frame with `Set Mode static`.** This is the cleanest
+choice when you don't want an animation at all, just one still image of the final state:
+
+```tape
+Set Mode static               # run Exec, settle, emit one static frame
+Output "table.svg"            # every Output must be .svg or .png
 Exec "my-tui --render-table"
 ```
 
-`StaticOutput` skips the frame-capture loop entirely and emits exactly one settled frame per `Output`.
+`Set Mode static` skips the animation/frame-capture loop entirely and writes exactly one
+settled frame per `Output`, with no command echo. Every `Output` in a static-mode tape
+must be `.svg` or `.png`.
 
-## Static SVG Widgets for Embedding
+## Static SVG widgets for embedding
 
-For SVG widgets embedded in a docs site or README, combine the SVG output settings:
+For an SVG widget embedded in a docs site or README, combine the static-mode and SVG
+sizing settings:
 
 ```tape
-Set StaticOutput true        # one clean static frame
-Set FitToContent true        # crop to content — no need to guess Cols/Rows
-Set CssVariables true         # colors follow the page theme via --vcr-* CSS variables
+Set Mode static              # one clean static frame
+Set Size fit                 # crop to content — no need to guess Cols/Rows
 Set Theme "Dracula"
 Output "widget.svg"
 Exec "my-tui --render-table"
 ```
 
-- **`FitToContent`** trims trailing blank rows / right-side blank columns and relaxes the clip-path, so the last row is never shaved — over-provision `Rows` and let the renderer size the SVG.
-- **`SvgMetadata`** and **`SvgIntrinsicSize`** are on by default, so the root `<svg>` carries explicit `width`/`height` plus `data-cols`/`data-rows`/`data-font-size` — an `<img>` embed gets a stable intrinsic size and a consumer can compute exact display size without parsing the `viewBox`.
-- **`CssVariables`** emits `fill:var(--vcr-green,#…)` with a `:root` palette, so the embedding page can recolor or light/dark-swap the inlined SVG with no regeneration. (Each `var()` has a hex fallback, so `<img>` embeds still render.)
+- **`Set Size fit`** crops the SVG to the measured content extent. Over-provision `Rows`
+  (and `Cols`) and let the renderer size the output to whatever the command actually
+  drew — no trailing blank rows or right-side blank columns.
+- **`SvgIntrinsicSize`** (on by default) puts explicit `width`/`height` on the root
+  `<svg>`, so an `<img>` embed gets a stable intrinsic size.
+- **`SvgMetadata`** (on by default) adds `data-cols` / `data-rows` / `data-font-size`
+  (and cell-size / padding) to the root `<svg>`, so a consumer can compute exact display
+  size without parsing the `viewBox`.
 
-For an **animated** widget that mostly shows a static end state, add `Set Loop false` so the reveal plays once and holds the final frame instead of flashing empty → content every loop.
+If you instead want an **animated** widget that mostly shows a static end state, add
+`Set Loop false` so the reveal plays once and holds the final frame instead of flashing
+empty → content on every loop.
 
-See the [Configuration Options reference](xref:docs.reference.configuration-options#svg-output-settings) for the full list.
+See the [configuration options reference](xref:docs.reference.configuration-options) for
+the full list of SVG and sizing settings.
 
-## Multiple Screenshots
+## Multiple screenshots
 
-Capture different stages of a workflow:
+Capture different stages of a workflow in one recording:
 
 ```tape
-Output "tutorial.gif"
+Output "tutorial.svg"
 
 Type "git status"
 Enter
 Wait
-Screenshot "01-status.png"
+Screenshot "01-status.svg"
 
 Type "git add ."
 Enter
 Wait
-Screenshot "02-add.png"
+Screenshot "02-add.svg"
 
-Type "git commit"
+Type "git commit -m 'snapshot'"
 Enter
 Wait
-Screenshot "03-commit.png"
+Screenshot "03-commit.svg"
 ```
 
 ## Screenshots with Hide/Show
 
-Capture without recording the setup:
+Use `Hide` / `Show` to keep setup out of the recording while still capturing a clean
+screenshot. Commands keep running while hidden — only frame capture pauses:
 
 ```tape
-Output "demo.gif"
+Output "demo.svg"
 
 Hide
-# Setup not recorded
+# Setup runs but isn't recorded
 Type "cd project"
 Enter
 Wait
@@ -142,47 +197,60 @@ Show
 Type "npm test"
 Enter
 Wait
-Screenshot "results.png"        # Captured but setup wasn't recorded
+Screenshot "results.svg"        # Captured; the setup wasn't recorded
 ```
 
-## Example: Step-by-Step Guide
+## Step-by-step guide example
 
-Capture each stage of a workflow:
+Capture each stage of a workflow as its own image:
 
 ```tape
-Output "tutorial.gif"
+Output "tutorial.svg"
 
 # Step 1
 Type "npm install"
 Enter
 Wait
-Screenshot "step-1-install.png"
+Screenshot "step-1-install.svg"
 
 # Step 2
 Type "npm test"
 Enter
 Wait
-Screenshot "step-2-test.png"
+Screenshot "step-2-test.svg"
 
 # Step 3
 Type "npm start"
 Enter
 Wait /Server listening/
-Screenshot "step-3-running.png"
+Screenshot "step-3-running.svg"
 ```
 
 ## Troubleshooting
 
-**If Screenshot captures mid-animation or partial output:**
-Add `Sleep 500ms` before the Screenshot command to let output stabilize, or set `Set ScreenshotWaitForInactivity true` to wait for the buffer to settle automatically.
+**Screenshot captures mid-animation or partial output.**
+Add `Sleep 500ms` before the `Screenshot`, or set `Set ScreenshotWaitForInactivity true`
+to wait for the grid to settle automatically.
 
-**If Screenshot after an `Exec` command captures an empty screen:**
-The shell exited (clearing the screen) before the Screenshot fired. Use `Set ScreenshotWaitForInactivity true`, or switch to `Set StaticOutput true` to emit a single settled frame.
+**Screenshot after an `Exec` command looks incomplete.**
+The command's output hadn't settled yet. Add a bare `Wait` before the `Screenshot`, set
+`Set ScreenshotWaitForInactivity true`, or switch to `Set Mode static` to emit a single
+settled frame.
 
-**If Screenshot shows wrong content:**
-Ensure your `Wait` pattern completed successfully before the Screenshot executes.
+**Screenshot shows the wrong content.**
+Make sure the preceding `Wait` (or `Wait /pattern/`) completed before the `Screenshot`
+runs.
 
-**If Screenshot file is not created:**
-- Check file permissions in the output directory
-- Use absolute paths instead of relative paths
-- Verify the parent directory exists
+**Screenshot file is not created.**
+- Verify the parent directory exists.
+- Use an absolute path instead of a relative one.
+- Check write permissions for the output directory.
+
+## See also
+
+- [Quick capture from the command line](xref:docs.how-to.quick-capture) — `vcr snap`
+  and `vcr capture` produce SVG screenshots with no tape file.
+- [Tape syntax reference](xref:docs.reference.tape-syntax) — the full `Screenshot`,
+  `Wait`, and `Exec` grammar.
+- [Configuration options reference](xref:docs.reference.configuration-options) — every
+  `Set` setting, including `Mode`, `Size`, and the SVG options.

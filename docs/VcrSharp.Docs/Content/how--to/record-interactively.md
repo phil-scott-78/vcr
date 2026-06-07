@@ -7,7 +7,7 @@ order: 2650
 
 ## Overview
 
-The `record` command opens a live terminal, captures everything you type, and writes it out as a
+The `record` command launches a real shell, captures everything you type, and writes it out as a
 `.tape` file. Instead of hand-writing `Type`, `Enter`, and `Sleep` commands, you just *do* the demo
 and let VCR# transcribe it.
 
@@ -28,19 +28,25 @@ Run `record` with the path you want the tape written to:
 vcr record demo.tape
 ```
 
-A terminal window opens. **Type your commands in that window** — it is a real shell, so commands run
-for real. When you are done, end the session by typing `exit` (or pressing `Ctrl+D`), or simply close
-the window. VCR# then writes `demo.tape`.
+VCR# launches a shell over an in-process pseudo-terminal and puts your console into raw pass-through
+mode, so **the shell takes over your current terminal** — you see the live session and type into it
+directly. Commands run for real. When you are done, end the session by typing `exit` (or pressing
+`Ctrl+D`). VCR# then restores your console and writes `demo.tape`.
 
 If you omit the path, the tape is written to `recording.tape`.
+
+> [!NOTE]
+> `record` captures your keystrokes (the input byte-stream), not the shell's output. That is why it
+> works identically in every shell. For the full story, see
+> <xref:docs.explanation.interactive-recording>.
 
 ## Replay the recording
 
 The `record` command captures input only; it does not add an `Output` line. To render the tape, add
-one and replay it:
+one and replay it. SVG output needs no extra tooling, so it is the easiest target to start with:
 
 ```tape
-Output demo.gif
+Output demo.svg
 Type "echo hi"
 Enter
 Sleep 1.2s
@@ -51,8 +57,7 @@ vcr demo.tape
 ```
 
 You will usually want to open the generated tape and tidy it up — adjust `Sleep` durations, add an
-`Output`, or remove a stray keystroke — before rendering. See the
-[Complete Tape File Syntax Reference](../reference/tape-syntax).
+`Output`, or remove a stray keystroke — before rendering. See <xref:docs.reference.tape-syntax>.
 
 ## Choose a shell
 
@@ -78,8 +83,10 @@ Your keystrokes are transcribed into tape commands:
 | `Ctrl+C`, `Alt+b`, `Shift+Tab`, … | `Ctrl+C`, `Alt+b`, `Shift+Tab` |
 | A pause before your next keystroke | `Sleep <duration>` (based on how long you actually paused) |
 
-The trailing `exit` (or `Ctrl+D`) you use to end the session is stripped automatically. For the full
-list of key names, see [How to Use Keyboard Shortcuts and Special Keys](keyboard-input).
+Multi-byte keystrokes (such as an arrow key, which arrives as `ESC [ A`) reach VCR# in a single read,
+so escape sequences stay intact and map to the right key. The trailing `exit` (or `Ctrl+D`) you use to
+end the session is stripped automatically. For the full list of key names, see
+<xref:docs.how-to.keyboard-input>.
 
 ## Options
 
@@ -87,34 +94,32 @@ list of key names, see [How to Use Keyboard Shortcuts and Special Keys](keyboard
 |--------|-------------|---------|
 | `[output-tape]` | Path to write the tape (default: `recording.tape`) | `vcr record demo.tape` |
 | `--shell` | Shell to record in | `--shell bash` |
-| `--theme` | Terminal theme applied to the window, and written to the tape | `--theme "Dracula"` |
+| `--theme` | Terminal theme written to the tape | `--theme "Dracula"` |
 | `--cols` | Terminal width, written as `Set Cols` | `--cols 80` |
 | `--rows` | Terminal height, written as `Set Rows` | `--rows 24` |
 | `--font-size` | Font size, written as `Set FontSize` | `--font-size 18` |
 | `-v, --verbose` | Enable verbose logging | `-v` |
 
-`--cols`, `--rows`, and `--font-size` configure the generated tape's `Set` header (so playback uses
-them); the live recording window itself fits your screen and can be resized freely while you work.
+`--cols`, `--rows`, `--font-size`, and `--theme` configure the generated tape's `Set` header so that
+playback reproduces the same dimensions and styling. For the full CLI surface, see
+<xref:docs.reference.cli-commands>.
 
 ## When to use each command
 
 | Use case | Command |
 |----------|---------|
 | Author a tape by doing the demo | `record` |
-| One-off screenshot of a command's result | [`snap`](quick-capture) |
-| Animated SVG of a command running | [`capture`](quick-capture) |
+| One-off screenshot of a command's result | [`snap`](xref:docs.how-to.quick-capture) |
+| Animated SVG of a command running | [`capture`](xref:docs.how-to.quick-capture) |
 | Hand-crafted demo with precise control | a tape file you write yourself |
 
 ## Troubleshooting
 
-**Typing does nothing.** Click the terminal window once to give it focus, then type.
+**The tape is empty.** Make sure you actually typed something before ending the session. Keystrokes are
+captured from the moment the shell starts until you exit.
 
-**The tape is empty.** Make sure you typed in the window that `record` opened — not your original
-terminal. Keystrokes are captured only from the recording window.
-
-**Replaying shows nothing.** `record` writes a tape with no `Output`. Add an `Output demo.gif`
-line (and replay with `vcr demo.tape`) to render it.
+**Replaying shows nothing.** `record` writes a tape with no `Output`. Add an `Output demo.svg` line
+(and replay with `vcr demo.tape`) to render it.
 
 **Cross-platform note.** Because `record` captures keystrokes (not shell output), it works the same in
-PowerShell, cmd, bash, zsh, and fish. For why, see
-[How VCR# Records Your Keystrokes](../explanation/interactive-recording).
+PowerShell, cmd, bash, zsh, and fish. For why, see <xref:docs.explanation.interactive-recording>.

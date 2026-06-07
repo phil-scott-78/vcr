@@ -1,606 +1,325 @@
 ---
-title: "Complete Tape File Syntax Reference"
-description: "Comprehensive reference for all tape file commands and syntax"
+title: "Tape File Syntax Reference"
+description: "Complete catalog of every command, lexical rule, and parser rule in the VCR# tape file format."
 uid: "docs.reference.tape-syntax"
 order: 4100
 ---
 
-## Overview
+A tape file (`.tape`) is a plain-text script. Each command is on its own line, and commands run sequentially from top to bottom. This page catalogs every command and the lexical and parser rules that govern a tape.
 
-Tape files (`.tape`) define terminal recording scripts using a simple, readable syntax. Each command appears on its own line, and commands execute sequentially from top to bottom.
+For the full list of `Set` settings (names, defaults, ranges) see the [configuration options reference](xref:docs.reference.configuration-options). For the `vcr.toml` preset/macro layer used by `Use` and the `Exec` macro form, see the [vcr.toml reference](xref:docs.reference.vcr-toml). For the CLI verbs that consume tapes, see the [CLI commands reference](xref:docs.reference.cli-commands).
 
-## File Structure
+## Command catalog
 
-A typical tape file consists of:
-- Configuration settings (`Set`, `Output`)
-- Commands to execute (`Type`, `Exec`, `Wait`, etc.)
-- Comments prefixed with `#`
+The table below is the complete set of commands. Detailed entries follow.
 
-**Example:**
+| Command | Purpose |
+|---------|---------|
+| `Output <path>` | Declare an output target (format chosen by extension). |
+| `Set <Name> <value>` | Configure a setting. Must precede all action commands. |
+| `Type[@speed] "text"` | Type characters into the terminal. |
+| Special keys | `Enter`, `Tab`, `Up`, etc. — single keypresses, optionally repeated. |
+| Modifier chords | `Ctrl+C`, `Alt+Enter`, `Ctrl+Alt+Shift+Tab`, etc. |
+| `Sleep <duration>` | Pause for a fixed duration. |
+| `Wait[+Scope][@timeout] [/regex/]` | Block until output matches (or settles). |
+| `Hide` / `Show` | Pause / resume frame capture. |
+| `Screenshot <path>` | Capture one frame mid-recording (`.png` or `.svg`). |
+| `Exec "command"` | Run a real shell command (literal form). |
+| `Exec name arg` | Expand a `[macro]` from `vcr.toml` (macro form). |
+| `Env KEY "value"` | Set an environment variable for the session. |
+| `Use <preset>` | Apply a named preset from a discovered `vcr.toml`. |
+| `Run "command"` | Sugar for `Type` + `Enter` + `Wait`. |
+
+## Output
+
+Declares a file the recording is written to. The format is chosen by the file extension. A path with no extension is treated as a **directory of PNG frames**.
+
 ```tape
-# Configure output
-Output "demo.gif"
-Set Theme "Dracula"
+Output "demo.svg"     # animated SVG (no FFmpeg required)
+Output "demo.gif"     # animated GIF (requires FFmpeg)
+Output "demo.mp4"     # H.264 MP4 (requires FFmpeg)
+Output "demo.webm"    # VP9 WebM, supports transparency (requires FFmpeg)
+Output "demo.png"     # single-frame PNG
+Output "frames/"      # directory of PNG frames + a frames.txt manifest
+```
 
-# Type and execute commands
-Type "echo Hello"
+A tape may have multiple `Output` lines to emit several formats from one run:
+
+```tape
+Output "demo.svg"
+Output "demo.gif"
+```
+
+> [!NOTE]
+> SVG, PNG, and the frame directory need no external binaries. FFmpeg is required only for `.gif`, `.mp4`, and `.webm`. Prefer SVG for no-setup examples.
+
+## Set
+
+Configures a setting. The value is a quoted string, a duration, a number, a boolean, or a bare word.
+
+```tape
+Set Theme Dracula
+Set Cols 100
+Set FontSize 22
+Set TypingSpeed 40ms
+Set TransparentBackground true
+Set Mode static
+```
+
+Parser rules for `Set`:
+
+- **All `Set` commands must come before any action command** (`Type`, a key, `Sleep`, `Wait`, `Hide`, `Show`, `Screenshot`). `Output`, `Env`, `Use`, and `Exec` are not subject to this ordering rule.
+- **No setting may be set twice.** A duplicate `Set` of the same name is a parse error.
+- **An unknown setting name is a parse error** with a "Did you mean…?" suggestion.
+
+The full catalog of setting names, defaults, and ranges lives in the [configuration options reference](xref:docs.reference.configuration-options).
+
+## Type
+
+Types text character-by-character at the configured typing speed.
+
+```tape
+Type "echo hello"
+Type@500ms "slow typing"   # override per-character speed for this command
+```
+
+The optional `@<duration>` suffix overrides the typing speed for that command only (default comes from `Set TypingSpeed`). Text uses one of the three [string quote styles](#string-literals); escape sequences such as `\n` and `\t` are interpreted only in double-quoted strings.
+
+## Special keys
+
+Each special key sends one keypress. Every special key accepts an optional `@<speed>` and an optional trailing **repeat count**.
+
+```tape
 Enter
-Wait
+Backspace 5          # press Backspace five times
+Down@100ms 3         # press Down three times, 100ms apart
 ```
 
-## Output Commands
+Available keys:
 
-### Output
+| | | | |
+|---|---|---|---|
+| `Enter` | `Space` | `Tab` | `Backspace` |
+| `Delete` | `Insert` | `Escape` | `Up` |
+| `Down` | `Left` | `Right` | `PageUp` |
+| `PageDown` | `Home` | `End` | |
 
-Specifies the output file path for the recording.
+## Modifier chords
 
-**Syntax:**
-```tape
-Output "path/to/file.gif"
-Output "path/to/file.mp4"
-Output "path/to/file.webm"
-```
-
-**Supported Formats:**
-- `.gif` - Animated GIF with palette optimization
-- `.mp4` - H.264 video
-- `.webm` - WebM video (supports transparency)
-- `.svg` - Animated, text-based SVG (no FFmpeg required)
-- `.png` - Single-frame PNG
-- A directory or extension-less path (e.g. `frames/`) - Raw PNG frames plus a manifest written to that directory
-
-**Multiple Outputs:**
-You can specify multiple Output commands to generate different formats simultaneously:
-```tape
-Output "demo.gif"
-Output "demo.mp4"
-Output "demo.webm"
-```
-
-## Configuration Commands
-
-### Set
-
-Configure recording settings. See [Configuration Options Reference](configuration-options) for detailed information about each setting.
-
-**Syntax:**
-```tape
-Set <SettingName> <Value>
-Set <SettingName> "<StringValue>"
-Set <SettingName> 100ms
-```
-
-> **Quote string values.** A `Set` value must be a quoted string, a number, a duration (e.g. `100ms`), or `true`/`false`. Bare identifiers do not parse — write `Set Theme "Dracula"`, not `Set Theme Dracula`.
-
-#### Terminal Settings
+A chord is one or more modifiers — `Ctrl`, `Alt`, `Shift` — each joined with `+`, followed by a final key. Modifiers may appear in any order. The final key may be a special key or any single letter.
 
 ```tape
-Set Cols 100            # Character columns (recommended)
-Set Rows 30             # Character rows (recommended)
-Set Width 1200          # Terminal width in pixels (alternative to Cols)
-Set Height 600          # Terminal height in pixels (alternative to Rows)
-Set FontSize 22         # Font size in pixels
-Set FontFamily "monospace"
-Set LetterSpacing 1.0   # Letter spacing multiplier
-Set LineHeight 1.0      # Line height multiplier
+Ctrl+C
+Alt+Enter
+Shift+Tab
+Ctrl+Alt+Shift+Tab
 ```
 
-#### Video Settings
+## Sleep
+
+Pauses for a fixed duration. Unlike `Wait`, it does not look at output.
 
 ```tape
-Set Framerate 50        # Recording framerate (1-120 fps)
-Set PlaybackSpeed 1.0   # Playback speed multiplier
-Set LoopOffset 0        # Loop offset for GIFs (seconds)
-Set MaxColors 256       # GIF palette colors (1-256)
+Sleep 1          # bare number = seconds → 1s
+Sleep 500ms
+Sleep 1.5m
 ```
 
-#### Styling Settings
+## Wait
+
+Blocks until terminal output matches a pattern, or — with no pattern — until output settles.
 
 ```tape
-Set Theme "Dracula"     # Built-in theme name
-Set Padding 10          # Padding around terminal (pixels)
-Set Margin 20           # Margin around recording (pixels)
-Set MarginFill "#000000" # Margin fill color or image path
-Set WindowBarSize 30    # Window bar height (pixels)
-Set BorderRadius 8      # Border corner radius (pixels)
-Set CursorBlink true    # Enable/disable cursor blinking
-Set DisableCursor false # Hide the cursor entirely in output
-Set TransparentBackground false
+Wait                       # wait for output to settle (default scope: Buffer)
+Wait /Complete/            # wait until "Complete" appears
+Wait+Line /\$ $/           # search the current line only
+Wait+Screen /done/         # search the whole visible grid
+Wait@10s /ready/           # override the timeout for this command
+Wait+Screen@5s /Complete/  # combine scope and timeout
 ```
 
-#### Behavior Settings
+- **Scope** (optional, default `+Buffer`):
+  - `+Buffer` — output accumulated since the last `Wait`.
+  - `+Line` — the current line only.
+  - `+Screen` — the entire visible grid.
+- **`@<timeout>`** (optional) overrides the default wait timeout (`Set WaitTimeout`, default 15s).
+- **`/regex/`** (optional) overrides the default pattern (the shell prompt).
 
-```tape
-Set Shell "pwsh"                    # Shell to use
-Set WorkingDirectory "C:\\Projects"  # Working directory
-Set TypingSpeed 60ms                # Delay between keystrokes
-Set WaitTimeout 15s                 # Wait command timeout
-Set WaitPattern />\s*$/             # Regex for prompt detection
-Set InactivityTimeout 5s            # Command completion detection
-Set MaxWaitForInactivity 120s       # Max wait for Exec output to settle
-Set StartWaitTimeout 10s            # Wait for first activity
-Set StartBuffer 0ms                 # Time before first activity (default 0ms)
-Set EndBuffer 100ms                 # Time after last activity
-Set StartupDelay 3.5s               # Delay before Exec commands run at startup
-```
+A `Wait` that times out raises an error.
 
-## Input Commands
+## Hide / Show
 
-### Type
+`Hide` stops frame capture; `Show` resumes it. Commands keep executing while hidden — only capture is paused.
 
-Simulates typing text character-by-character with realistic delay.
-
-**Syntax:**
-```tape
-Type "hello world"
-Type@100ms "slow typing"    # Override typing speed
-```
-
-The `@` modifier allows per-command speed override. Escape sequences (`\n`, `\t`, `\r`, `\\`, `\"`) are supported in double-quoted strings.
-
-### Enter
-
-Simulates pressing the Enter/Return key.
-
-**Syntax:**
-```tape
-Enter           # Press once
-Enter 3         # Press three times
-```
-
-### Backspace
-
-Simulates pressing the Backspace key.
-
-**Syntax:**
-```tape
-Backspace       # Press once
-Backspace 5     # Press five times
-```
-
-### Tab
-
-Simulates pressing the Tab key.
-
-**Syntax:**
-```tape
-Tab             # Press once
-Tab 2           # Press twice
-```
-
-### Escape
-
-Simulates pressing the Escape key.
-
-**Syntax:**
-```tape
-Escape
-```
-
-### Space
-
-Simulates pressing the Space key.
-
-**Syntax:**
-```tape
-Space           # Press once
-Space 10        # Press ten times
-```
-
-## Navigation Commands
-
-### Arrow Keys
-
-Navigate using arrow keys.
-
-**Syntax:**
-```tape
-Up              # Press up arrow once
-Down 5          # Press down arrow five times
-Left
-Right 3
-```
-
-### Page Navigation
-
-Navigate pages in scrollable content.
-
-**Syntax:**
-```tape
-PageUp
-PageDown
-```
-
-### Line Navigation
-
-Jump to line boundaries.
-
-**Syntax:**
-```tape
-Home            # Jump to start of line
-End             # Jump to end of line
-```
-
-### Character Operations
-
-Insert or delete characters.
-
-**Syntax:**
-```tape
-Delete          # Delete key
-Insert          # Insert key
-```
-
-## Modifier Key Combinations
-
-### Syntax
-
-Combine modifier keys with other keys using the `+` operator.
-
-**Format:**
-```tape
-Modifier+Key
-Modifier+Modifier+Key
-```
-
-### Supported Modifiers
-
-- `Ctrl` - Control key
-- `Alt` - Alt key
-- `Shift` - Shift key
-
-### Common Combinations
-
-```tape
-Ctrl+C          # Interrupt command
-Ctrl+D          # EOF / exit
-Ctrl+Z          # Suspend (Unix) / Undo (Windows)
-Alt+Enter       # Full screen toggle
-Shift+Tab       # Reverse tab
-Ctrl+Alt+Delete # System command
-```
-
-## Control Flow Commands
-
-### Sleep
-
-Pause execution for a fixed duration without waiting for output.
-
-**Syntax:**
-```tape
-Sleep 1s        # Sleep for 1 second
-Sleep 500ms     # Sleep for 500 milliseconds
-Sleep 2m        # Sleep for 2 minutes
-```
-
-### Wait
-
-Wait for terminal output to match a pattern or for the shell prompt to appear.
-
-**Syntax:**
-```tape
-Wait                        # Wait for shell prompt (default)
-Wait /pattern/              # Wait for regex pattern
-Wait+Buffer /pattern/       # Search in persistent buffer (default scope)
-Wait+Line /pattern/         # Search current line only
-Wait+Screen /pattern/       # Search entire visible screen
-Wait@10s /pattern/          # Override timeout
-Wait+Screen@5s /Complete/   # Combine scope and timeout
-```
-
-**Scopes:**
-- `Buffer` (default) - Maintains persistent buffer across Wait commands to catch fast-scrolling content
-- `Line` - Search current line only
-- `Screen` - Search entire visible terminal screen
-
-### Hide
-
-Stop capturing frames. Commands still execute but won't appear in the final recording.
-
-**Syntax:**
 ```tape
 Hide
-```
-
-### Show
-
-Resume capturing frames after a `Hide` command.
-
-**Syntax:**
-```tape
+Type "secret setup"
+Enter
+Wait
 Show
 ```
 
-## Execution Commands
+## Screenshot
 
-### Exec
+Captures a single frame at the current point in the recording. The format is chosen by the file extension: `.svg` produces a vector screenshot, `.png` produces a raster image.
 
-Execute real shell commands and capture actual output. Unlike `Type`, which only simulates typing, `Exec` runs commands in the shell and waits for completion using inactivity detection.
-
-**Syntax:**
 ```tape
-Exec "npm install"
-Exec "git status"
+Screenshot "frame.png"   # raster
+Screenshot "frame.svg"   # vector (scalable, searchable text)
+```
+
+<VcrTape src="../demos/screenshot-svg.svg" />
+
+## Exec
+
+Runs a real shell command, capturing actual output. `Exec` has two forms.
+
+**Literal form** — a quoted command string:
+
+```tape
 Exec "dotnet build"
+Exec "git status"
 ```
 
-Commands execute at the start of the recording session and run in the background. The recorder uses inactivity detection (configurable via `InactivityTimeout`) to determine when commands complete.
+The command runs as the session's foreground process; its launch line is never echoed. Later `Type`/key commands flow to the running program. Multiple `Exec` lines are joined into one launch. VCR# waits for output to settle (governed by `InactivityTimeout` / `MaxWaitForInactivity`) before ending.
 
-## Utility Commands
+<VcrTape src="../demos/exec-real-command.svg" />
 
-### Screenshot
+**Macro form** — a bare name plus an argument, expanding a `[macro]` template defined in `vcr.toml`:
 
-Capture a single frame during recording. The format is chosen by the file extension: `.svg` produces a vector
-screenshot, and any other extension produces a PNG raster image. Only `.png` and `.svg` are meaningful.
-
-**Syntax:**
 ```tape
-Screenshot "output.png"   # PNG raster (any non-.svg extension produces PNG)
-Screenshot "output.svg"   # SVG vector screenshot (scalable, searchable)
+Exec showcase MyDemo
 ```
 
-### Copy
+The macro is expanded before recording. See the [vcr.toml reference](xref:docs.reference.vcr-toml) for defining `[macro]` templates and their `{0}` / `{name}` placeholders.
 
-Copy text to the system clipboard.
+> [!NOTE]
+> Whether a tape contains any `Exec` changes the launch shape. With **no** `Exec`, VCR# launches a plain interactive shell and types its own visible command line — the typed command is the demo. With **at least one** `Exec`, the `Exec` command runs as the hidden foreground process and the launch line is not echoed.
 
-**Syntax:**
+## Env
+
+Sets an environment variable for the session.
+
 ```tape
-Copy "text to copy"
-```
-
-### Paste
-
-Paste text from the system clipboard into the terminal.
-
-**Syntax:**
-```tape
-Paste
-```
-
-## Environment Commands
-
-### Env
-
-Set environment variables for the terminal session.
-
-**Syntax:**
-```tape
-Env API_KEY "secret123"
 Env NODE_ENV "production"
+Env API_KEY "secret123"
 ```
 
-### Require
+## Use
 
-Verify that required commands or dependencies are available before recording. Unlike `Output` and `Source`, the program name is given as a bare identifier (not quoted).
+Applies a named preset from a discovered `vcr.toml`. This is configuration sugar: the preset's settings are folded in before recording.
 
-**Syntax:**
 ```tape
-Require git
-Require node
-Require dotnet
+Use doc
 ```
 
-### Source
+The tape's own `Set` lines always win over a preset. When multiple `Use` lines are present, the later one wins; preset inheritance is applied base-first. See the [vcr.toml reference](xref:docs.reference.vcr-toml) for preset definitions, inheritance, and output templates.
 
-Include commands from another tape file.
+## Run
 
-**Syntax:**
+Sugar for `Type "command"` followed by `Enter` and a bare `Wait` (waits for output to settle). It is expanded into those primitive commands before recording.
+
 ```tape
-Source "common-setup.tape"
+Run "dotnet --version"
 ```
 
-## String Quoting
-
-### Double Quotes
-
-Double-quoted strings support escape sequences.
-
-**Example:**
-```tape
-Type "Hello\nWorld"     # Newline
-Type "Tab\there"        # Tab character
-Type "Quote: \"text\""  # Escaped quote
-```
-
-### Single Quotes
-
-Single-quoted strings are literal - no escape sequence processing.
-
-**Example:**
-```tape
-Type 'C:\Program Files\App'    # Backslashes are literal
-```
-
-### Backticks
-
-Backtick-quoted strings are also literal.
-
-**Example:**
-```tape
-Type `Hello\nWorld`     # \n is literal, not a newline
-```
-
-### Escape Sequences
-
-Supported escape sequences in double-quoted strings:
-- `\n` - Newline
-- `\t` - Tab
-- `\r` - Carriage return
-- `\\` - Backslash
-- `\"` - Double quote
-
-## Duration Literals
-
-### Format
-
-Duration literals consist of a number followed by a unit suffix.
-
-**Format:**
-```tape
-<number><unit>
-```
-
-### Supported Units
-
-- `ms` - Milliseconds
-- `s` - Seconds
-- `m` - Minutes
-
-**Examples:**
-```tape
-Sleep 100ms
-Set TypingSpeed 50ms
-Wait@10s /pattern/
-Set StartWaitTimeout 2m
-```
-
-## Regex Patterns
-
-### Format
-
-Regex patterns are enclosed in forward slashes.
-
-**Format:**
-```tape
-/pattern/
-```
-
-### Usage
-
-Regex patterns are primarily used in `Wait` commands and `Set WaitPattern`:
+is equivalent to:
 
 ```tape
-Wait />\s*$/                    # Wait for shell prompt
-Wait /Complete/                 # Wait for "Complete" text
-Wait /\d{3}\s+tests passed/     # Wait for test results
-Set WaitPattern /\$\s*$/        # Configure default pattern
-```
-
-## Comments
-
-### Syntax
-
-A `#` begins a comment that runs to the end of the line and is ignored during parsing. It can start a line (whole-line comment) or follow a command (trailing comment).
-
-**Example:**
-```tape
-# This is a comment
-Output "demo.gif"
-
-# Configure terminal appearance
-Set Theme "Dracula"
-Set FontSize 24
-
-# Type a command
-Type "echo Hello"
-```
-
-## Parser Specifications
-
-### Character Encoding
-
-Tape files must use UTF-8 encoding. BOM (Byte Order Mark) is optional but not required.
-
-### Line Endings
-
-All line ending styles are supported:
-- `LF` (Unix/Linux/macOS) - `\n`
-- `CRLF` (Windows) - `\r\n`
-- `CR` (legacy Mac) - `\r`
-
-### String Literal Limits
-
-| Limit | Value |
-|-------|-------|
-| Maximum string length | Unlimited |
-| Maximum escape sequence length | 2 characters (`\n`, `\t`, etc.) |
-| Nested quotes | Not supported |
-
-### Regex Pattern Engine
-
-VCR# uses .NET Regular Expressions (System.Text.RegularExpressions).
-
-**Supported features:**
-- Standard regex metacharacters (`.`, `*`, `+`, `?`, `^`, `$`, etc.)
-- Character classes (`\d`, `\w`, `\s`, `[a-z]`, etc.)
-- Quantifiers (`{n}`, `{n,m}`, `*`, `+`, `?`)
-- Groups and captures (`(...)`, `(?:...)`)
-- Lookahead/lookbehind (`(?=...)`, `(?!...)`, `(?<=...)`, `(?<!...)`)
-- Alternation (`|`)
-
-**Not supported:**
-- Flags/modifiers inside pattern (`/pattern/i` style)
-- Pattern compilation hints
-- Named captures in Wait commands (captures are not extracted)
-
-**Default behavior:**
-- Case-sensitive matching
-- Single-line mode (`.` does not match newlines)
-- No timeout (patterns must match eventually or timeout via `WaitTimeout`)
-
-### Duration Parsing
-
-Duration literals are parsed using the format `<number><unit>`.
-
-**Number format:**
-- Integer: `100ms`, `5s`
-- Decimal: `1.5s`, `0.5m`
-- No spaces between number and unit
-
-**Valid ranges:**
-- Milliseconds: 0-9,223,372,036,854,775,807 ms
-- Seconds: 0-9,223,372,036,854,775 s
-- Minutes: 0-153,722,867,280,912 m
-
-### Command Ordering
-
-Commands execute sequentially in file order from top to bottom. All `Set` commands must appear **before** any action command (`Type`, key presses, `Sleep`, `Wait`, `Hide`, `Show`, `Screenshot`, `Copy`, `Paste`, `Exec`), and each setting may be set **only once**. `Output` and `Env` commands are exempt from these ordering rules. Settings cannot be changed mid-recording — a duplicate `Set`, or a `Set` after an action command, is a parse error.
-
-**Example:**
-```tape
-# All settings first...
-Set FontSize 24
-Set Theme "Dracula"
-
-# ...then the action commands
-Type "hello"
+Type "dotnet --version"
 Enter
 Wait
 ```
 
-### Validation Rules
+## Lexical rules
 
-**Parser errors for:**
-- Unknown command names
-- Unknown setting names in `Set` commands (with a "Did you mean...?" suggestion)
-- Setting the same value twice, or a `Set` after an action command
-- Missing required arguments
-- Invalid argument types (string where number expected)
-- Malformed duration literals (e.g. `10mss`)
-- Unclosed string quotes
-- Invalid escape sequences in double-quoted strings
-- Empty regex patterns (`//`)
-- Modifier key combinations without target key (`Ctrl+`)
+### Comments
 
-**Runtime errors for:**
-- Regex patterns that fail to compile
-- File paths that cannot be written (Output, Screenshot)
-- Commands referenced in `Require` that are not found
-- Source files that do not exist or contain syntax errors
+A `#` begins a comment that runs to the end of the line and is ignored. It may start a line or follow a command.
 
-An **unknown theme name is not an error** — VCR# silently falls back to the Default theme, so double-check spelling and spaces (`"One Dark"`, not `"OneDark"`).
+```tape
+# whole-line comment
+Set Theme Dracula   # trailing comment
+```
 
-### Whitespace Handling
+### String literals
 
-- Leading and trailing whitespace on lines is ignored
-- Blank lines are ignored
-- Whitespace between command name and arguments is required
-- Whitespace within string literals is preserved
+There are three quote styles:
 
-### Case Sensitivity
+| Style | Example | Escapes |
+|-------|---------|---------|
+| Double | `"a\tb"` | Interprets `\n`, `\t`, `\r`, `\\`, `\"` |
+| Single | `'C:\path'` | Literal — no escape processing |
+| Backtick | `` `C:\path` `` | Literal — no escape processing |
 
-- Command names are case-sensitive — use the documented casing (`Type`, not `type` or `TYPE`)
-- Setting names are case-insensitive (`Set FontSize`, `Set fontsize` both valid)
-- The `true`/`false` literals are case-insensitive
-- Theme names are matched case-insensitively (`Set Theme "dracula"` works), but spaces in multi-word names matter (`Set Theme "One Dark"`, not `"OneDark"`)
-- Regex patterns are case-sensitive by default
+Escape sequences interpreted in double-quoted strings:
+
+| Sequence | Meaning |
+|----------|---------|
+| `\n` | Newline |
+| `\t` | Tab |
+| `\r` | Carriage return |
+| `\\` | Backslash |
+| `\"` | Double quote |
+
+Single- and backtick-quoted strings pass their contents through verbatim — useful for Windows paths and regex-heavy text where backslashes should not be escaped.
+
+### Numbers
+
+Numbers are written as bare integers (`100`) or decimals (`1.5`). They are used for counts (e.g. key repeat), sizes, and the numeric part of durations.
+
+### Duration literals
+
+A duration is a number followed by a unit suffix, with no space between them.
+
+| Unit | Meaning |
+|------|---------|
+| `ms` | Milliseconds |
+| `s`  | Seconds |
+| `m`  | Minutes |
+
+```tape
+Sleep 500ms
+Wait@10s /ready/
+Set StartWaitTimeout 1.5m
+```
+
+> [!IMPORTANT]
+> A **bare number** (no unit) means **seconds** everywhere — `Sleep 1` is one second — **except** `Set TypingSpeed`, where a bare number means **milliseconds** (`Set TypingSpeed 40` = 40ms).
+
+### Regex patterns
+
+A regex is written between forward slashes and is used by `Wait`.
+
+```tape
+Wait /Complete/
+Wait /\d{3} tests passed/
+```
+
+VCR# uses .NET regular expressions (`System.Text.RegularExpressions`). Matching is case-sensitive, single-line by default; an empty pattern (`//`) is a parse error.
+
+## Parser rules
+
+- **Ordering.** All `Set` commands must appear before any action command (`Type`, a key, `Sleep`, `Wait`, `Hide`, `Show`, `Screenshot`). `Output`, `Env`, `Use`, and `Exec` are exempt from this rule.
+- **No duplicate settings.** Setting the same name more than once is a parse error.
+- **Unknown settings.** An unrecognized `Set` name is a parse error with a "Did you mean…?" suggestion.
+- **Command names are case-sensitive** — use the documented casing (`Type`, not `type`). Setting names and `true`/`false` literals are case-insensitive.
+- **Whitespace.** Leading and trailing whitespace on a line is ignored; blank lines are ignored; whitespace inside string literals is preserved.
+- **Unknown theme names are not errors** — VCR# falls back to the `Default` theme. Spelling and spaces still matter (`One Dark`, not `OneDark`).
+
+```tape
+# settings first…
+Set Theme Dracula
+Set FontSize 24
+
+# …then actions
+Type "echo hello"
+Enter
+Wait
+```
+
+## See also
+
+- [Configuration options reference](xref:docs.reference.configuration-options) — every `Set` setting.
+- [vcr.toml reference](xref:docs.reference.vcr-toml) — presets for `Use` and macros for `Exec`.
+- [CLI commands reference](xref:docs.reference.cli-commands) — the verbs that run tapes.

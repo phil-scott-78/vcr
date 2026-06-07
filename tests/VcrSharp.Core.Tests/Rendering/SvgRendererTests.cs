@@ -320,4 +320,42 @@ public class SvgRendererTests
         svg.ShouldContain("fill=\"freeze\"");
         svg.ShouldContain("repeatCount=\"indefinite\"");
     }
+
+    // ---- SGR style parity: attributes the engine already tracks that the SVG path must render ----
+
+    [Fact]
+    public async Task ReverseVideo_SwapsForegroundAndBackground()
+    {
+        var options = DeterministicOptions(); // CssVariables off => literal hex fills
+        var content = Content(3, 1,
+        [
+            new TerminalCell { Character = "X", ForegroundColor = "#ff0000", BackgroundColor = "#0000ff", IsReverse = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        // The background rect takes the original FOREGROUND (#ff0000 -> #f00); the glyph is painted
+        // in the original BACKGROUND (#0000ff -> #00f).
+        svg.ShouldContain("fill=\"#f00\"");
+        svg.ShouldContain("fill=\"#00f\"");
+    }
+
+    [Fact]
+    public async Task ReverseVideo_DefaultColors_PaintsForegroundBlock_AndSurvivesBlankTrim()
+    {
+        var options = DeterministicOptions();
+        // Two leading reverse-video spaces (status-bar style fill) with an explicit green foreground
+        // and default background. Plain blank runs are trimmed away; a reversed blank run paints a
+        // solid foreground-colored block and must survive.
+        var content = Content(5, 1,
+        [
+            new TerminalCell { Character = " ", ForegroundColor = "#00ff00", IsReverse = true, Width = 1 },
+            new TerminalCell { Character = " ", ForegroundColor = "#00ff00", IsReverse = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("<rect");
+        svg.ShouldContain("fill=\"#0f0\""); // foreground-colored block survives the blank-run trim
+    }
 }

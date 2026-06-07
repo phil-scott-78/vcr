@@ -461,7 +461,8 @@ public class SvgRenderer
         var cellCol = 0;
         foreach (var segment in segments)
         {
-            if (!segment.IsCustomGlyph && segment.BackgroundColor != null)
+            var backgroundFill = ResolveBackgroundFill(segment);
+            if (!segment.IsCustomGlyph && backgroundFill != null)
             {
                 var x = cellCol * _charWidth;
                 var width = segment.CellWidth * _charWidth;
@@ -471,7 +472,7 @@ public class SvgRenderer
                 await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
                 await xml.WriteAttributeStringAsync(null, "width", null, FormatNumber(width));
                 await xml.WriteAttributeStringAsync(null, "height", null, FormatNumber(_charHeight));
-                await xml.WriteAttributeStringAsync(null, "fill", null, ConvertColorToHex(segment.BackgroundColor));
+                await xml.WriteAttributeStringAsync(null, "fill", null, backgroundFill);
                 await xml.WriteEndElementAsync();
             }
             cellCol += segment.CellWidth;
@@ -521,8 +522,15 @@ public class SvgRenderer
                     await xml.WriteAttributeStringAsync(null, "class", null, classes);
                 }
 
+                // Reverse video paints the text in the (resolved) background color; BuildCssClasses
+                // drops the foreground color class for reversed runs so this inline fill is not
+                // overridden by a CSS rule.
+                if (segment.IsReverse)
+                {
+                    await xml.WriteAttributeStringAsync(null, "fill", null, ResolveReverseTextFill(segment));
+                }
                 // Inline color for RGB colors
-                if (segment.ForegroundColor != null && segment.ForegroundColor.StartsWith('#'))
+                else if (segment.ForegroundColor != null && segment.ForegroundColor.StartsWith('#'))
                 {
                     await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(segment.ForegroundColor));
                 }
@@ -593,6 +601,30 @@ public class SvgRenderer
     }
 
     /// <summary>
+    /// The fill for a run's background rect, honoring reverse video (SGR 7): a reversed run paints
+    /// its (resolved) foreground color as the background — falling back to the theme foreground when
+    /// the run has no explicit foreground. Returns null when there is no background to draw.
+    /// </summary>
+    private string? ResolveBackgroundFill(StyleRun run)
+    {
+        if (run.IsReverse)
+        {
+            return run.ForegroundColor != null
+                ? ConvertColorToHex(run.ForegroundColor)
+                : FgFill(_options.Theme.Foreground);
+        }
+
+        return run.BackgroundColor != null ? ConvertColorToHex(run.BackgroundColor) : null;
+    }
+
+    /// <summary>
+    /// The text fill for a reversed run (SGR 7): the run's (resolved) background color, falling back
+    /// to the theme background when the run has no explicit background.
+    /// </summary>
+    private string ResolveReverseTextFill(StyleRun run) =>
+        run.BackgroundColor != null ? ConvertColorToHex(run.BackgroundColor) : BgFill(_options.Theme.Background);
+
+    /// <summary>
     /// Builds render segments from a row of cells, splitting at custom glyph boundaries.
     /// This ensures custom glyphs are rendered separately from regular text.
     /// </summary>
@@ -619,7 +651,8 @@ public class SvgRenderer
                 cell.BackgroundColor != currentRun.BackgroundColor ||
                 cell.IsBold != currentRun.IsBold ||
                 cell.IsItalic != currentRun.IsItalic ||
-                cell.IsUnderline != currentRun.IsUnderline
+                cell.IsUnderline != currentRun.IsUnderline ||
+                cell.IsReverse != currentRun.IsReverse
             );
 
             if (needNewSegment)
@@ -635,6 +668,7 @@ public class SvgRenderer
                 currentRun.IsBold = cell.IsBold;
                 currentRun.IsItalic = cell.IsItalic;
                 currentRun.IsUnderline = cell.IsUnderline;
+                currentRun.IsReverse = cell.IsReverse;
                 currentRun.IsCustomGlyph = isGlyph;
                 currentIsGlyph = isGlyph;
             }
@@ -649,11 +683,12 @@ public class SvgRenderer
         }
 
         // Trim trailing spaces from text segments (not from custom glyph segments)
-        // But don't trim if the segment has a background color (Canvas uses colored spaces)
+        // But don't trim if the segment has a background color (Canvas uses colored spaces),
+        // nor if it is reverse-video (a reversed space paints a foreground-colored block).
         if (segments.Count > 0)
         {
             var lastRun = segments[^1];
-            if (!lastRun.IsCustomGlyph && lastRun.BackgroundColor == null)
+            if (!lastRun.IsCustomGlyph && lastRun.BackgroundColor == null && !lastRun.IsReverse)
             {
                 var originalLength = lastRun.Text.Length;
                 lastRun.Text = lastRun.Text.TrimEnd();
@@ -661,10 +696,12 @@ public class SvgRenderer
             }
         }
 
-        // Remove empty segments (but keep segments with background colors - they render colored spaces)
+        // Remove empty segments (but keep segments with background colors or reverse video -
+        // both render visible colored spaces)
         while (segments.Count > 0 &&
                string.IsNullOrWhiteSpace(segments[^1].Text) &&
-               segments[^1].BackgroundColor == null)
+               segments[^1].BackgroundColor == null &&
+               !segments[^1].IsReverse)
         {
             segments.RemoveAt(segments.Count - 1);
         }
@@ -1016,6 +1053,7 @@ public class SvgRenderer
             sb.Append(cell.IsBold ? "b" : "");
             sb.Append(cell.IsItalic ? "i" : "");
             sb.Append(cell.IsUnderline ? "u" : "");
+            sb.Append(cell.IsReverse ? "v" : "");
         }
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var hash = MD5.HashData(bytes);
@@ -1026,16 +1064,22 @@ public class SvgRenderer
     {
         var classes = new List<string>();
 
-        if (run.ForegroundColor != null && !run.ForegroundColor.StartsWith('#'))
+        // Reverse video resolves its foreground to the (swapped) background color via an inline
+        // fill in the text pass, so it must NOT carry a foreground color class — a CSS class fill
+        // would win over the inline presentation attribute and undo the swap.
+        if (!run.IsReverse)
         {
-            if (int.TryParse(run.ForegroundColor, out var idx) && idx < 16)
+            if (run.ForegroundColor != null && !run.ForegroundColor.StartsWith('#'))
             {
-                classes.Add(GetAnsiColorClass(idx));
+                if (int.TryParse(run.ForegroundColor, out var idx) && idx < 16)
+                {
+                    classes.Add(GetAnsiColorClass(idx));
+                }
             }
-        }
-        else if (run.ForegroundColor == null)
-        {
-            classes.Add("fg");
+            else if (run.ForegroundColor == null)
+            {
+                classes.Add("fg");
+            }
         }
 
         if (run.IsBold) classes.Add("bold");
@@ -1180,6 +1224,7 @@ public class SvgRenderer
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public bool IsUnderline { get; set; }
+        public bool IsReverse { get; set; }
         /// <summary>
         /// Total cell width of this run (accounts for wide characters taking 2 cells).
         /// </summary>

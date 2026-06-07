@@ -21,7 +21,7 @@ public class KeyCommand(string keyName, int repeatCount = 1, TimeSpan? speed = n
         var typingSpeed = Speed ?? context.Options.TypingSpeed;
         var delayMs = (int)typingSpeed.TotalMilliseconds;
 
-        // Map key name to Playwright key
+        // Map the tape key name to its canonical key code
         var mappedKey = Helpers.KeyMapper.MapKey(KeyName);
         VcrLogger.Logger.Debug("KeyCommand: Pressing key '{KeyName}' (mapped to '{MappedKey}') {RepeatCount} time(s) with {DelayMs}ms delay",
             KeyName, mappedKey, RepeatCount, delayMs);

@@ -22,7 +22,7 @@ vcr demo.tape --set Theme=Dracula
 Chain multiple `--set` flags to override several settings:
 
 ```bash
-vcr demo.tape --set Theme=Monokai --set Width=1200 --set Height=800
+vcr demo.tape --set Theme=Monokai --set Cols=120 --set Rows=30
 ```
 
 CLI overrides always take precedence over tape file settings.
@@ -35,10 +35,10 @@ vcr demo.tape --set Theme=Dracula
 vcr demo.tape --set Theme=Monokai
 ```
 
-**Generate different resolutions:**
+**Generate different terminal sizes:**
 ```bash
-vcr demo.tape --set Width=800 --set Height=600 -o demo-mobile.gif
-vcr demo.tape --set Width=1920 --set Height=1080 -o demo-desktop.gif
+vcr demo.tape --set Cols=80 --set Rows=24 -o demo-small.gif
+vcr demo.tape --set Cols=120 --set Rows=40 -o demo-large.gif
 ```
 
 **Adjust video settings:**
@@ -73,7 +73,7 @@ done
 
 **Use CLI overrides when:**
 - Testing different themes or color schemes
-- Generating multiple resolutions from one tape file
+- Generating multiple terminal sizes from one tape file
 - Iterating quickly during development
 - Creating variants without duplicating tape files
 
@@ -87,7 +87,7 @@ done
 All `Set` commands can be overridden from the CLI. Common examples:
 
 - `Theme` - Color scheme
-- `Width` / `Height` - Terminal dimensions
+- `Cols` / `Rows` - Terminal grid size (columns and rows)
 - `FontSize` - Text size
 - `Framerate` - Recording frame rate
 - `PlaybackSpeed` - Playback multiplier

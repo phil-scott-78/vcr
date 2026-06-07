@@ -46,6 +46,10 @@ Wait
 Sleep 2s           # After output completes
 ```
 
+Here is that pacing in action — note the pause after typing and the pause between commands:
+
+<VcrTape src="../demos/sleeping.svg" />
+
 ## Sleep vs Wait
 
 **Use Sleep when you know the exact duration needed:**

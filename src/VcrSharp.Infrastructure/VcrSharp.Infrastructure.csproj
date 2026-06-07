@@ -5,16 +5,19 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
-    <PlaywrightPlatform>all</PlaywrightPlatform>
   </PropertyGroup>
   
   <ItemGroup>
     <ProjectReference Include="..\VcrSharp.Core\VcrSharp.Core.csproj" />
+    <ProjectReference Include="..\VcrSharp.Terminal\VcrSharp.Terminal.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="VcrSharp.Core.Tests" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="FFMpegCore" Version="5.4.0" />
-    <PackageReference Include="Microsoft.Playwright" Version="1.55.0" />
   </ItemGroup>
 
 

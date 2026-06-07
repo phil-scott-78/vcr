@@ -1,11 +1,12 @@
 using Spectre.Console;
 using Spectre.Console.Cli;
 using VcrSharp.Cli.Helpers;
+using VcrSharp.Core.Config;
 using VcrSharp.Core.Logging;
 using VcrSharp.Core.Parsing;
 using VcrSharp.Core.Parsing.Ast;
 using VcrSharp.Core.Session;
-using VcrSharp.Infrastructure.Playwright;
+using VcrSharp.Core.Settings;
 using VcrSharp.Infrastructure.Processes;
 using VcrSharp.Infrastructure.Session;
 
@@ -54,7 +55,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
     /// <summary>
     /// Executes the record command asynchronously.
     /// </summary>
-    public override async Task<int> ExecuteAsync(CommandContext context, RecordCommand.Settings settings, CancellationToken cancellationToken)
+    public override async Task<int> ExecuteAsync(CommandContext context, Settings settings, CancellationToken cancellationToken)
     {
         // Configure logging based on verbose flag
         VcrLogger.Configure(settings.Verbose);
@@ -62,18 +63,6 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
         try
         {
             Logo.WriteLogo();
-
-            // Validate dependencies
-            var missing = DependencyValidator.ValidateDependencies();
-            if (missing.Count > 0)
-            {
-                AnsiConsole.MarkupLine("[bold red]Error:[/] Missing required dependencies:");
-                foreach (var dep in missing)
-                {
-                    AnsiConsole.MarkupLineInterpolated($"  [red]✗[/] {dep}");
-                }
-                return 1;
-            }
 
             // Validate tape file exists
             if (!File.Exists(settings.TapeFile))
@@ -88,46 +77,55 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                 var parser = new TapeParser();
                 var commands = await parser.ParseFileAsync(settings.TapeFile);
 
+                // Surface deprecation guidance for the authored tape (non-fatal).
+                foreach (var warning in SettingDeprecations.Collect(commands))
+                    AnsiConsole.MarkupLineInterpolated($"[yellow]⚠ {warning}[/]");
+
+                // Expand the config layer: Use presets, Exec macros, Run sugar, derived Output
+                // (resolved against a vcr.toml discovered by walking up from the tape's directory).
+                commands = PresetResolver.ResolveWithDiscovery(commands, settings.TapeFile);
+
                 // Apply CLI overrides (--set and --output parameters)
                 commands = ApplyCliOverrides(commands, settings);
 
                 // Extract session options from Set commands
                 var options = SessionOptions.FromCommands(commands);
 
-                // Validate Require commands from tape file
-                var requireCommands = commands.OfType<RequireCommand>().ToList();
-                if (requireCommands.Count > 0)
-                {
-                    var missingPrograms = requireCommands
-                        .Where(r => !ProcessHelper.IsProgramAvailable(r.ProgramName))
-                        .Select(r => r.ProgramName)
-                        .ToList();
+                // Collect outputs declared by the tape (and any appended via --output).
+                var outputs = commands.OfType<OutputCommand>().Select(o => o.FilePath).Distinct().ToList();
 
-                    if (missingPrograms.Count > 0)
+                // FFmpeg is only needed for video outputs (GIF/MP4/WebM); SVG/PNG/frames don't use it.
+                string[] videoExts = [".gif", ".mp4", ".webm"];
+                if (outputs.Any(o => videoExts.Contains(Path.GetExtension(o).ToLowerInvariant())))
+                {
+                    var missing = DependencyValidator.ValidateDependencies(requireFfmpeg: true);
+                    if (missing.Count > 0)
                     {
-                        AnsiConsole.MarkupLineInterpolated($"[bold red]Error:[/] Required programs not found: {string.Join(", ", missingPrograms)}");
+                        AnsiConsole.MarkupLine("[bold red]Error:[/] Missing required dependencies:");
+                        foreach (var dep in missing)
+                            AnsiConsole.MarkupLineInterpolated($"  [red]✗[/] {dep}");
                         return 1;
                     }
                 }
 
-                // Ensure Playwright drivers and browsers are installed (auto-installs/updates if needed)
-                await PlaywrightBrowser.EnsureBrowsersInstalled();
-
-                // Record the tape with progress reporting
-                RecordingResult? result = null;
+                // Record the tape (in-process PTY + VT engine).
+                RecordingSession.Result? result = null;
                 await AnsiConsole.Status()
                     .StartAsync("Initializing...", async ctx =>
                     {
                         var progress = new Progress<string>(status => ctx.Status(status));
 
-                        await using var session = new VcrSession(options);
-                        result = await session.RecordAsync(commands, progress, cancellationToken);
+                        var session = new RecordingSession(options);
+                        result = await session.RecordAsync(commands, outputs, options.Framerate, progress, cancellationToken);
                     });
 
                 // Display results
                 AnsiConsole.MarkupLine("[green]✓[/] Recording complete");
                 AnsiConsole.MarkupLineInterpolated($"[dim]Frames captured:[/] {result!.FrameCount}");
-                AnsiConsole.MarkupLineInterpolated($"[dim]Duration:[/] {result.Duration.TotalSeconds:F2}s");
+                AnsiConsole.MarkupLineInterpolated($"[dim]Duration:[/] {result.DurationSeconds:F2}s");
+
+                foreach (var skipped in result.UnsupportedOutputs)
+                    AnsiConsole.MarkupLineInterpolated($"[yellow]⚠[/] Skipped [bold]{Path.GetFileName(skipped)}[/] — vcr supports .svg/.gif/.mp4/.webm/.png and frame directories.");
 
                 if (result.OutputFiles.Count > 0)
                 {
@@ -170,6 +168,12 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                 ErrorReporter.DisplayParseError(ex, settings.TapeFile);
                 return 1;
             }
+            catch (VcrConfigException ex)
+            {
+                var where = ex.SourcePath is null ? "" : $" ({ex.SourcePath}{(ex.Line > 0 ? $":{ex.Line}" : "")})";
+                AnsiConsole.MarkupLineInterpolated($"[bold red]Config error:[/]{where} {ex.Message}");
+                return 1;
+            }
             catch (Exception ex)
             {
                 AnsiConsole.MarkupLineInterpolated($"[bold red]Error:[/] {ex.Message}");
@@ -191,7 +195,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
     /// CLI SET commands override tape file SET commands.
     /// CLI Output commands are appended to tape file Output commands.
     /// </summary>
-    private static List<Core.Parsing.Ast.ICommand> ApplyCliOverrides(List<Core.Parsing.Ast.ICommand> tapeCommands, RecordCommand.Settings settings)
+    private static List<Core.Parsing.Ast.ICommand> ApplyCliOverrides(List<Core.Parsing.Ast.ICommand> tapeCommands, Settings settings)
     {
         var result = new List<Core.Parsing.Ast.ICommand>(tapeCommands);
 

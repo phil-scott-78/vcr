@@ -153,7 +153,7 @@ public static class TerminalPalette
             SetConsoleMode(inputHandle, originalMode | ENABLE_VIRTUAL_TERMINAL_INPUT);
 
             Console.Out.Flush();
-            Console.Write($"\x1b]{oscCode};?\x1b\\");
+            Console.Write($"\e]{oscCode};?\e\\");
             Console.Out.Flush();
 
             var response = ReadResponse(timeoutMs);
@@ -171,7 +171,7 @@ public static class TerminalPalette
     private static (byte R, byte G, byte B)? QueryColor(int ansiIndex, int timeoutMs)
     {
         Console.Out.Flush();
-        Console.Write($"\x1b]4;{ansiIndex};?\x1b\\");
+        Console.Write($"\e]4;{ansiIndex};?\e\\");
         Console.Out.Flush();
 
         var response = ReadResponse(timeoutMs);

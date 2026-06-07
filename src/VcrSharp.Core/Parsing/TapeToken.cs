@@ -11,14 +11,14 @@ public enum TapeToken
     [Token(Category = "keyword", Example = "Set")]
     Set,
 
+    [Token(Category = "keyword", Example = "Use")]
+    Use,
+
+    [Token(Category = "keyword", Example = "Run")]
+    Run,
+
     [Token(Category = "keyword", Example = "Output")]
     Output,
-
-    [Token(Category = "keyword", Example = "Require")]
-    Require,
-
-    [Token(Category = "keyword", Example = "Source")]
-    Source,
 
     [Token(Category = "keyword", Example = "Type")]
     Type,
@@ -37,12 +37,6 @@ public enum TapeToken
 
     [Token(Category = "keyword", Example = "Screenshot")]
     Screenshot,
-
-    [Token(Category = "keyword", Example = "Copy")]
-    Copy,
-
-    [Token(Category = "keyword", Example = "Paste")]
-    Paste,
 
     [Token(Category = "keyword", Example = "Env")]
     Env,

@@ -1,0 +1,118 @@
+using Shouldly;
+using VcrSharp.Core.Rendering;
+
+namespace VcrSharp.Terminal.Tests.Conformance;
+
+/// <summary>
+/// Precise acceptance criteria for the known divergences the audit identified — each asserts the
+/// CORRECT target behavior and is <c>Skip</c>ped with the phase that will deliver it. They are the
+/// executable checklist for the build: un-skip each as its phase lands (it should then go green).
+/// </summary>
+public sealed class ParserCorrectnessTests
+{
+    private static readonly string E = ((char)0x1b).ToString();
+
+    private static TerminalContent Render(int cols, int rows, string input)
+    {
+        var s = new VtScreen(cols, rows);
+        s.Feed(input);
+        return s.ToTerminalContent();
+    }
+
+    private static string Row(TerminalContent c, int row) =>
+        string.Concat(c.Cells[row].Select(cell => cell.Character.Length == 0 ? "" : cell.Character)).TrimEnd();
+
+    [Fact]
+    public void OscFollowedByCsi_AppliesTheCsi()
+    {
+        // BUG today: after the OSC's terminating ESC, the parser drops the next byte ('['), so "31m"
+        // prints as text and X is left default. Williams: ESC re-enters escape state → CSI applies.
+        var c = Render(10, 1, $"{E}]0;title{E}[31mX");
+        c.Cells[0][0].Character.ShouldBe("X");
+        c.Cells[0][0].ForegroundColor.ShouldBe("1"); // red
+    }
+
+    [Fact]
+    public void ColonSubParams_TrueColor_Applies()
+    {
+        // BUG today: ':' (0x3A) is unhandled in CSI param state → the sequence aborts and prints as text.
+        var c = Render(10, 1, $"{E}[38:2::255:0:0mX");
+        c.Cells[0][0].Character.ShouldBe("X");
+        c.Cells[0][0].ForegroundColor.ShouldBe("#ff0000");
+    }
+
+    [Fact]
+    public void ScrollRegion_ConstrainsLineFeedScroll()
+    {
+        // DECSTBM rows 1..2 (1-based). With the region active, the LF at the bottom margin scrolls only
+        // rows 0..1, so "L2" ends up on row 0. (LF needs an accompanying CR — LNM is off by default.)
+        var c = Render(10, 4, $"{E}[1;2r{E}[HL1\r\nL2\r\nL3");
+        Row(c, 0).ShouldBe("L2");
+        Row(c, 1).ShouldBe("L3");
+    }
+
+    [Fact]
+    public void InsertLine_PushesRowsDown()
+    {
+        // IL ("CSI L") at home inserts a blank line, pushing "A" down to row 1. Today 'L' is a no-op.
+        var c = Render(10, 4, $"A\r\nB\r\nC{E}[H{E}[L");
+        Row(c, 0).ShouldBe("");
+        Row(c, 1).ShouldBe("A");
+    }
+
+    [Fact]
+    public void AltScreen_StartsBlank()
+    {
+        // Entering the alternate buffer (DECSET 1049) shows a blank screen; the main buffer's "P" is
+        // hidden until 1049l restores it. Today the mode is ignored, so "P" stays visible.
+        var c = Render(10, 1, $"P{E}[?1049h");
+        Row(c, 0).ShouldBe("");
+    }
+
+    [Fact]
+    public void LineDrawing_Charset_MapsToBoxGlyphs()
+    {
+        // ESC ( 0 designates DEC special graphics; q->─ x->│; ESC ( B restores ASCII.
+        var c = Render(10, 1, $"{E}(0qx{E}(BAB");
+        c.Cells[0][0].Character.ShouldBe("─");
+        c.Cells[0][1].Character.ShouldBe("│");
+        c.Cells[0][2].Character.ShouldBe("A");
+        c.Cells[0][3].Character.ShouldBe("B");
+    }
+
+    [Fact]
+    public void CombiningMark_MergesIntoBaseCell()
+    {
+        var acute = ((char)0x0301).ToString(); // combining acute accent
+        var c = Render(5, 1, "e" + acute + "x");
+        c.Cells[0][0].Character.ShouldBe("e" + acute);
+        c.Cells[0][1].Character.ShouldBe("x");
+    }
+
+    [Fact]
+    public void Sgr_ReverseDimStrike_SetFlags()
+    {
+        var cell = Render(5, 1, $"{E}[7;2;9mX").Cells[0][0];
+        cell.IsReverse.ShouldBeTrue();
+        cell.IsDim.ShouldBeTrue();
+        cell.IsStrikethrough.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void Sgr_StyledUnderline_SetsLevel()
+    {
+        Render(5, 1, $"{E}[4:3mX").Cells[0][0].UnderlineStyle.ShouldBe(3); // curly
+        Render(5, 1, $"{E}[21mY").Cells[0][0].UnderlineStyle.ShouldBe(2);  // double
+    }
+
+    [Fact]
+    public void HideCursor_ReflectedInSnapshot()
+    {
+        // DECTCEM (CSI ?25l) hides the cursor; today ToTerminalContent hardcodes CursorVisible=false,
+        // so it can never report a *visible* cursor either. After P4, default is visible and ?25l hides.
+        var shown = Render(10, 1, "X");
+        shown.CursorVisible.ShouldBeTrue();
+        var hidden = Render(10, 1, $"X{E}[?25l");
+        hidden.CursorVisible.ShouldBeFalse();
+    }
+}

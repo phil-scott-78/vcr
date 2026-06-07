@@ -1,5 +1,4 @@
 using System.Globalization;
-using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using VcrSharp.Core.Rendering;
@@ -162,7 +161,7 @@ public class SvgRenderer
         var rowTimeline = BuildRowTimeline(states, totalDurationSeconds);
 
         // Build cursor timeline
-        var cursorTimeline = BuildCursorTimeline(states, totalDurationSeconds);
+        var cursorTimeline = BuildCursorTimeline(states);
 
         await using var writer = new StreamWriter(outputPath, false, Encoding.UTF8);
         await using var xml = XmlWriter.Create(writer, new XmlWriterSettings
@@ -246,7 +245,7 @@ public class SvgRenderer
         for (var row = 0; row < rows; row++)
         {
             var rowStates = new List<RowStateInterval>();
-            string? currentHash = null;
+            ulong? currentHash = null;
             TerminalCell[]? currentCells = null;
             double intervalStart = 0;
 
@@ -265,7 +264,7 @@ public class SvgRenderer
                         rowStates.Add(new RowStateInterval
                         {
                             Cells = currentCells,
-                            Hash = currentHash,
+                            Hash = currentHash.Value,
                             StartTime = intervalStart,
                             EndTime = timestamp
                         });
@@ -284,7 +283,7 @@ public class SvgRenderer
                 rowStates.Add(new RowStateInterval
                 {
                     Cells = currentCells,
-                    Hash = currentHash,
+                    Hash = currentHash.Value,
                     StartTime = intervalStart,
                     EndTime = totalDuration
                 });
@@ -299,7 +298,7 @@ public class SvgRenderer
     /// <summary>
     /// Builds a timeline of cursor positions.
     /// </summary>
-    private List<CursorKeyframe> BuildCursorTimeline(IReadOnlyList<TerminalStateWithTime> states, double totalDuration)
+    private List<CursorKeyframe> BuildCursorTimeline(IReadOnlyList<TerminalStateWithTime> states)
     {
         var keyframes = new List<CursorKeyframe>();
         int? lastX = null;
@@ -341,7 +340,7 @@ public class SvgRenderer
             var y = row * _charHeight;
 
             // Group unique row states by hash to avoid rendering duplicates
-            var uniqueStates = new Dictionary<string, (TerminalCell[] Cells, List<(double Start, double End)> Intervals)>();
+            var uniqueStates = new Dictionary<ulong, (TerminalCell[] Cells, List<(double Start, double End)> Intervals)>();
 
             foreach (var interval in intervals)
             {
@@ -354,7 +353,7 @@ public class SvgRenderer
             }
 
             // Render each unique row state with visibility animations
-            foreach (var (hash, (cells, intervalList)) in uniqueStates)
+            foreach (var (_, (cells, intervalList)) in uniqueStates)
             {
                 // Skip empty rows (shared blank-cell definition)
                 if (ContentAnalysis.IsBlankRow(cells))
@@ -461,7 +460,8 @@ public class SvgRenderer
         var cellCol = 0;
         foreach (var segment in segments)
         {
-            if (!segment.IsCustomGlyph && segment.BackgroundColor != null)
+            var backgroundFill = ResolveBackgroundFill(segment);
+            if (!segment.IsCustomGlyph && backgroundFill != null)
             {
                 var x = cellCol * _charWidth;
                 var width = segment.CellWidth * _charWidth;
@@ -471,7 +471,7 @@ public class SvgRenderer
                 await xml.WriteAttributeStringAsync(null, "y", null, FormatNumber(y));
                 await xml.WriteAttributeStringAsync(null, "width", null, FormatNumber(width));
                 await xml.WriteAttributeStringAsync(null, "height", null, FormatNumber(_charHeight));
-                await xml.WriteAttributeStringAsync(null, "fill", null, ConvertColorToHex(segment.BackgroundColor));
+                await xml.WriteAttributeStringAsync(null, "fill", null, backgroundFill);
                 await xml.WriteEndElementAsync();
             }
             cellCol += segment.CellWidth;
@@ -484,25 +484,54 @@ public class SvgRenderer
         {
             var x = cumulativeCellWidth * _charWidth;
 
+            // Conceal (SGR 8): keep the background (already painted above) but draw no glyph, so the
+            // cell renders blank. Reverse+conceal therefore yields a solid block — matching raster.
+            if (segment.IsConceal)
+            {
+                cumulativeCellWidth += segment.CellWidth;
+                continue;
+            }
+
             if (segment.IsCustomGlyph)
             {
-                // Render custom glyph characters one by one
+                // A segment is a single style run, so its colors are constant — resolve them once.
+                var fgColor = GetForegroundColorHex(segment);
+                var bgColor = segment.BackgroundColor != null ? ConvertColorToHex(segment.BackgroundColor) : null;
+
+                // Collapse a run of the SAME horizontally-tileable glyph (a solid '─'/'━'/'═' rule or a
+                // full-width '█'/half-band/shade) into ONE element spanning the run instead of one path
+                // per cell. Runs only form within a style segment, so a per-cell gradient is segments of
+                // length 1 and falls straight through to the unchanged per-glyph path below.
+                var text = segment.Text;
                 var glyphX = x;
-                foreach (var ch in segment.Text)
+                var i = 0;
+                while (i < text.Length)
                 {
-                    var fgColor = GetForegroundColorHex(segment);
-                    var bgColor = segment.BackgroundColor != null ? ConvertColorToHex(segment.BackgroundColor) : null;
+                    var ch = text[i];
+                    var runLen = 1;
+                    while (i + runLen < text.Length && text[i + runLen] == ch) runLen++;
 
-                    var glyphSvg = CustomGlyphRenderer.RenderGlyph(
-                        ch, glyphX, y, _charWidth, _charHeight,
-                        fgColor, bgColor, lightStroke, heavyStroke);
-
-                    if (glyphSvg != null)
+                    if (runLen > 1 &&
+                        CustomGlyphRenderer.TryRenderHorizontalRun(
+                            ch, glyphX, y, _charWidth, _charHeight, runLen,
+                            fgColor, bgColor, lightStroke, heavyStroke, out var runSvg))
                     {
-                        await xml.WriteRawAsync(glyphSvg);
+                        await xml.WriteRawAsync(runSvg);
+                    }
+                    else
+                    {
+                        for (var k = 0; k < runLen; k++)
+                        {
+                            var glyphSvg = CustomGlyphRenderer.RenderGlyph(
+                                ch, glyphX + k * _charWidth, y, _charWidth, _charHeight,
+                                fgColor, bgColor, lightStroke, heavyStroke);
+                            if (glyphSvg != null)
+                                await xml.WriteRawAsync(glyphSvg);
+                        }
                     }
 
-                    glyphX += _charWidth; // All custom glyphs are single-width
+                    glyphX += runLen * _charWidth; // All custom glyphs are single-width
+                    i += runLen;
                 }
             }
             else
@@ -521,8 +550,15 @@ public class SvgRenderer
                     await xml.WriteAttributeStringAsync(null, "class", null, classes);
                 }
 
+                // Reverse video paints the text in the (resolved) background color; BuildCssClasses
+                // drops the foreground color class for reversed runs so this inline fill is not
+                // overridden by a CSS rule.
+                if (segment.IsReverse)
+                {
+                    await xml.WriteAttributeStringAsync(null, "fill", null, ResolveReverseTextFill(segment));
+                }
                 // Inline color for RGB colors
-                if (segment.ForegroundColor != null && segment.ForegroundColor.StartsWith('#'))
+                else if (segment.ForegroundColor != null && segment.ForegroundColor.StartsWith('#'))
                 {
                     await xml.WriteAttributeStringAsync(null, "fill", null, OptimizeHexColor(segment.ForegroundColor));
                 }
@@ -531,6 +567,12 @@ public class SvgRenderer
                     var rgb = PaletteIndexToRgb(idx);
                     if (rgb != null)
                         await xml.WriteAttributeStringAsync(null, "fill", null, rgb);
+                }
+
+                var decoration = BuildTextDecoration(segment);
+                if (decoration != null)
+                {
+                    await xml.WriteAttributeStringAsync(null, "text-decoration", null, decoration);
                 }
 
                 await xml.WriteStringAsync(segment.Text);
@@ -593,6 +635,30 @@ public class SvgRenderer
     }
 
     /// <summary>
+    /// The fill for a run's background rect, honoring reverse video (SGR 7): a reversed run paints
+    /// its (resolved) foreground color as the background — falling back to the theme foreground when
+    /// the run has no explicit foreground. Returns null when there is no background to draw.
+    /// </summary>
+    private string? ResolveBackgroundFill(StyleRun run)
+    {
+        if (run.IsReverse)
+        {
+            return run.ForegroundColor != null
+                ? ConvertColorToHex(run.ForegroundColor)
+                : FgFill(_options.Theme.Foreground);
+        }
+
+        return run.BackgroundColor != null ? ConvertColorToHex(run.BackgroundColor) : null;
+    }
+
+    /// <summary>
+    /// The text fill for a reversed run (SGR 7): the run's (resolved) background color, falling back
+    /// to the theme background when the run has no explicit background.
+    /// </summary>
+    private string ResolveReverseTextFill(StyleRun run) =>
+        run.BackgroundColor != null ? ConvertColorToHex(run.BackgroundColor) : BgFill(_options.Theme.Background);
+
+    /// <summary>
     /// Builds render segments from a row of cells, splitting at custom glyph boundaries.
     /// This ensures custom glyphs are rendered separately from regular text.
     /// </summary>
@@ -619,7 +685,12 @@ public class SvgRenderer
                 cell.BackgroundColor != currentRun.BackgroundColor ||
                 cell.IsBold != currentRun.IsBold ||
                 cell.IsItalic != currentRun.IsItalic ||
-                cell.IsUnderline != currentRun.IsUnderline
+                cell.IsUnderline != currentRun.IsUnderline ||
+                cell.IsReverse != currentRun.IsReverse ||
+                cell.IsDim != currentRun.IsDim ||
+                cell.IsStrikethrough != currentRun.IsStrikethrough ||
+                cell.IsOverline != currentRun.IsOverline ||
+                cell.IsConceal != currentRun.IsConceal
             );
 
             if (needNewSegment)
@@ -635,6 +706,11 @@ public class SvgRenderer
                 currentRun.IsBold = cell.IsBold;
                 currentRun.IsItalic = cell.IsItalic;
                 currentRun.IsUnderline = cell.IsUnderline;
+                currentRun.IsReverse = cell.IsReverse;
+                currentRun.IsDim = cell.IsDim;
+                currentRun.IsStrikethrough = cell.IsStrikethrough;
+                currentRun.IsOverline = cell.IsOverline;
+                currentRun.IsConceal = cell.IsConceal;
                 currentRun.IsCustomGlyph = isGlyph;
                 currentIsGlyph = isGlyph;
             }
@@ -649,11 +725,12 @@ public class SvgRenderer
         }
 
         // Trim trailing spaces from text segments (not from custom glyph segments)
-        // But don't trim if the segment has a background color (Canvas uses colored spaces)
+        // But don't trim if the segment has a background color (Canvas uses colored spaces),
+        // nor if it is reverse-video (a reversed space paints a foreground-colored block).
         if (segments.Count > 0)
         {
             var lastRun = segments[^1];
-            if (!lastRun.IsCustomGlyph && lastRun.BackgroundColor == null)
+            if (!lastRun.IsCustomGlyph && lastRun.BackgroundColor == null && !lastRun.IsReverse)
             {
                 var originalLength = lastRun.Text.Length;
                 lastRun.Text = lastRun.Text.TrimEnd();
@@ -661,10 +738,12 @@ public class SvgRenderer
             }
         }
 
-        // Remove empty segments (but keep segments with background colors - they render colored spaces)
+        // Remove empty segments (but keep segments with background colors or reverse video -
+        // both render visible colored spaces)
         while (segments.Count > 0 &&
                string.IsNullOrWhiteSpace(segments[^1].Text) &&
-               segments[^1].BackgroundColor == null)
+               segments[^1].BackgroundColor == null &&
+               !segments[^1].IsReverse)
         {
             segments.RemoveAt(segments.Count - 1);
         }
@@ -769,7 +848,19 @@ public class SvgRenderer
         AppendAnsiColorStyles(css);
 
         // Style flags
-        css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}");
+        // underline/strikethrough/overline are emitted as a combined text-decoration presentation
+        // attribute per run (see BuildTextDecoration), so no decoration CSS class is needed here.
+        css.Append(".bold{font-weight:bold}.italic{font-style:italic}.dim{fill-opacity:0.55}");
+
+        // Box-drawing line styles. The stroke width, square linecap and fill:none are identical across
+        // every light/heavy box glyph, so CustomGlyphRenderer emits class="bl"/"bh" and they live here
+        // once instead of inline on each path — the single biggest SVG-size lever on glyph-heavy output
+        // (e.g. a truecolor gradient progress bar is tens of thousands of these paths). Widths must match
+        // the per-row formula in RenderRowContentAsync.
+        var lightStroke = Math.Max(1, _charHeight * 0.08);
+        var heavyStroke = Math.Max(2, _charHeight * 0.16);
+        css.Append($".bl{{fill:none;stroke-linecap:square;stroke-width:{FormatStroke(lightStroke)}}}");
+        css.Append($".bh{{fill:none;stroke-linecap:square;stroke-width:{FormatStroke(heavyStroke)}}}");
 
         // Cursor (follows the foreground/--vcr-fg, matching legacy behavior)
         if (!_options.DisableCursor)
@@ -892,8 +983,12 @@ public class SvgRenderer
 
     private void CalculateDimensions()
     {
-        _charWidth = _options.ActualCellWidth ?? _options.FontSize * 0.55;
-        _charHeight = _options.ActualCellHeight ?? _options.FontSize * 1.2;
+        // With a measured cell size use it as-is; otherwise estimate from the font size — and ROUND to
+        // whole pixels: a fractional cell width makes every background rect land on a sub-pixel boundary,
+        // so adjacent same-color cells (e.g. bar-chart fills) anti-alias independently and show hairline
+        // seams. Integer cells tile cleanly and match a typical monospace advance (~0.6 × font-size).
+        _charWidth = _options.ActualCellWidth ?? Math.Round(_options.FontSize * 0.6);
+        _charHeight = _options.ActualCellHeight ?? Math.Round(_options.FontSize * 1.2);
 
         // Canvas defaults to the configured viewport. When FitToContent supplies a
         // content extent, the canvas shrinks to fit measured content plus padding.
@@ -909,9 +1004,8 @@ public class SvgRenderer
 
             // Guard against the configured viewport being smaller than the content we actually
             // captured. The terminal's real column/row count can exceed the requested Cols/Rows
-            // (e.g. ttyd re-fits the terminal to the window after we resize it, or the measured
-            // cell size differs slightly from xterm's), so cells laid out at col*_charWidth can
-            // extend past _options.Width. Without this, those trailing columns - like a table's
+            // (e.g. the shell re-fits the terminal after a resize), so cells laid out at col*_charWidth
+            // can extend past _options.Width. Without this, those trailing columns - like a table's
             // right border - fall outside the viewBox/clip and are silently cut off. Grow (never
             // shrink) the canvas so it contains every rendered cell.
             if (_measuredExtentCols.HasValue)
@@ -1000,44 +1094,95 @@ public class SvgRenderer
         }
     }
 
-    private static string ComputeRowHash(TerminalCell[] cells)
+    /// <summary>
+    /// A fast 64-bit content fingerprint for a row, used only as a dedup/equality key when collapsing
+    /// identical row states across frames. Covers exactly the fields the SVG renderer draws per row.
+    /// FNV-1a (not a crypto hash) — this runs per row per frame, so MD5's allocation + digest cost was
+    /// pure overhead; 64-bit collision odds are negligible for the handful of distinct states per row.
+    /// </summary>
+    private static ulong ComputeRowHash(TerminalCell[] cells)
     {
-        var sb = new StringBuilder();
+        const ulong fnvOffset = 14695981039346656037UL;
+        const ulong fnvPrime = 1099511628211UL;
+
+        var hash = fnvOffset;
+
+        static ulong MixString(ulong h, string? s)
+        {
+            if (s != null)
+                foreach (var ch in s)
+                    h = (h ^ ch) * fnvPrime;
+            // Field separator so adjacent fields can't merge into a colliding key (e.g. fg "a"+bg "b"
+            // vs fg "ab"+bg "").
+            return (h ^ 0xFFFF) * fnvPrime;
+        }
+
         foreach (var cell in cells)
         {
-            sb.Append(cell.Character);
-            sb.Append(cell.ForegroundColor ?? "");
-            sb.Append(cell.BackgroundColor ?? "");
-            sb.Append(cell.IsBold ? "b" : "");
-            sb.Append(cell.IsItalic ? "i" : "");
-            sb.Append(cell.IsUnderline ? "u" : "");
+            hash = MixString(hash, cell.Character);
+            hash = MixString(hash, cell.ForegroundColor);
+            hash = MixString(hash, cell.BackgroundColor);
+
+            var flags = (cell.IsBold ? 1 : 0)
+                      | (cell.IsItalic ? 1 << 1 : 0)
+                      | (cell.IsUnderline ? 1 << 2 : 0)
+                      | (cell.IsReverse ? 1 << 3 : 0)
+                      | (cell.IsDim ? 1 << 4 : 0)
+                      | (cell.IsStrikethrough ? 1 << 5 : 0)
+                      | (cell.IsOverline ? 1 << 6 : 0)
+                      | (cell.IsConceal ? 1 << 7 : 0);
+            hash = (hash ^ (uint)flags) * fnvPrime;
         }
-        var bytes = Encoding.UTF8.GetBytes(sb.ToString());
-        var hash = MD5.HashData(bytes);
-        return Convert.ToHexString(hash);
+
+        return hash;
     }
 
     private static string BuildCssClasses(StyleRun run)
     {
         var classes = new List<string>();
 
-        if (run.ForegroundColor != null && !run.ForegroundColor.StartsWith('#'))
+        // Reverse video resolves its foreground to the (swapped) background color via an inline
+        // fill in the text pass, so it must NOT carry a foreground color class — a CSS class fill
+        // would win over the inline presentation attribute and undo the swap.
+        if (!run.IsReverse)
         {
-            if (int.TryParse(run.ForegroundColor, out var idx) && idx < 16)
+            if (run.ForegroundColor != null && !run.ForegroundColor.StartsWith('#'))
             {
-                classes.Add(GetAnsiColorClass(idx));
+                if (int.TryParse(run.ForegroundColor, out var idx) && idx < 16)
+                {
+                    classes.Add(GetAnsiColorClass(idx));
+                }
             }
-        }
-        else if (run.ForegroundColor == null)
-        {
-            classes.Add("fg");
+            else if (run.ForegroundColor == null)
+            {
+                classes.Add("fg");
+            }
         }
 
         if (run.IsBold) classes.Add("bold");
         if (run.IsItalic) classes.Add("italic");
-        if (run.IsUnderline) classes.Add("underline");
+        // Dim is an opacity reduction independent of how the fill is set, so it composes with a
+        // foreground class, an inline RGB fill, and reverse video (which dims the swapped text).
+        if (run.IsDim) classes.Add("dim");
+        // Underline / strikethrough / overline are all text-decoration lines and must be able to
+        // combine, so they are emitted together via BuildTextDecoration (a single presentation
+        // attribute) rather than as conflicting CSS classes.
 
         return string.Join(" ", classes);
+    }
+
+    /// <summary>
+    /// The combined <c>text-decoration</c> value for a run (underline / line-through / overline),
+    /// or null when none apply. One declaration so the lines compose; the decoration follows the
+    /// run's text fill (currentColor) like a real terminal.
+    /// </summary>
+    private static string? BuildTextDecoration(StyleRun run)
+    {
+        var lines = new List<string>();
+        if (run.IsUnderline) lines.Add("underline");
+        if (run.IsOverline) lines.Add("overline");
+        if (run.IsStrikethrough) lines.Add("line-through");
+        return lines.Count > 0 ? string.Join(" ", lines) : null;
     }
 
     private static string GetAnsiColorClass(int index) => index switch
@@ -1077,6 +1222,16 @@ public class SvgRenderer
     {
         return seconds.ToString("F3", CultureInfo.InvariantCulture);
     }
+
+    /// <summary>
+    /// Formats a stroke width for the box-drawing CSS classes. Mirrors <c>CustomGlyphRenderer.F</c>
+    /// (whole numbers bare, otherwise two decimals) so the class width equals what the glyph paths
+    /// were previously emitting inline.
+    /// </summary>
+    private static string FormatStroke(double value) =>
+        Math.Abs(value % 1) < 0.001
+            ? ((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture)
+            : value.ToString("F2", CultureInfo.InvariantCulture);
 
     private static string OptimizeHexColor(string color)
     {
@@ -1154,7 +1309,7 @@ public class SvgRenderer
     private sealed class RowStateInterval
     {
         public required TerminalCell[] Cells { get; init; }
-        public required string Hash { get; init; }
+        public required ulong Hash { get; init; }
         public required double StartTime { get; init; }
         public required double EndTime { get; init; }
     }
@@ -1175,6 +1330,11 @@ public class SvgRenderer
         public bool IsBold { get; set; }
         public bool IsItalic { get; set; }
         public bool IsUnderline { get; set; }
+        public bool IsReverse { get; set; }
+        public bool IsDim { get; set; }
+        public bool IsStrikethrough { get; set; }
+        public bool IsOverline { get; set; }
+        public bool IsConceal { get; set; }
         /// <summary>
         /// Total cell width of this run (accounts for wide characters taking 2 cells).
         /// </summary>

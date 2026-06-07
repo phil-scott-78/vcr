@@ -14,6 +14,11 @@ app.Configure(config =>
     config.AddCommand<ThemesCommand>("themes")
         .WithDescription("List available themes");
 
+    config.AddCommand<MigrateCommand>("migrate")
+        .WithDescription("Migrate a directory of tapes to a shared vcr.toml preset (dry run by default)")
+        .WithExample(new[] { "migrate", "samples/" })
+        .WithExample(new[] { "migrate", "samples/", "--write" });
+
     config.AddCommand<SnapCommand>("snap")
         .WithDescription("Capture a static SVG screenshot of a command's final output")
         .WithExample(new[] { "snap", "\"echo Hello\"", "-o", "hello.svg" })

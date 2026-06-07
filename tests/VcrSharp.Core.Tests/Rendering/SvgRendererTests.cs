@@ -242,7 +242,7 @@ public class SvgRendererTests
     public async Task ContentWiderThanViewport_GrowsCanvasSoLastColumnIsNotClipped()
     {
         // Reproduces the real bug: the terminal rendered more columns than the configured
-        // viewport accounts for (Set Cols drifts from ttyd's actual fit / measured cell size),
+        // viewport accounts for (Set Cols drifts from the shell's actual fit / measured cell size),
         // so a table's right border lands past _options.Width and gets clipped out of the
         // viewBox. The canvas must grow to contain every rendered cell. FitToContent is OFF.
         var options = DeterministicOptions(); // Width=200 (= 20 cols at 10px), Height=100
@@ -319,5 +319,148 @@ public class SvgRendererTests
         // Row animates freeze (play once) but the cursor blink keeps pulsing forever.
         svg.ShouldContain("fill=\"freeze\"");
         svg.ShouldContain("repeatCount=\"indefinite\"");
+    }
+
+    // ---- SGR style parity: attributes the engine already tracks that the SVG path must render ----
+
+    [Fact]
+    public async Task ReverseVideo_SwapsForegroundAndBackground()
+    {
+        var options = DeterministicOptions(); // CssVariables off => literal hex fills
+        var content = Content(3, 1,
+        [
+            new TerminalCell { Character = "X", ForegroundColor = "#ff0000", BackgroundColor = "#0000ff", IsReverse = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        // The background rect takes the original FOREGROUND (#ff0000 -> #f00); the glyph is painted
+        // in the original BACKGROUND (#0000ff -> #00f).
+        svg.ShouldContain("fill=\"#f00\"");
+        svg.ShouldContain("fill=\"#00f\"");
+    }
+
+    [Fact]
+    public async Task ReverseVideo_DefaultColors_PaintsForegroundBlock_AndSurvivesBlankTrim()
+    {
+        var options = DeterministicOptions();
+        // Two leading reverse-video spaces (status-bar style fill) with an explicit green foreground
+        // and default background. Plain blank runs are trimmed away; a reversed blank run paints a
+        // solid foreground-colored block and must survive.
+        var content = Content(5, 1,
+        [
+            new TerminalCell { Character = " ", ForegroundColor = "#00ff00", IsReverse = true, Width = 1 },
+            new TerminalCell { Character = " ", ForegroundColor = "#00ff00", IsReverse = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("<rect");
+        svg.ShouldContain("fill=\"#0f0\""); // foreground-colored block survives the blank-run trim
+    }
+
+    [Fact]
+    public async Task Dim_EmitsReducedOpacityClass()
+    {
+        var options = DeterministicOptions();
+        var content = Content(4, 1,
+        [
+            new TerminalCell { Character = "d", IsDim = true, Width = 1 },
+            new TerminalCell { Character = "d", IsDim = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain(".dim{fill-opacity:0.55}"); // class defined
+        svg.ShouldContain("class=\"fg dim\"");          // and applied to the run
+    }
+
+    [Fact]
+    public async Task Strikethrough_EmitsLineThroughDecoration()
+    {
+        var options = DeterministicOptions();
+        var content = Content(2, 1,
+        [
+            new TerminalCell { Character = "x", IsStrikethrough = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("text-decoration=\"line-through\"");
+    }
+
+    [Fact]
+    public async Task Underline_NowEmittedAsDecorationAttribute_NotCssClass()
+    {
+        var options = DeterministicOptions();
+        var content = Content(2, 1,
+        [
+            new TerminalCell { Character = "u", IsUnderline = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("text-decoration=\"underline\"");
+        svg.ShouldNotContain("class=\"fg underline\""); // decoration moved off the CSS class
+    }
+
+    [Fact]
+    public async Task UnderlineAndStrikethrough_CombineInOneDecoration()
+    {
+        var options = DeterministicOptions();
+        var content = Content(2, 1,
+        [
+            new TerminalCell { Character = "z", IsUnderline = true, IsStrikethrough = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        // Both lines survive — the whole point of one combined declaration.
+        svg.ShouldContain("text-decoration=\"underline line-through\"");
+    }
+
+    [Fact]
+    public async Task Overline_EmitsOverlineDecoration_AndCombinesWithUnderline()
+    {
+        var options = DeterministicOptions();
+        var content = Content(3, 1,
+        [
+            new TerminalCell { Character = "o", IsOverline = true, Width = 1 },
+            new TerminalCell { Character = "b", IsOverline = true, IsUnderline = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("text-decoration=\"overline\"");
+        svg.ShouldContain("text-decoration=\"underline overline\"");
+    }
+
+    [Fact]
+    public async Task Conceal_HidesGlyph()
+    {
+        var options = DeterministicOptions();
+        var content = Content(3, 1,
+        [
+            new TerminalCell { Character = "Z", IsConceal = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldNotContain("Z", Case.Sensitive); // concealed glyph is not emitted
+    }
+
+    [Fact]
+    public async Task Conceal_KeepsBackground_ButHidesGlyph()
+    {
+        var options = DeterministicOptions();
+        var content = Content(3, 1,
+        [
+            new TerminalCell { Character = "Z", BackgroundColor = "1", IsConceal = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("fill=\"#cd3131\"");                 // background (ANSI red) still painted
+        svg.ShouldNotContain("Z", Case.Sensitive);            // glyph hidden
     }
 }

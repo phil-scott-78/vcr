@@ -22,10 +22,9 @@ public static class ContentAnalysis
     /// </summary>
     public static bool IsBlankRow(TerminalCell[] cells)
     {
-        if (cells == null) return true;
         foreach (var cell in cells)
         {
-            if (cell != null && !IsBlankCell(cell))
+            if (!IsBlankCell(cell))
                 return false;
         }
         return true;
@@ -34,7 +33,7 @@ public static class ContentAnalysis
     /// <summary>
     /// True when the entire visible terminal content is blank.
     /// </summary>
-    public static bool IsBlankContent(TerminalContent content)
+    public static bool IsBlankContent(TerminalContent? content)
     {
         if (content?.Cells == null) return true;
         foreach (var row in content.Cells)
@@ -49,25 +48,21 @@ public static class ContentAnalysis
     /// A stable signature of a terminal state (characters + colors + styles) used to detect
     /// frames that are identical to one another.
     /// </summary>
-    public static string Signature(TerminalContent content)
+    public static string Signature(TerminalContent? content)
     {
         if (content?.Cells == null) return string.Empty;
         var sb = new StringBuilder();
         foreach (var row in content.Cells)
         {
-            if (row != null)
+            foreach (var cell in row)
             {
-                foreach (var cell in row)
-                {
-                    if (cell == null) continue;
-                    sb.Append(cell.Character);
-                    sb.Append(cell.ForegroundColor);
-                    sb.Append('|');
-                    sb.Append(cell.BackgroundColor);
-                    sb.Append(cell.IsBold ? 'b' : '.');
-                    sb.Append(cell.IsItalic ? 'i' : '.');
-                    sb.Append(cell.IsUnderline ? 'u' : '.');
-                }
+                sb.Append(cell.Character);
+                sb.Append(cell.ForegroundColor);
+                sb.Append('|');
+                sb.Append(cell.BackgroundColor);
+                sb.Append(cell.IsBold ? 'b' : '.');
+                sb.Append(cell.IsItalic ? 'i' : '.');
+                sb.Append(cell.IsUnderline ? 'u' : '.');
             }
             sb.Append('\n');
         }
@@ -81,7 +76,7 @@ public static class ContentAnalysis
     /// to the final frame down to its first occurrence so the loop doesn't sit on dead air.
     /// At least one frame (and, when available, two) is always retained.
     /// </summary>
-    public static (int Start, int End) TrimBlankLoopRange(IReadOnlyList<TerminalContent> frames)
+    public static (int Start, int End) TrimBlankLoopRange(IReadOnlyList<TerminalContent>? frames)
     {
         if (frames == null || frames.Count <= 1)
             return (0, Math.Max((frames?.Count ?? 1) - 1, 0));
@@ -118,7 +113,7 @@ public readonly record struct ContentExtent(int Cols, int Rows)
     /// advance by zero, so column math lands on real glyph boundaries.
     /// Always returns at least (1, 1).
     /// </summary>
-    public static ContentExtent Measure(TerminalContent content)
+    public static ContentExtent Measure(TerminalContent? content)
     {
         var maxRow = -1;
         var maxCols = 0;
@@ -129,7 +124,6 @@ public readonly record struct ContentExtent(int Cols, int Rows)
             for (var row = 0; row < grid.Length; row++)
             {
                 var cells = grid[row];
-                if (cells == null) continue;
 
                 var runningCol = 0;
                 var lastColInRow = 0;
@@ -137,8 +131,6 @@ public readonly record struct ContentExtent(int Cols, int Rows)
 
                 foreach (var cell in cells)
                 {
-                    if (cell == null) continue;
-
                     if (!ContentAnalysis.IsBlankCell(cell))
                     {
                         rowHasContent = true;
@@ -167,7 +159,7 @@ public readonly record struct ContentExtent(int Cols, int Rows)
     /// never clips a row/column that appears partway through the recording.
     /// Always returns at least (1, 1).
     /// </summary>
-    public static ContentExtent Union(IEnumerable<TerminalContent> states)
+    public static ContentExtent Union(IEnumerable<TerminalContent>? states)
     {
         var cols = 1;
         var rows = 1;

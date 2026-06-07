@@ -71,7 +71,7 @@ Left 9
 Sleep 300ms
 Backspace
 Sleep 100ms
-Type "ll"
+Type "lo"
 Sleep 500ms
 Home
 Sleep 300ms
@@ -85,7 +85,7 @@ Run the recording again:
 vcr demo.tape
 ```
 
-Watch the GIF carefully. You'll see the cursor move back with `Left 9`, delete the character with `Backspace`, type "ll" to complete "Hello", then jump to the start of the line with `Home` before executing the command with `Enter`.
+Watch the GIF carefully. You'll see the cursor move back with `Left 9`, delete the `o` with `Backspace`, type "lo" to complete "Hello", then jump to the start of the line with `Home` before executing the command with `Enter`.
 
 Notice how the `Sleep` commands create natural pauses that make the editing look realistic. A real person pauses to think while navigating and editing.
 
@@ -135,7 +135,7 @@ Left 9
 Sleep 300ms
 Backspace
 Sleep 100ms
-Type "ll"
+Type "lo"
 Sleep 500ms
 Home
 Sleep 300ms

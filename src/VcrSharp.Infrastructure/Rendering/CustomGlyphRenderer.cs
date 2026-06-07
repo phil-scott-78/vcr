@@ -52,8 +52,7 @@ public static class CustomGlyphRenderer
         {
             // Determine glyph type and render
             case >= '\u2500' and <= '\u257F':
-                RenderBoxDrawing(sb, c, x, y, cellWidth, cellHeight, foregroundColor, lightStrokeWidth,
-                    heavyStrokeWidth);
+                RenderBoxDrawing(sb, c, x, y, cellWidth, cellHeight, foregroundColor, lightStrokeWidth);
                 break;
             case >= '\u2580' and <= '\u259F':
                 RenderBlockElement(sb, c, x, y, cellWidth, cellHeight, foregroundColor);
@@ -69,12 +68,69 @@ public static class CustomGlyphRenderer
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Renders a horizontal run of <paramref name="count"/> identical glyphs as a single element spanning
+    /// the whole run, when the glyph tiles cleanly across cells: solid horizontal box lines (─ ━ ═) and
+    /// block elements that fill the full cell width (█, the horizontal half/eighth bands, and the ░▒▓
+    /// shades). Returns false — leaving the caller to render cell-by-cell — for anything that does not
+    /// tile horizontally (corners, partial-width blocks, quadrants, dashed lines, powerline). This is the
+    /// flat-color counterpart to the per-cell path: a gradient never forms a run, so it is unaffected.
+    /// </summary>
+    public static bool TryRenderHorizontalRun(char c, double x, double y, double cellWidth, double cellHeight,
+        int count, string foregroundColor, string? backgroundColor,
+        double lightStrokeWidth, double heavyStrokeWidth, out string svg)
+    {
+        svg = "";
+        var runWidth = cellWidth * count;
+        var centerY = y + cellHeight / 2;
+        string glyph;
+
+        switch (c)
+        {
+            case '─': // ─ light horizontal -> shared .bl class
+                glyph = $"<path d=\"M{F(x)} {F(centerY)}H{F(x + runWidth)}\" stroke=\"{foregroundColor}\" class=\"bl\"/>";
+                break;
+            case '━': // ━ heavy horizontal -> shared .bh class
+                glyph = $"<path d=\"M{F(x)} {F(centerY)}H{F(x + runWidth)}\" stroke=\"{foregroundColor}\" class=\"bh\"/>";
+                break;
+            case '═': // ═ double horizontal (two parallel light lines)
+            {
+                var gap = lightStrokeWidth * 1.5;
+                glyph =
+                    $"<path d=\"M{F(x)} {F(centerY - gap)}H{F(x + runWidth)}M{F(x)} {F(centerY + gap)}H{F(x + runWidth)}\" stroke=\"{foregroundColor}\" stroke-width=\"{F(lightStrokeWidth)}\" fill=\"none\"/>";
+                break;
+            }
+            default:
+                // Block elements occupying the full cell width tile into one rect; partial-width blocks
+                // (left/right fractions, quadrants) would leave gaps and are left to per-cell rendering.
+                if (c is >= '▀' and <= '▟')
+                {
+                    var (rx, ry, rw, rh, pattern) = GetBlockElementRect(c, cellWidth, cellHeight);
+                    if (rx == 0 && Math.Abs(rw - cellWidth) < 0.001 && rw > 0 && rh > 0)
+                    {
+                        glyph = pattern != null
+                            ? $"<rect x=\"{F(x)}\" y=\"{F(y + ry)}\" width=\"{F(runWidth)}\" height=\"{F(rh)}\" fill=\"url(#{pattern})\" style=\"--shade-color:{foregroundColor}\"/>"
+                            : $"<rect x=\"{F(x)}\" y=\"{F(y + ry)}\" width=\"{F(runWidth)}\" height=\"{F(rh)}\" fill=\"{foregroundColor}\"/>";
+                        break;
+                    }
+                }
+                return false;
+        }
+
+        // Background spans the whole run (drawn before the glyph, matching the per-cell order).
+        var bg = backgroundColor != null
+            ? $"<rect x=\"{F(x)}\" y=\"{F(y)}\" width=\"{F(runWidth)}\" height=\"{F(cellHeight)}\" fill=\"{backgroundColor}\"/>"
+            : "";
+        svg = bg + glyph;
+        return true;
+    }
+
     // Box drawing characters are encoded with bits indicating which directions have lines:
     // Bit layout for standard chars: [up-heavy][down-heavy][left-heavy][right-heavy][up][down][left][right]
     // We use a lookup table for the ~128 characters
 
     private static void RenderBoxDrawing(StringBuilder sb, char c, double x, double y,
-        double w, double h, string color, double lightStroke, double heavyStroke)
+        double w, double h, string color, double lightStroke)
     {
         var centerX = x + w / 2;
         var centerY = y + h / 2;
@@ -93,7 +149,7 @@ public static class CustomGlyphRenderer
                 return;
             // ╬
             case '\u256C':
-                RenderDoubleCross(sb, c, x, y, w, h, color, lightStroke, gap);
+                RenderDoubleCross(sb, x, y, w, h, color, lightStroke, gap);
                 return;
         }
 
@@ -101,40 +157,28 @@ public static class CustomGlyphRenderer
         var segments = GetBoxDrawingSegments(c);
         if (segments == BoxSegments.None) return;
 
-        // Build path data
+        // Build path data for the light lines, coalescing an opposite pair (left+right / up+down) into a
+        // single full-span line so a plain '─'/'│' emits one command instead of two half-cell subpaths.
         var pathData = new StringBuilder();
-
-        // Light horizontal line (left to center or center to right)
-        if ((segments & BoxSegments.LightLeft) != 0)
-            pathData.Append($"M{F(x)} {F(centerY)}H{F(centerX)}");
-        if ((segments & BoxSegments.LightRight) != 0)
-            pathData.Append($"M{F(centerX)} {F(centerY)}H{F(x + w)}");
-        if ((segments & BoxSegments.LightUp) != 0)
-            pathData.Append($"M{F(centerX)} {F(y)}V{F(centerY)}");
-        if ((segments & BoxSegments.LightDown) != 0)
-            pathData.Append($"M{F(centerX)} {F(centerY)}V{F(y + h)}");
+        AppendLineSegments(pathData, segments, x, y, w, h, centerX, centerY,
+            BoxSegments.LightLeft, BoxSegments.LightRight, BoxSegments.LightUp, BoxSegments.LightDown);
 
         if (pathData.Length > 0)
         {
-            sb.Append(
-                $"<path d=\"{pathData}\" stroke=\"{color}\" stroke-width=\"{F(lightStroke)}\" stroke-linecap=\"square\" fill=\"none\"/>");
+            // stroke-width, square linecap and fill:none live in the shared `.bl`/`.bh` CSS classes
+            // (SvgRenderer.WriteStylesAsync). Inlining them on every glyph path was the dominant
+            // contributor to SVG size on glyph-heavy recordings (e.g. gradient progress bars).
+            sb.Append($"<path d=\"{pathData}\" stroke=\"{color}\" class=\"bl\"/>");
         }
 
-        // Heavy lines (thicker stroke)
+        // Heavy lines (thicker stroke -> shared `.bh` class)
         var heavyPath = new StringBuilder();
-        if ((segments & BoxSegments.HeavyLeft) != 0)
-            heavyPath.Append($"M{F(x)} {F(centerY)}H{F(centerX)}");
-        if ((segments & BoxSegments.HeavyRight) != 0)
-            heavyPath.Append($"M{F(centerX)} {F(centerY)}H{F(x + w)}");
-        if ((segments & BoxSegments.HeavyUp) != 0)
-            heavyPath.Append($"M{F(centerX)} {F(y)}V{F(centerY)}");
-        if ((segments & BoxSegments.HeavyDown) != 0)
-            heavyPath.Append($"M{F(centerX)} {F(centerY)}V{F(y + h)}");
+        AppendLineSegments(heavyPath, segments, x, y, w, h, centerX, centerY,
+            BoxSegments.HeavyLeft, BoxSegments.HeavyRight, BoxSegments.HeavyUp, BoxSegments.HeavyDown);
 
         if (heavyPath.Length > 0)
         {
-            sb.Append(
-                $"<path d=\"{heavyPath}\" stroke=\"{color}\" stroke-width=\"{F(heavyStroke)}\" stroke-linecap=\"square\" fill=\"none\"/>");
+            sb.Append($"<path d=\"{heavyPath}\" stroke=\"{color}\" class=\"bh\"/>");
         }
 
         // Double lines (two parallel lines) - for straight segments only
@@ -309,7 +353,7 @@ public static class CustomGlyphRenderer
     /// <summary>
     /// Renders the double cross (╬) with proper interlocking geometry.
     /// </summary>
-    private static void RenderDoubleCross(StringBuilder sb, char c, double x, double y,
+    private static void RenderDoubleCross(StringBuilder sb, double x, double y,
         double w, double h, string color, double stroke, double gap)
     {
         var left = x;
@@ -679,7 +723,6 @@ public static class CustomGlyphRenderer
     {
         // Simplified lock: rectangle with rounded top arc
         var padX = w * 0.2;
-        var padY = h * 0.15;
         var bodyTop = y + h * 0.45;
         var bodyW = w - 2 * padX;
         var bodyH = h * 0.4;
@@ -711,6 +754,34 @@ public static class CustomGlyphRenderer
         if (Math.Abs(value % 1) < 0.001)
             return ((int)Math.Round(value)).ToString(CultureInfo.InvariantCulture);
         return value.ToString("F2", CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Appends the M/H/V subpaths for one stroke weight, coalescing a left+right pair into a single
+    /// full-width horizontal and an up+down pair into a single full-height vertical. A glyph that uses
+    /// both halves of an axis (the common '─'/'│' bar case) thus emits one line command, not two.
+    /// </summary>
+    private static void AppendLineSegments(StringBuilder path, BoxSegments segments,
+        double x, double y, double w, double h, double centerX, double centerY,
+        BoxSegments left, BoxSegments right, BoxSegments up, BoxSegments down)
+    {
+        var hasLeft = (segments & left) != 0;
+        var hasRight = (segments & right) != 0;
+        if (hasLeft && hasRight)
+            path.Append($"M{F(x)} {F(centerY)}H{F(x + w)}");
+        else if (hasLeft)
+            path.Append($"M{F(x)} {F(centerY)}H{F(centerX)}");
+        else if (hasRight)
+            path.Append($"M{F(centerX)} {F(centerY)}H{F(x + w)}");
+
+        var hasUp = (segments & up) != 0;
+        var hasDown = (segments & down) != 0;
+        if (hasUp && hasDown)
+            path.Append($"M{F(centerX)} {F(y)}V{F(y + h)}");
+        else if (hasUp)
+            path.Append($"M{F(centerX)} {F(y)}V{F(centerY)}");
+        else if (hasDown)
+            path.Append($"M{F(centerX)} {F(centerY)}V{F(y + h)}");
     }
 
     #endregion

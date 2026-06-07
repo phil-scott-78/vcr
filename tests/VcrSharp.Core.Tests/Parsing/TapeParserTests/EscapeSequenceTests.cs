@@ -154,18 +154,18 @@ public class EscapeSequenceTests
     }
 
     [Fact]
-    public void ParseTape_CopyCommandWithEscapedQuotes_ParsesCorrectly()
+    public void ParseTape_TypeCommandWithEscapedQuotes_ParsesCorrectly()
     {
         // Arrange
         var parser = new TapeParser();
-        var source = "Copy \"Say \\\"Hello\\\" to the world\"";
+        var source = "Type \"Say \\\"Hello\\\" to the world\"";
 
         // Act
         var commands = parser.ParseTape(source);
 
         // Assert
         commands.Count.ShouldBe(1);
-        var cmd = commands[0].ShouldBeOfType<CopyCommand>();
+        var cmd = commands[0].ShouldBeOfType<TypeCommand>();
         cmd.Text.ShouldBe("Say \"Hello\" to the world");
     }
 

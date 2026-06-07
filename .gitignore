@@ -485,3 +485,17 @@ $RECYCLE.BIN/
 
 # dotnet-release artifacts
 artifacts-dotnet-releaser/
+
+# Scratch / native demo recordings (local only)
+.native-demo/
+scratch/
+
+# Claude Code local state (runtime + machine-local settings)
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Generated sample output (samples/welcome.tape -> welcome.svg)
+/welcome.svg
+
+# Pennington static-site build output (docs/VcrSharp.Docs `dotnet run -- build`)
+docs/VcrSharp.Docs/output/

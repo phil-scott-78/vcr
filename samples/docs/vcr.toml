@@ -1,0 +1,14 @@
+# Shared "house style" for the documentation demo tapes.
+#
+# Every tape under samples/docs/ pulls this in with `Use doc` and then overrides
+# only what makes it distinct (theme, grid size, typing speed, ...). This is the
+# same preset workflow documented in how--to/presets.md and reference/vcr-toml.md,
+# so the docs samples now dogfood the feature they describe.
+#
+# Discovered automatically: VCR# walks up from each tape's directory looking for a
+# file named `vcr.toml`, so no flag or path argument is needed.
+
+[preset.doc]
+theme = "Dracula"             # most demos use Dracula; per-tape Set Theme overrides
+transparentBackground = true  # embeds sit on the docs page's own terminal chrome
+endBuffer = 2s                # hold the final frame for 2s instead of a trailing Sleep

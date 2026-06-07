@@ -73,16 +73,14 @@ public class SessionOptions
     public float LineHeight { get; set; } = 1.0f;
 
     /// <summary>
-    /// Gets or sets the actual rendered cell width in pixels.
-    /// This is measured from xterm.js after fonts are loaded.
-    /// If null, SVG encoder will estimate based on FontSize.
+    /// Gets or sets an explicit rendered cell width in pixels.
+    /// If null, the SVG encoder estimates it from FontSize.
     /// </summary>
     public double? ActualCellWidth { get; set; }
 
     /// <summary>
-    /// Gets or sets the actual rendered cell height in pixels.
-    /// This is measured from xterm.js after fonts are loaded.
-    /// If null, SVG encoder will estimate based on FontSize.
+    /// Gets or sets an explicit rendered cell height in pixels.
+    /// If null, the SVG encoder estimates it from FontSize.
     /// </summary>
     public double? ActualCellHeight { get; set; }
 
@@ -161,13 +159,13 @@ public class SessionOptions
 
     /// <summary>
     /// Gets or sets whether the cursor should be disabled in output.
-    /// When true, cursor is not rendered in browser terminal, screenshots, or SVG output.
+    /// When true, the cursor is not rendered in screenshots or SVG/raster output.
     /// </summary>
     public bool DisableCursor { get; set; }
 
     /// <summary>
     /// Gets or sets whether the terminal background should be transparent.
-    /// When true, sets allowTransparency on xTerm.js and uses a transparent background color.
+    /// When true, output uses a transparent background color.
     /// </summary>
     public bool TransparentBackground { get; set; }
 
@@ -264,7 +262,7 @@ public class SessionOptions
 
     /// <summary>
     /// Gets or sets the delay before executing Exec commands at startup.
-    /// Allows time for browser and terminal to fully initialize.
+    /// Allows time for the shell and terminal to fully initialize.
     /// </summary>
     public TimeSpan StartupDelay { get; set; } = TimeSpan.FromSeconds(3.5);
 
@@ -320,7 +318,7 @@ public class SessionOptions
         {
             foreach (var file in OutputFiles)
             {
-                if (!".svg".Equals(System.IO.Path.GetExtension(file), System.StringComparison.OrdinalIgnoreCase))
+                if (!".svg".Equals(Path.GetExtension(file), StringComparison.OrdinalIgnoreCase))
                     return true;
             }
 
@@ -469,12 +467,6 @@ public class SessionOptions
         switch (name.ToLowerInvariant())
         {
             // Terminal dimensions
-            case "width":
-                options.Width = Convert.ToInt32(value);
-                break;
-            case "height":
-                options.Height = Convert.ToInt32(value);
-                break;
             case "cols":
                 options.Cols = Convert.ToInt32(value);
                 break;
@@ -548,9 +540,6 @@ public class SessionOptions
             case "transparentbackground":
                 options.TransparentBackground = Convert.ToBoolean(value);
                 break;
-            case "cssvariables":
-                options.CssVariables = Convert.ToBoolean(value);
-                break;
             case "svgintrinsicsize":
                 options.SvgIntrinsicSize = Convert.ToBoolean(value);
                 break;
@@ -584,12 +573,6 @@ public class SessionOptions
                 else
                     options.WaitTimeout = TimeSpan.Parse(value.ToString() ?? "15s");
                 break;
-            case "waitpattern":
-                if (value is Regex regex)
-                    options.WaitPattern = regex;
-                else
-                    options.WaitPattern = new Regex(value.ToString() ?? "/>$/");
-                break;
             case "inactivitytimeout":
                 if (value is TimeSpan it)
                     options.InactivityTimeout = it;
@@ -615,6 +598,7 @@ public class SessionOptions
                     options.StartBuffer = TimeSpan.Parse(value.ToString() ?? "500ms");
                 break;
             case "endbuffer":
+            case "holdduration": // forward name for EndBuffer
                 if (value is TimeSpan eb)
                     options.EndBuffer = eb;
                 else
@@ -637,6 +621,12 @@ public class SessionOptions
                 break;
             case "staticoutput":
                 options.StaticOutput = Convert.ToBoolean(value);
+                break;
+            case "mode": // capture mode: "animated" (default, capture frames) or "static" (one settled frame)
+                options.StaticOutput = string.Equals(value.ToString(), "static", StringComparison.OrdinalIgnoreCase);
+                break;
+            case "size": // canvas sizing: "grid" (default, exact Cols×Rows) or "fit" (crop to content + scale)
+                options.FitToContent = string.Equals(value.ToString(), "fit", StringComparison.OrdinalIgnoreCase);
                 break;
         }
     }

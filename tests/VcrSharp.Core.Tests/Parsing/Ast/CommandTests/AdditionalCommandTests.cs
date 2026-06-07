@@ -30,26 +30,6 @@ public class AdditionalCommandTests
     }
 
     [Fact]
-    public void RequireCommand_Construction_SetsPropertiesCorrectly()
-    {
-        // Arrange & Act
-        var cmd = new RequireCommand("npm");
-
-        // Assert
-        cmd.ProgramName.ShouldBe("npm");
-    }
-
-    [Fact]
-    public void SourceCommand_Construction_SetsPropertiesCorrectly()
-    {
-        // Arrange & Act
-        var cmd = new SourceCommand("script.tape");
-
-        // Assert
-        cmd.FilePath.ShouldBe("script.tape");
-    }
-
-    [Fact]
     public void ExecCommand_Construction_SetsPropertiesCorrectly()
     {
         // Arrange & Act
@@ -68,16 +48,6 @@ public class AdditionalCommandTests
         // Assert
         cmd.Key.ShouldBe("USER");
         cmd.Value.ShouldBe("developer");
-    }
-
-    [Fact]
-    public void CopyCommand_Construction_SetsPropertiesCorrectly()
-    {
-        // Arrange & Act
-        var cmd = new CopyCommand("text to copy");
-
-        // Assert
-        cmd.Text.ShouldBe("text to copy");
     }
 
     [Fact]

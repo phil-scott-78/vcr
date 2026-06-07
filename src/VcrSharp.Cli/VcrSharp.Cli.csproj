@@ -9,9 +9,6 @@
     <!-- Disable trimming for this assembly - Spectre.Console.Cli is not trim-compatible -->
     <IsTrimmable>false</IsTrimmable>
 
-    <!-- Suppress NU5111 warnings from Playwright package scripts -->
-    <NoWarn>$(NoWarn);NU5111</NoWarn>
-
     <!-- NuGet Package Configuration -->
     <PackageId>vcr</PackageId>
     <Authors>Phil Scott</Authors>

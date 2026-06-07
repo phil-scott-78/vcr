@@ -182,7 +182,7 @@ Command nodes in `Parsing/Ast/`:
 - **Spectre.Console** / **Spectre.Console.Cli** + **Errata** (CLI UI) — Cli
 - **Serilog** (logging) — Core/Cli
 
-There is **no `Microsoft.Playwright`** reference. (A vestigial `NU5111`/Playwright comment may linger in `VcrSharp.Cli.csproj` — it is dead and safe to remove.)
+There is **no `Microsoft.Playwright`** reference.
 
 ## Project structure
 

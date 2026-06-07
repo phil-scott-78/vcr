@@ -485,6 +485,14 @@ public class SvgRenderer
         {
             var x = cumulativeCellWidth * _charWidth;
 
+            // Conceal (SGR 8): keep the background (already painted above) but draw no glyph, so the
+            // cell renders blank. Reverse+conceal therefore yields a solid block — matching raster.
+            if (segment.IsConceal)
+            {
+                cumulativeCellWidth += segment.CellWidth;
+                continue;
+            }
+
             if (segment.IsCustomGlyph)
             {
                 // Render custom glyph characters one by one
@@ -661,7 +669,8 @@ public class SvgRenderer
                 cell.IsReverse != currentRun.IsReverse ||
                 cell.IsDim != currentRun.IsDim ||
                 cell.IsStrikethrough != currentRun.IsStrikethrough ||
-                cell.IsOverline != currentRun.IsOverline
+                cell.IsOverline != currentRun.IsOverline ||
+                cell.IsConceal != currentRun.IsConceal
             );
 
             if (needNewSegment)
@@ -681,6 +690,7 @@ public class SvgRenderer
                 currentRun.IsDim = cell.IsDim;
                 currentRun.IsStrikethrough = cell.IsStrikethrough;
                 currentRun.IsOverline = cell.IsOverline;
+                currentRun.IsConceal = cell.IsConceal;
                 currentRun.IsCustomGlyph = isGlyph;
                 currentIsGlyph = isGlyph;
             }
@@ -1071,6 +1081,7 @@ public class SvgRenderer
             sb.Append(cell.IsDim ? "d" : "");
             sb.Append(cell.IsStrikethrough ? "s" : "");
             sb.Append(cell.IsOverline ? "o" : "");
+            sb.Append(cell.IsConceal ? "c" : "");
         }
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var hash = MD5.HashData(bytes);
@@ -1264,6 +1275,7 @@ public class SvgRenderer
         public bool IsDim { get; set; }
         public bool IsStrikethrough { get; set; }
         public bool IsOverline { get; set; }
+        public bool IsConceal { get; set; }
         /// <summary>
         /// Total cell width of this run (accounts for wide characters taking 2 cells).
         /// </summary>

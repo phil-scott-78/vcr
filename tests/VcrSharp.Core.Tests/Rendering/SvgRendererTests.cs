@@ -434,4 +434,33 @@ public class SvgRendererTests
         svg.ShouldContain("text-decoration=\"overline\"");
         svg.ShouldContain("text-decoration=\"underline overline\"");
     }
+
+    [Fact]
+    public async Task Conceal_HidesGlyph()
+    {
+        var options = DeterministicOptions();
+        var content = Content(3, 1,
+        [
+            new TerminalCell { Character = "Z", IsConceal = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldNotContain("Z", Case.Sensitive); // concealed glyph is not emitted
+    }
+
+    [Fact]
+    public async Task Conceal_KeepsBackground_ButHidesGlyph()
+    {
+        var options = DeterministicOptions();
+        var content = Content(3, 1,
+        [
+            new TerminalCell { Character = "Z", BackgroundColor = "1", IsConceal = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("fill=\"#cd3131\"");                 // background (ANSI red) still painted
+        svg.ShouldNotContain("Z", Case.Sensitive);            // glyph hidden
+    }
 }

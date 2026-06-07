@@ -7,20 +7,20 @@ using VcrSharp.Infrastructure.Rendering;
 namespace VcrSharp.Infrastructure.Terminal;
 
 /// <summary>
-/// <see cref="IFrameCapture"/> for the native (browserless) path. <c>Screenshot</c> snapshots the live
-/// grid and renders it with the existing <see cref="SvgRenderer"/> (SVG) or <see cref="RasterRenderer"/>
-/// (PNG) — both in-process, no browser. Captured screenshot paths are recorded on the shared
+/// <see cref="IFrameCapture"/> over the live grid. <c>Screenshot</c> snapshots the grid and renders it
+/// with <see cref="SvgRenderer"/> (SVG) or <see cref="RasterRenderer"/> (PNG), both in-process.
+/// Captured screenshot paths are recorded on the shared
 /// <see cref="SessionState"/> so the recording result can report them. The buffer-settle poll reads the
 /// grid directly.
 /// </summary>
-public sealed class NativeFrameCapture(NativeTerminalPage page, SessionOptions options, SessionState state) : IFrameCapture
+public sealed class FrameCapture(TerminalPage page, SessionOptions options, SessionState state) : IFrameCapture
 {
     public async Task CaptureScreenshotAsync(string filePath)
     {
         var ext = Path.GetExtension(filePath).ToLowerInvariant();
         if (ext is not (".svg" or ".png"))
             throw new NotSupportedException(
-                $"Native recording can screenshot to .svg or .png (got '{Path.GetFileName(filePath)}').");
+                $"Recording can screenshot to .svg or .png (got '{Path.GetFileName(filePath)}').");
 
         var content = page.Snapshot();
 
@@ -69,5 +69,5 @@ public sealed class NativeFrameCapture(NativeTerminalPage page, SessionOptions o
         }
     }
 
-    private string Signature() => NativeTerminalRenderer.Signature(page.Snapshot());
+    private string Signature() => TerminalRenderer.Signature(page.Snapshot());
 }

@@ -7,8 +7,8 @@ namespace VcrSharp.Infrastructure.Terminal;
 /// <c>posix_openpt</c>/<c>grantpt</c>/<c>unlockpt</c>, sizes it to Cols×Rows, and launches the child as a
 /// new session leader on the slave side via <c>posix_spawn</c> (with <c>POSIX_SPAWN_SETSID</c> so the PTY
 /// becomes the controlling terminal). The master fd is exposed as a bidirectional <see cref="Stream"/>
-/// (read = child's VT output, write = child's stdin). No ttyd, no browser — the same role ConPTY plays on
-/// Windows, feeding a platform-neutral <c>VtScreen</c>.
+/// (read = child's VT output, write = child's stdin) — the same role ConPTY plays on Windows, feeding a
+/// platform-neutral <c>VtScreen</c>.
 /// </summary>
 /// <remarks>
 /// <c>posix_spawn</c> is used rather than a managed <c>fork</c>/<c>exec</c> on purpose: forking a

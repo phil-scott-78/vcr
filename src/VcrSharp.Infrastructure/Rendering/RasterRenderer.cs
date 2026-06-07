@@ -9,8 +9,8 @@ using VcrSharp.Core.Session;
 namespace VcrSharp.Infrastructure.Rendering;
 
 /// <summary>
-/// Renders a <see cref="TerminalContent"/> cell grid to a raster image with ImageSharp (no browser),
-/// so the native path can produce GIF/MP4/WebM/PNG by rasterizing each captured frame and feeding the
+/// Renders a <see cref="TerminalContent"/> cell grid to a raster image with ImageSharp,
+/// so vcr can produce GIF/MP4/WebM/PNG by rasterizing each captured frame and feeding the
 /// frames to FFmpeg. Uses the same cell metrics and theme/palette resolution as the SVG path; glyphs
 /// (incl. box-drawing/braille/CJK) come from a real monospace font, so the font must cover them.
 /// </summary>

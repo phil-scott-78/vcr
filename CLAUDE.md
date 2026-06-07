@@ -84,9 +84,9 @@ dotnet run -- diag warnings  # report broken links / unresolved xrefs
 
 3. **VcrSharp.Infrastructure** — platform integration and rendering.
    - PTY backends behind a neutral seam: `Terminal/IPtyProcess.cs` (factory `PtyProcess.Start`), `Terminal/ConPtyProcess.cs` (Windows ConPTY), `Terminal/UnixPtyProcess.cs` (`posix_openpt` + `posix_spawn`)
-   - The native terminal surface: `Terminal/NativeTerminalPage.cs` (`ITerminalPage` over PTY+grid), `Terminal/NativeFrameCapture.cs` (`IFrameCapture`), `Terminal/NativeKeyMap.cs` (key → raw terminal bytes), `Terminal/NativeInteractiveRecorder.cs` (`vcr record`), `Terminal/NativeTerminalRenderer.cs` (standalone run-and-snapshot helpers)
-   - The orchestrator: `Session/NativeRecordingSession.cs`
-   - Rendering: `Rendering/RasterRenderer.cs` (ImageSharp/SixLabors.Fonts → frames), `Rendering/SvgRenderer.cs` (text SVG, static + animated) with `Rendering/CustomGlyphRenderer.cs`, `Rendering/NativeVideoWriter.cs` (FFmpeg via FFMpegCore), `Rendering/NativeSvgWriter.cs`
+   - The terminal surface: `Terminal/TerminalPage.cs` (`ITerminalPage` over PTY+grid), `Terminal/FrameCapture.cs` (`IFrameCapture`), `Terminal/KeyMap.cs` (key → raw terminal bytes), `Terminal/InteractiveRecorder.cs` (`vcr record`), `Terminal/TerminalRenderer.cs` (standalone run-and-snapshot helpers)
+   - The orchestrator: `Session/RecordingSession.cs`
+   - Rendering: `Rendering/RasterRenderer.cs` (ImageSharp/SixLabors.Fonts → frames), `Rendering/SvgRenderer.cs` (text SVG, static + animated) with `Rendering/CustomGlyphRenderer.cs`, `Rendering/VideoWriter.cs` (FFmpeg via FFMpegCore), `Rendering/SvgWriter.cs`
    - `Processes/DependencyValidator.cs` (checks only FFmpeg, only when needed)
 
 4. **VcrSharp.Cli** — the `vcr` CLI, built on Spectre.Console.Cli (`Program.cs` + `Commands/*.cs`).
@@ -95,18 +95,18 @@ dotnet run -- diag warnings  # report broken links / unresolved xrefs
 
 1. **Parse** — `TapeParser` reads the `.tape` into a list of `ICommand` AST nodes.
 2. **Resolve config** — `Config/PresetResolver.ResolveWithDiscovery` walks up from the tape's directory to find a `vcr.toml`, then expands `Use` presets, the `Exec name arg` macro form, and `Run` sugar, and derives `Output` from a preset's `outDir`/`output`. CLI `--set`/`--output` overrides are then applied.
-3. **Launch** — `NativeRecordingSession` decides the launch shape from **`Exec` presence** (`ShouldUseBareRepl` = no `Exec`):
+3. **Launch** — `RecordingSession` decides the launch shape from **`Exec` presence** (`ShouldUseBareRepl` = no `Exec`):
    - **No `Exec`** → launch a bare interactive REPL; the tape `Type`s its own visible command line.
    - **Has `Exec`** → join the `Exec` command(s) and run them as the shell's hidden foreground process (the launch line is never echoed); later `Type`/`Key` flow over the PTY to that app.
    It opens the PTY (`PtyProcess.Start`), creates a `VtScreen`, and starts a background drain thread reading PTY output → `screen.Feed(...)`.
 4. **Capture** — capture is **event-driven**: after every output chunk the drain thread snapshots the grid and appends it if it differs from the last frame (de-duped by a content fingerprint). This is the "never miss a frame" design — periodic sampling would drop transient TUI states. Key presses are paced ~24 ms (`KeyPaceMs`) so a TUI has time to redraw between keys.
 5. **Execute** — the command loop runs the action commands (`Type`, `Key`, `Modifier`, `Wait`, `Hide`/`Show`, `Sleep`, `Screenshot`) against an `ExecutionContext`. `Set`/`Output`/`Env`/`Use`/`Exec` are no-ops at this stage — their effect was realized before/around the loop.
 6. **Settle** — after the loop, wait for output to stabilize and force-append a final frame so the recording always ends on finished output.
-7. **Encode** — per `Output` path, by extension: `.svg` → `NativeSvgWriter` (animated) or `RenderStaticAsync` (when `Mode static`); `.gif`/`.mp4`/`.webm` → `NativeVideoWriter` (rasterize frames + FFmpeg); `.png` → single final raster frame; extension-less path → a PNG frame sequence + concat manifest.
+7. **Encode** — per `Output` path, by extension: `.svg` → `SvgWriter` (animated) or `RenderStaticAsync` (when `Mode static`); `.gif`/`.mp4`/`.webm` → `VideoWriter` (rasterize frames + FFmpeg); `.png` → single final raster frame; extension-less path → a PNG frame sequence + concat manifest.
 
 ### Interactive recording flow (`vcr record`)
 
-`NativeInteractiveRecorder.RecordAsync` authors a `.tape` from a live session instead of playing one back:
+`InteractiveRecorder.RecordAsync` authors a `.tape` from a live session instead of playing one back:
 
 1. Launch the user's shell interactively over a PTY (no `Exec`).
 2. Put the host console in raw/VT pass-through mode (`ConsoleRawMode`: console-mode flags on Windows; `stty raw -echo < /dev/tty` on Unix). Falls back to cooked mode if raw can't be set.
@@ -120,7 +120,7 @@ All tape commands implement `ICommand`:
 ```csharp
 Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken);
 ```
-`ExecutionContext` exposes `ITerminalPage` (the PTY-backed `NativeTerminalPage`), `IFrameCapture` (`NativeFrameCapture`), `SessionOptions`, and `SessionState`.
+`ExecutionContext` exposes `ITerminalPage` (the PTY-backed `TerminalPage`), `IFrameCapture` (`FrameCapture`), `SessionOptions`, and `SessionState`.
 
 Command nodes in `Parsing/Ast/`:
 - **Config (no-op at runtime, applied before/around the loop):** `SetCommand`, `OutputCommand`, `EnvCommand`, `UseCommand`, `ExecCommand`
@@ -137,9 +137,9 @@ Command nodes in `Parsing/Ast/`:
 
 - **`VtScreen`** (`VcrSharp.Terminal`) — the in-process VT500 engine. Implements the full SGR attribute model (bold/dim/italic/underline incl. styled + colored, reverse/conceal/strike/overline/blink, 16/256/truecolor), DEC private modes, alternate screen, scroll regions, line editing, tab stops, cursor save/restore, content-preserving resize, UTF-8 + grapheme/emoji width, and DEC line-drawing. Crash-proof on pathological input (a hard fuzz gate). True reflow-on-resize is deliberately deferred — the largest remaining conformance gap.
 
-- **`NativeRecordingSession`** (Infrastructure) — the orchestrator: chooses the launch shape, runs the PTY drain + event-driven capture, runs the command loop, settles, and routes each `Output` to the right writer.
+- **`RecordingSession`** (Infrastructure) — the orchestrator: chooses the launch shape, runs the PTY drain + event-driven capture, runs the command loop, settles, and routes each `Output` to the right writer.
 
-- **`NativeTerminalPage`** (Infrastructure) — `ITerminalPage` over the PTY + grid. `Type`/`Key`/`Modifier` write bytes to PTY stdin (the shell echoes them back through the parser); `Wait` polls the grid text against a regex (and treats a non-interactive `Exec` shell exiting as "Wait satisfied"); `Hide`/`Show` toggle capture and cursor visibility.
+- **`TerminalPage`** (Infrastructure) — `ITerminalPage` over the PTY + grid. `Type`/`Key`/`Modifier` write bytes to PTY stdin (the shell echoes them back through the parser); `Wait` polls the grid text against a regex (and treats a non-interactive `Exec` shell exiting as "Wait satisfied"); `Hide`/`Show` toggle capture and cursor visibility.
 
 - **`PtyProcess` / `ConPtyProcess` / `UnixPtyProcess`** (Infrastructure) — the only platform-specific code. Everything above the `IPtyProcess` seam (engine, grid, renderers, commands, capture) is platform-neutral.
 
@@ -151,7 +151,7 @@ Command nodes in `Parsing/Ast/`:
 
 - **`SvgRenderer`** (Infrastructure) — renders the grid to text-based SVG (static via `RenderStaticAsync`, animated via `RenderAnimatedAsync`). Box-drawing/block/powerline glyphs are emitted as SVG paths (`CustomGlyphRenderer`), so **SVG needs no installed font**. Embedding options (all SVG-only): `Set Loop false`/`Set LoopCount N` (finite reveal that holds), `Set Size fit` (crop to content extent), `Set SvgIntrinsicSize`/`Set SvgMetadata` (explicit `width`/`height` + `data-*`, both default on). SVG honors `Padding` only; it ignores `Margin`/`MarginFill`/`WindowBarSize`/`BorderRadius`.
 
-- **`NativeVideoWriter`** (Infrastructure) — rasterizes captured frames and drives FFmpeg (via FFMpegCore) for GIF (palettegen/paletteuse), MP4 (libx264), and WebM (libvpx-vp9, alpha). Also writes the extension-less frame directory (PNG sequence + concat manifest).
+- **`VideoWriter`** (Infrastructure) — rasterizes captured frames and drives FFmpeg (via FFMpegCore) for GIF (palettegen/paletteuse), MP4 (libx264), and WebM (libvpx-vp9, alpha). Also writes the extension-less frame directory (PNG sequence + concat manifest).
 
 - **`DependencyValidator`** (Infrastructure) — checks **only** for FFmpeg, and `RecordCommand` only calls it when an `Output` is `.gif`/`.mp4`/`.webm`. SVG/PNG/frames-only tapes need no external binaries.
 
@@ -190,7 +190,7 @@ There is **no `Microsoft.Playwright`** reference.
 src/
 ├── VcrSharp.Core/            # Parsing, AST, SessionOptions, config (vcr.toml), themes, grid DTOs
 ├── VcrSharp.Terminal/        # VtScreen — the from-scratch VT500 engine
-├── VcrSharp.Infrastructure/  # PTY backends, NativeRecordingSession, renderers, FFmpeg writer
+├── VcrSharp.Infrastructure/  # PTY backends, RecordingSession, renderers, FFmpeg writer
 └── VcrSharp.Cli/             # `vcr` CLI commands (Spectre.Console.Cli)
 
 tests/
@@ -199,7 +199,6 @@ tests/
 
 docs/
 ├── VcrSharp.Docs/            # Pennington DocSite (Content/ = tutorials/how--to/explanation/reference)
-├── vt-engine-conformance.md  # living spec for the VT engine (note: some historical paths)
 └── vt-conformance-scoreboard.md  # auto-generated by the conformance tests
 
 samples/                      # Example .tape files (and samples/docs/* feed the docs SVGs)

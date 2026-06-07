@@ -12,7 +12,7 @@ and `RasterRenderer` (built on [SixLabors.ImageSharp](https://github.com/SixLabo
 running entirely on the CPU) draws each grid snapshot directly to a bitmap. There is no browser, no screenshot capture,
 and no compositing of separate text and cursor layers — each frame is rasterized once, fully composited.
 
-FFmpeg only enters the picture when an `Output` target is an **animated raster video**. `NativeVideoWriter` drives
+FFmpeg only enters the picture when an `Output` target is an **animated raster video**. `VideoWriter` drives
 FFmpeg through the [FFMpegCore](https://github.com/rosenbjerg/FFMpegCore) .NET wrapper, which shells out to the
 `ffmpeg` binary on your `PATH`. FFMpegCore builds the argument list; VCR# does not assemble hand-written command lines.
 

@@ -7,14 +7,13 @@ using VcrSharp.Core.Session;
 namespace VcrSharp.Infrastructure.Terminal;
 
 /// <summary>
-/// Browserless interactive recorder: runs a child shell in an in-process PTY (ConPTY on Windows,
+/// Interactive recorder: runs a child shell in an in-process PTY (ConPTY on Windows,
 /// <c>posix_openpt</c> on Unix), puts the host console into raw/VT pass-through mode, and pumps bytes
 /// both ways so the user types into a real shell. Every input chunk is also recorded as an
-/// <see cref="InputEvent"/> (with a real timestamp) for <see cref="InputToTapeConverter"/> — the same
-/// shell-agnostic input stream the old browser path captured via xterm.js <c>onData</c>, now with no
-/// ttyd and no Chromium. The session ends when the shell exits (the user types <c>exit</c>/Ctrl+D).
+/// <see cref="InputEvent"/> (with a real timestamp) for <see cref="InputToTapeConverter"/> — a
+/// shell-agnostic input stream. The session ends when the shell exits (the user types <c>exit</c>/Ctrl+D).
 /// </summary>
-public sealed class NativeInteractiveRecorder
+public sealed class InteractiveRecorder
 {
     public sealed record Result(IReadOnlyList<InputEvent> Events, TimeSpan Duration);
 
@@ -26,7 +25,7 @@ public sealed class NativeInteractiveRecorder
         var defaultShell = OperatingSystem.IsWindows() ? "pwsh" : "bash";
         var shellConfig = ShellConfiguration.GetConfiguration(
             string.IsNullOrWhiteSpace(options.Shell) ? defaultShell : options.Shell);
-        var parts = shellConfig.BuildTtydCommand();
+        var parts = shellConfig.BuildLaunchCommand();
         var windowsCmd = string.Join(" ", parts.Select((p, i) => i > 0 && p.Contains(' ') ? $"\"{p}\"" : p));
 
         var env = new Dictionary<string, string> { ["TERM"] = "xterm-256color", ["COLORTERM"] = "truecolor" };

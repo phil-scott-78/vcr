@@ -14,15 +14,15 @@ namespace VcrSharp.Infrastructure.Terminal;
 /// cell grid. <paramref name="gate"/> is the lock shared with the drain thread so a snapshot never tears
 /// against an in-flight <c>Feed</c>.
 /// </summary>
-public sealed class NativeTerminalPage(IPtyProcess pty, VtScreen screen, Lock gate, SessionOptions options)
+public sealed class TerminalPage(IPtyProcess pty, VtScreen screen, Lock gate, SessionOptions options)
     : ITerminalPage
 {
     private string _clipboard = string.Empty;
     private bool _cursorHidden;
 
     // A small pause after each key so a TUI redraws (and the drain captures the new frame) before the
-    // next key — the browser gets this for free from input-pipeline latency; native is instant, so rapid
-    // key bursts (e.g. four Downs with no Sleep) would otherwise collapse into one captured frame.
+    // next key — writing to the PTY is instant, so rapid key bursts (e.g. four Downs with no Sleep)
+    // would otherwise collapse into one captured frame.
     private const int KeyPaceMs = 24;
 
     public Task TypeAsync(string text, int delayMs) => TypeAsync(text, delayMs, CancellationToken.None);
@@ -38,13 +38,13 @@ public sealed class NativeTerminalPage(IPtyProcess pty, VtScreen screen, Lock ga
 
     public async Task PressKeyAsync(string key)
     {
-        Write(NativeKeyMap.ForKey(key));
+        Write(KeyMap.ForKey(key));
         await Task.Delay(KeyPaceMs);
     }
 
     public async Task PressKeyCombinationAsync(List<string> modifiers, string key, CancellationToken cancellationToken)
     {
-        Write(NativeKeyMap.ForCombination(modifiers, key));
+        Write(KeyMap.ForCombination(modifiers, key));
         await Task.Delay(KeyPaceMs, cancellationToken);
     }
 

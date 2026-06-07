@@ -9,8 +9,7 @@ using VcrSharp.Infrastructure.Session;
 namespace VcrSharp.Cli.Commands;
 
 /// <summary>
-/// Captures an animated SVG recording of a shell command's output, using the browserless native
-/// backend (in-process PTY + VT engine — no ttyd, no Chromium).
+/// Captures an animated SVG recording of a shell command's output (in-process PTY + VT engine).
 /// Usage: vcr capture "command" -o output.svg
 /// </summary>
 [Description("Capture an animated SVG recording of a command's output")]
@@ -35,16 +34,16 @@ public class CaptureCommand : AsyncCommand<CaptureCommand.Settings>
             var commands = CommandListBuilder.BuildCaptureCommands(settings, outputPath);
             var options = SessionOptions.FromCommands(commands);
 
-            NativeRecordingSession.Result? result = null;
+            RecordingSession.Result? result = null;
             await AnsiConsole.Status()
                 .StartAsync("Recording...", async ctx =>
                 {
                     var progress = new Progress<string>(status => ctx.Status(status));
-                    var session = new NativeRecordingSession(options);
+                    var session = new RecordingSession(options);
                     result = await session.RecordAsync(commands, [outputPath], options.Framerate, progress, cancellationToken);
                 });
 
-            AnsiConsole.MarkupLine("[green]✓[/] Recording captured [dim](no ttyd, no Chromium)[/]");
+            AnsiConsole.MarkupLine("[green]✓[/] Recording captured");
             AnsiConsole.MarkupLineInterpolated($"[dim]Frames:[/] {result!.FrameCount}");
             AnsiConsole.MarkupLineInterpolated($"[dim]Duration:[/] {result.DurationSeconds:F2}s");
 

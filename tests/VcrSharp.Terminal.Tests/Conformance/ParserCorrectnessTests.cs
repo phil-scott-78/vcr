@@ -7,7 +7,6 @@ namespace VcrSharp.Terminal.Tests.Conformance;
 /// Precise acceptance criteria for the known divergences the audit identified — each asserts the
 /// CORRECT target behavior and is <c>Skip</c>ped with the phase that will deliver it. They are the
 /// executable checklist for the build: un-skip each as its phase lands (it should then go green).
-/// See docs/vt-engine-conformance.md.
 /// </summary>
 public sealed class ParserCorrectnessTests
 {

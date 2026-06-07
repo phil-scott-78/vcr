@@ -7,9 +7,8 @@ namespace VcrSharp.Infrastructure.Terminal;
 
 /// <summary>
 /// Spawns a child process attached to a Windows pseudoconsole (ConPTY) of a fixed Cols×Rows size and
-/// exposes its VT output as a <see cref="Stream"/> — no ttyd, no browser. ConPTY hosts the child in a
-/// real pseudo-terminal and re-emits a VT stream sized to the console, which we feed to a VtScreen.
-/// Windows 10 1809+ only (the browserless path is Windows-first for now).
+/// exposes its VT output as a <see cref="Stream"/>. ConPTY hosts the child in a real pseudo-terminal and
+/// re-emits a VT stream sized to the console, which we feed to a VtScreen. Windows 10 1809+ only.
 /// </summary>
 public sealed class ConPtyProcess : IPtyProcess
 {

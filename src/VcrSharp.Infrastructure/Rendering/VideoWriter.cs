@@ -8,11 +8,11 @@ using VcrSharp.Core.Session;
 namespace VcrSharp.Infrastructure.Rendering;
 
 /// <summary>
-/// Produces GIF / MP4 / WebM / PNG from the native capture by rasterizing each grid frame
+/// Produces GIF / MP4 / WebM / PNG from the captured frames by rasterizing each grid frame
 /// (<see cref="RasterRenderer"/>) to PNG and feeding the sequence to FFmpeg via a concat manifest with
-/// per-frame durations — the same FFmpeg pipeline the browser path uses, minus ttyd/Chromium.
+/// per-frame durations.
 /// </summary>
-public static class NativeVideoWriter
+public static class VideoWriter
 {
     /// <summary>Renders the captured states to <paramref name="outputPath"/> (format by extension).
     /// Returns the number of frames emitted.</summary>
@@ -40,7 +40,7 @@ public static class NativeVideoWriter
             return 1;
         }
 
-        var temp = Directory.CreateTempSubdirectory("vcr-native-frames");
+        var temp = Directory.CreateTempSubdirectory("vcr-frames");
         try
         {
             var manifest = new StringBuilder();
@@ -87,9 +87,8 @@ public static class NativeVideoWriter
 
     /// <summary>
     /// Writes the captured states to <paramref name="outputDir"/> as a numbered PNG sequence plus a
-    /// <c>frames.txt</c> FFmpeg concat manifest (per-frame durations) — the browserless equivalent of the
-    /// old FramesEncoder, but single-layer (composited) since the native raster path has no separate
-    /// text/cursor layers. Returns the number of frames written.
+    /// <c>frames.txt</c> FFmpeg concat manifest (per-frame durations), single-layer (composited) since the
+    /// raster path has no separate text/cursor layers. Returns the number of frames written.
     /// </summary>
     public static async Task<int> WriteFramesDirectoryAsync(IReadOnlyList<TerminalStateWithTime> raw, double totalSeconds,
         SessionOptions options, string outputDir, CancellationToken cancellationToken = default)

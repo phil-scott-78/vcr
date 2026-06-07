@@ -1,16 +1,15 @@
 namespace VcrSharp.Infrastructure.Terminal;
 
 /// <summary>
-/// Translates the browser-style key codes the tape commands emit (via <c>KeyMapper</c>) into the raw
-/// byte sequences a real terminal sends to a shell over a PTY. This is the native counterpart to the
-/// Playwright keyboard: where the browser path dispatches DOM key events to xterm.js, the native path
-/// writes these bytes straight to the ConPTY stdin and the shell echoes them back through the parser.
+/// Translates the key codes the tape commands emit (via <c>KeyMapper</c>) into the raw byte sequences a
+/// real terminal sends to a shell over a PTY: it writes these bytes straight to the PTY stdin and the
+/// shell echoes them back through the parser.
 /// </summary>
-internal static class NativeKeyMap
+internal static class KeyMap
 {
     private const char Esc = (char)0x1b;
 
-    /// <summary>Bytes for a single key press. <paramref name="key"/> is a browser-style code
+    /// <summary>Bytes for a single key press. <paramref name="key"/> is a key name
     /// (e.g. "Enter", "ArrowUp", "F5") or a literal character to send as-is.</summary>
     public static string ForKey(string key) => key switch
     {

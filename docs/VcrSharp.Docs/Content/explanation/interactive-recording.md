@@ -19,7 +19,7 @@ explains how the capture works and why it behaves the way it does.
 
 ## Listening at the input layer
 
-When you run `vcr record`, the `NativeInteractiveRecorder` launches your shell over an in-process
+When you run `vcr record`, the `InteractiveRecorder` launches your shell over an in-process
 pseudo-terminal — the same kind of PTY the playback engine uses, just driven by your keyboard instead of
 a tape. It then puts the **host console** into raw, VT pass-through mode (console-mode flags on Windows;
 `stty raw -echo < /dev/tty` on Unix) so that every byte you type goes straight through to the shell

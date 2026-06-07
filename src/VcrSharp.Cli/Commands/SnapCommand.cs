@@ -9,8 +9,7 @@ using VcrSharp.Infrastructure.Session;
 namespace VcrSharp.Cli.Commands;
 
 /// <summary>
-/// Captures a static SVG screenshot after a shell command completes, using the browserless native
-/// backend (in-process PTY + VT engine — no ttyd, no Chromium).
+/// Captures a static SVG screenshot after a shell command completes (in-process PTY + VT engine).
 /// Usage: vcr snap "command" -o output.svg
 /// </summary>
 [Description("Capture a static SVG screenshot of a command's final output")]
@@ -36,17 +35,17 @@ public class SnapCommand : AsyncCommand<SnapCommand.Settings>
             var options = SessionOptions.FromCommands(commands);
             options.FitToContent = true; // a snapshot of finished output crops to content
 
-            NativeRecordingSession.Result? result = null;
+            RecordingSession.Result? result = null;
             await AnsiConsole.Status()
                 .StartAsync("Capturing...", async ctx =>
                 {
                     var progress = new Progress<string>(status => ctx.Status(status));
-                    var session = new NativeRecordingSession(options);
+                    var session = new RecordingSession(options);
                     // No animated Output — the Screenshot command writes the SVG and records it.
                     result = await session.RecordAsync(commands, [], options.Framerate, progress, cancellationToken);
                 });
 
-            AnsiConsole.MarkupLine("[green]✓[/] Snapshot captured [dim](no ttyd, no Chromium)[/]");
+            AnsiConsole.MarkupLine("[green]✓[/] Snapshot captured");
             foreach (var file in result!.ScreenshotFiles)
             {
                 var fileSize = new FileInfo(file).Length / 1024.0;

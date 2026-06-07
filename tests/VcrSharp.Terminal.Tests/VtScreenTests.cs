@@ -3,7 +3,7 @@ using VcrSharp.Core.Rendering;
 
 namespace VcrSharp.Terminal.Tests;
 
-/// <summary>Tests for the VT/ANSI parser that backs the browserless render path.</summary>
+/// <summary>Tests for the VT/ANSI parser that backs the render path.</summary>
 public class VtScreenTests
 {
     private const string E = ""; // ESC

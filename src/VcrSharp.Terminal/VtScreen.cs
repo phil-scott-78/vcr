@@ -7,8 +7,8 @@ namespace VcrSharp.Terminal;
 /// <summary>
 /// An in-process VT/ANSI terminal screen. Feed it the byte/char stream a program writes (or that
 /// ConPTY re-emits) and it maintains a fixed Cols×Rows cell grid with SGR attributes and a cursor.
-/// Snapshot it to a <see cref="TerminalContent"/> — the same cell grid the SVG pipeline already
-/// consumes — so the existing <c>SvgRenderer</c> can render it with no browser involved.
+/// Snapshot it to a <see cref="TerminalContent"/> — the cell grid the SVG and raster pipelines
+/// consume — so the <c>SvgRenderer</c>/<c>RasterRenderer</c> can render it directly.
 ///
 /// The parser is the canonical Paul Williams VT500 state machine
 /// (https://vt100.net/emu/dec_ansi_parser): every byte is routed in every state, ESC always cancels
@@ -21,7 +21,7 @@ namespace VcrSharp.Terminal;
 /// (CR/LF/BS/HT), SGR (16 / 256 / truecolor fg+bg, bold/italic/underline, semicolon AND colon forms),
 /// cursor positioning (CUP/CUU/CUD/CUF/CUB/CHA/VPA), erase (ED/EL/ECH), and insert/delete chars
 /// (ICH/DCH). Scroll region, alt screen, DEC modes, IL/DL/SU/SD, charset switching, and the full
-/// attribute set are deliberately later phases — see docs/vt-engine-conformance.md. Such sequences are
+/// attribute set are deliberately later phases. Such sequences are
 /// parsed and discarded (routed correctly), never mis-printed.
 /// </summary>
 public sealed class VtScreen

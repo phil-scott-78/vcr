@@ -7,7 +7,7 @@ namespace VcrSharp.Terminal.Tests.Conformance;
 /// Grapheme-cluster width: a base character plus its combining marks / emoji modifiers / ZWJ joins /
 /// variation selectors must occupy a single cell of the BASE width, so a following marker lands in the
 /// column a real terminal would put it. If the engine over-counts (e.g. a skin-tone modifier as its own
-/// width-2 cell), everything after it drifts and the grid diverges from ttyd/Chromium.
+/// width-2 cell), everything after it drifts and the grid diverges from a real terminal.
 /// </summary>
 public sealed class GraphemeWidthTests
 {

@@ -4,7 +4,7 @@ namespace VcrSharp.Core.Parsing.Ast;
 
 /// <summary>
 /// Context passed to commands during execution.
-/// Contains references to browser, session options, and runtime state.
+/// Contains references to the terminal page, frame capture, session options, and runtime state.
 /// </summary>
 public class ExecutionContext(SessionOptions options, SessionState state, ITerminalPage page, IFrameCapture frameCapture)
 {
@@ -14,7 +14,7 @@ public class ExecutionContext(SessionOptions options, SessionState state, ITermi
     public SessionOptions Options { get; } = options;
 
     /// <summary>
-    /// Terminal page instance for browser interaction.
+    /// Terminal page instance the commands drive (Type/Key/Wait/etc.).
     /// Set at runtime to an implementation from Infrastructure layer.
     /// </summary>
     public ITerminalPage Page { get;  } = page;

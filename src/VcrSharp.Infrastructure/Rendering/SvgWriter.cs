@@ -4,12 +4,12 @@ using VcrSharp.Core.Session;
 namespace VcrSharp.Infrastructure.Rendering;
 
 /// <summary>
-/// Turns a raw stream of captured grid snapshots (from the native poll loop) into an animated SVG via
-/// the existing <see cref="SvgRenderer"/>: drops leading-blank frames and a trailing static tail so a
+/// Turns a raw stream of captured grid snapshots into an animated SVG via
+/// the <see cref="SvgRenderer"/>: drops leading-blank frames and a trailing static tail so a
 /// loop starts on content, rebaselines timestamps to zero, and stretches the duration to the true end
 /// so the final frame holds.
 /// </summary>
-public static class NativeSvgWriter
+public static class SvgWriter
 {
     /// <summary>Writes the animated SVG and returns the number of frames emitted (0 if there was nothing to render).</summary>
     public static async Task<int> WriteAnimatedAsync(IReadOnlyList<TerminalStateWithTime> raw,

@@ -1,8 +1,8 @@
 namespace VcrSharp.Infrastructure.Processes;
 
 /// <summary>
-/// Validates that required external dependencies are available. Since the native path needs no ttyd and
-/// no browser, the only external dependency is FFmpeg — and only for video (GIF/MP4/WebM) outputs.
+/// Validates that required external dependencies are available. The only external dependency is FFmpeg —
+/// and only for video (GIF/MP4/WebM) outputs.
 /// </summary>
 public static class DependencyValidator
 {

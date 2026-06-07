@@ -108,14 +108,14 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                     }
                 }
 
-                // Record the tape with the native browserless backend (in-process PTY + VT engine).
-                NativeRecordingSession.Result? result = null;
+                // Record the tape (in-process PTY + VT engine).
+                RecordingSession.Result? result = null;
                 await AnsiConsole.Status()
                     .StartAsync("Initializing...", async ctx =>
                     {
                         var progress = new Progress<string>(status => ctx.Status(status));
 
-                        var session = new NativeRecordingSession(options);
+                        var session = new RecordingSession(options);
                         result = await session.RecordAsync(commands, outputs, options.Framerate, progress, cancellationToken);
                     });
 
@@ -125,7 +125,7 @@ public class RecordCommand : AsyncCommand<RecordCommand.Settings>
                 AnsiConsole.MarkupLineInterpolated($"[dim]Duration:[/] {result.DurationSeconds:F2}s");
 
                 foreach (var skipped in result.UnsupportedOutputs)
-                    AnsiConsole.MarkupLineInterpolated($"[yellow]⚠[/] Skipped [bold]{Path.GetFileName(skipped)}[/] — native supports .svg/.gif/.mp4/.webm/.png and frame directories.");
+                    AnsiConsole.MarkupLineInterpolated($"[yellow]⚠[/] Skipped [bold]{Path.GetFileName(skipped)}[/] — vcr supports .svg/.gif/.mp4/.webm/.png and frame directories.");
 
                 if (result.OutputFiles.Count > 0)
                 {

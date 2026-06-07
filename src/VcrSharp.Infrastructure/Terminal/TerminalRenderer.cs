@@ -6,18 +6,17 @@ using VcrSharp.Terminal;
 namespace VcrSharp.Infrastructure.Terminal;
 
 /// <summary>
-/// The browserless render path: run a command in an in-process pseudoconsole (ConPTY on Windows,
-/// <c>posix_openpt</c>+<c>posix_spawn</c> on Unix), feed its VT output through <see cref="VtScreen"/>, and
-/// snapshot the settled cell grid to a <see cref="TerminalContent"/>. No ttyd, no Chromium. The caller
-/// (CLI) renders the snapshot with the existing SvgRenderer, proving the cell grid — not the browser — is
-/// all the SVG path ever needed.
+/// Run-and-snapshot helper: runs a command in an in-process pseudoconsole (ConPTY on Windows,
+/// <c>posix_openpt</c>+<c>posix_spawn</c> on Unix), feeds its VT output through <see cref="VtScreen"/>, and
+/// snapshots the settled cell grid to a <see cref="TerminalContent"/>. The caller (CLI) renders the
+/// snapshot with the SvgRenderer.
 /// </summary>
-public sealed class NativeTerminalRenderer
+public sealed class TerminalRenderer
 {
     private readonly int _cols;
     private readonly int _rows;
 
-    public NativeTerminalRenderer(int cols, int rows)
+    public TerminalRenderer(int cols, int rows)
     {
         _cols = Math.Max(1, cols);
         _rows = Math.Max(1, rows);
@@ -91,16 +90,16 @@ public sealed class NativeTerminalRenderer
         return Task.FromResult(content);
     }
 
-    /// <summary>The frames captured from a native (browserless) animated recording, plus the true
+    /// <summary>The frames captured from an animated recording, plus the true
     /// wall-clock duration (which runs past the last visible change, so the final frame holds).</summary>
     public sealed record CaptureResult(IReadOnlyList<TerminalStateWithTime> States, double TotalSeconds);
 
     /// <summary>
     /// Runs <paramref name="command"/> in a ConPTY and polls the live <see cref="VtScreen"/> at
     /// <paramref name="framerate"/> fps, collecting a de-duplicated stream of timestamped grid snapshots
-    /// (<see cref="TerminalStateWithTime"/>) — the exact input the animated <c>SvgRenderer</c> consumes,
-    /// produced with no ttyd and no Chromium. The drain thread feeds the parser; the poll loop snapshots
-    /// it; a lock keeps the two from tearing a frame.
+    /// (<see cref="TerminalStateWithTime"/>) — the exact input the animated <c>SvgRenderer</c> consumes.
+    /// The drain thread feeds the parser; the poll loop snapshots it; a lock keeps the two from tearing
+    /// a frame.
     /// </summary>
     public async Task<CaptureResult> RunAndCaptureAsync(string command, double framerate,
         string? workingDirectory = null, TimeSpan? timeout = null, CancellationToken cancellationToken = default)

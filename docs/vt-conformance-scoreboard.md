@@ -1,6 +1,6 @@
 # VcrSharp VT engine — libvterm conformance scoreboard
 
-> Corpus: **43** vendored libvterm `*.test` files (MIT). Rate = passed / evaluated; *skipped* assertions depend on engine features not yet modelled (callback events, pen/cell colors, line info). See docs/vt-engine-conformance.md §4.
+> Corpus: **43** vendored libvterm `*.test` files (MIT). Rate = passed / evaluated; *skipped* assertions depend on engine features not yet modelled (callback events, pen/cell colors, line info).
 
 ## Overall: 388/421 evaluated assertions pass (**92.2%**) · 839 skipped · 0 errors
 

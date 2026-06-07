@@ -50,9 +50,8 @@ public class ExecCommand : ICommand
 
     public Task ExecuteAsync(ExecutionContext context, CancellationToken cancellationToken = default)
     {
-        // Exec commands are executed at ttyd startup via startup script.
-        // They run in the background while recording proceeds.
-        // No waiting or synchronization needed - recording starts immediately.
+        // Exec is a no-op at runtime: its command is baked into the shell launch line before the
+        // command loop runs (see RecordingSession/PresetResolver), not executed here.
         return Task.CompletedTask;
     }
 

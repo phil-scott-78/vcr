@@ -11,7 +11,7 @@ namespace VcrSharp.Cli.Commands;
 
 /// <summary>
 /// Records an interactive shell session, capturing the user's keystrokes and writing them out as a
-/// replayable <c>.tape</c> file. The shell runs in-process over a real PTY (no ttyd, no Chromium): you
+/// replayable <c>.tape</c> file. The shell runs in-process over a real PTY: you
 /// type directly in this terminal, and the session ends when you exit the shell (<c>exit</c> / Ctrl+D).
 /// </summary>
 [Description("Interactively record keystrokes in a real shell and generate a .tape file")]
@@ -61,7 +61,7 @@ public class RecordInteractiveCommand : AsyncCommand<RecordInteractiveCommand.Se
             var panel = new Panel(
                 "You're about to drop into a [green]recorded shell[/] right here.\n" +
                 "Type your commands; when finished, type [yellow]exit[/] (or press [yellow]Ctrl+D[/]).\n" +
-                $"Your keystrokes will be saved to [blue]{Markup.Escape(outputTape)}[/] (no ttyd, no Chromium).")
+                $"Your keystrokes will be saved to [blue]{Markup.Escape(outputTape)}[/].")
             {
                 Header = new PanelHeader("vcr record"),
                 Border = BoxBorder.Rounded
@@ -70,7 +70,7 @@ public class RecordInteractiveCommand : AsyncCommand<RecordInteractiveCommand.Se
 
             var progress = new Progress<string>(status => VcrLogger.Logger.Information("{Status}", status));
 
-            var recording = await NativeInteractiveRecorder.RecordAsync(options, progress, cancellationToken);
+            var recording = await InteractiveRecorder.RecordAsync(options, progress, cancellationToken);
 
             // Convert the captured input stream to tape text (shell-agnostic, pure function).
             var converterOptions = new InputToTapeOptions

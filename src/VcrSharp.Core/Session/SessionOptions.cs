@@ -73,16 +73,14 @@ public class SessionOptions
     public float LineHeight { get; set; } = 1.0f;
 
     /// <summary>
-    /// Gets or sets the actual rendered cell width in pixels.
-    /// This is measured from xterm.js after fonts are loaded.
-    /// If null, SVG encoder will estimate based on FontSize.
+    /// Gets or sets an explicit rendered cell width in pixels.
+    /// If null, the SVG encoder estimates it from FontSize.
     /// </summary>
     public double? ActualCellWidth { get; set; }
 
     /// <summary>
-    /// Gets or sets the actual rendered cell height in pixels.
-    /// This is measured from xterm.js after fonts are loaded.
-    /// If null, SVG encoder will estimate based on FontSize.
+    /// Gets or sets an explicit rendered cell height in pixels.
+    /// If null, the SVG encoder estimates it from FontSize.
     /// </summary>
     public double? ActualCellHeight { get; set; }
 
@@ -161,13 +159,13 @@ public class SessionOptions
 
     /// <summary>
     /// Gets or sets whether the cursor should be disabled in output.
-    /// When true, cursor is not rendered in browser terminal, screenshots, or SVG output.
+    /// When true, the cursor is not rendered in screenshots or SVG/raster output.
     /// </summary>
     public bool DisableCursor { get; set; }
 
     /// <summary>
     /// Gets or sets whether the terminal background should be transparent.
-    /// When true, sets allowTransparency on xTerm.js and uses a transparent background color.
+    /// When true, output uses a transparent background color.
     /// </summary>
     public bool TransparentBackground { get; set; }
 
@@ -264,7 +262,7 @@ public class SessionOptions
 
     /// <summary>
     /// Gets or sets the delay before executing Exec commands at startup.
-    /// Allows time for browser and terminal to fully initialize.
+    /// Allows time for the shell and terminal to fully initialize.
     /// </summary>
     public TimeSpan StartupDelay { get; set; } = TimeSpan.FromSeconds(3.5);
 

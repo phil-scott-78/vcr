@@ -11,7 +11,7 @@ namespace VcrSharp.Terminal.Tests.Conformance;
 ///    throw on any real-world sequence in the corpus.
 ///  • <see cref="Scoreboard"/> — a measurement (always green): it prints and persists a per-file
 ///    pass/fail/skip table so we can watch conformance climb phase by phase. It is NOT a pass/fail gate
-///    yet; the engine is a known ~30% proof-of-concept (see docs/vt-engine-conformance.md). When a phase
+///    yet; the engine is a known ~30% proof-of-concept (see docs/vt-conformance-scoreboard.md). When a phase
 ///    lands, we ratchet specific files into <see cref="EngineDoesNotCrash"/>-style hard assertions.
 /// </summary>
 public sealed class LibVtermConformanceTests(ITestOutputHelper output)
@@ -57,7 +57,7 @@ public sealed class LibVtermConformanceTests(ITestOutputHelper output)
         sb.AppendLine();
         sb.AppendLine($"> Corpus: **{results.Count}** vendored libvterm `*.test` files (MIT). " +
                       "Rate = passed / evaluated; *skipped* assertions depend on engine features not yet modelled " +
-                      "(callback events, pen/cell colors, line info). See docs/vt-engine-conformance.md §4.");
+                      "(callback events, pen/cell colors, line info).");
         sb.AppendLine();
         sb.AppendLine($"## Overall: {totalPass}/{evaluated} evaluated assertions pass " +
                       $"(**{overall:F1}%**) · {totalSkip} skipped · {totalErr} errors");

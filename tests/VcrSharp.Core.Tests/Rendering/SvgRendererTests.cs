@@ -242,7 +242,7 @@ public class SvgRendererTests
     public async Task ContentWiderThanViewport_GrowsCanvasSoLastColumnIsNotClipped()
     {
         // Reproduces the real bug: the terminal rendered more columns than the configured
-        // viewport accounts for (Set Cols drifts from ttyd's actual fit / measured cell size),
+        // viewport accounts for (Set Cols drifts from the shell's actual fit / measured cell size),
         // so a table's right border lands past _options.Width and gets clipped out of the
         // viewBox. The canvas must grow to contain every rendered cell. FitToContent is OFF.
         var options = DeterministicOptions(); // Width=200 (= 20 cols at 10px), Height=100

@@ -983,11 +983,10 @@ public class SvgRenderer
 
     private void CalculateDimensions()
     {
-        // With a measured cell size (browser path) use it as-is. Without one (native/browserless path)
-        // estimate from the font size — and ROUND to whole pixels: a fractional cell width makes every
-        // background rect land on a sub-pixel boundary, so adjacent same-color cells (e.g. bar-chart
-        // fills) anti-alias independently and show hairline seams. Integer cells tile cleanly and match
-        // the browser's measured advance (~0.6 × font-size for typical monospace fonts).
+        // With a measured cell size use it as-is; otherwise estimate from the font size — and ROUND to
+        // whole pixels: a fractional cell width makes every background rect land on a sub-pixel boundary,
+        // so adjacent same-color cells (e.g. bar-chart fills) anti-alias independently and show hairline
+        // seams. Integer cells tile cleanly and match a typical monospace advance (~0.6 × font-size).
         _charWidth = _options.ActualCellWidth ?? Math.Round(_options.FontSize * 0.6);
         _charHeight = _options.ActualCellHeight ?? Math.Round(_options.FontSize * 1.2);
 
@@ -1005,9 +1004,8 @@ public class SvgRenderer
 
             // Guard against the configured viewport being smaller than the content we actually
             // captured. The terminal's real column/row count can exceed the requested Cols/Rows
-            // (e.g. ttyd re-fits the terminal to the window after we resize it, or the measured
-            // cell size differs slightly from xterm's), so cells laid out at col*_charWidth can
-            // extend past _options.Width. Without this, those trailing columns - like a table's
+            // (e.g. the shell re-fits the terminal after a resize), so cells laid out at col*_charWidth
+            // can extend past _options.Width. Without this, those trailing columns - like a table's
             // right border - fall outside the viewBox/clip and are silently cut off. Grow (never
             // shrink) the canvas so it contains every rendered cell.
             if (_measuredExtentCols.HasValue)

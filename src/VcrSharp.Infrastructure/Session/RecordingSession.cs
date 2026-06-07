@@ -10,13 +10,13 @@ using VcrSharp.Terminal;
 namespace VcrSharp.Infrastructure.Session;
 
 /// <summary>
-/// Plays a parsed tape through the browserless native backend: an interactive shell in an in-process
-/// ConPTY, a <see cref="VtScreen"/> fed by a drain thread, and a poll loop that snapshots the grid at
-/// the framerate. The existing tape commands (Type/Key/Modifier/Wait/Hide/Show/Copy/Paste/Screenshot)
-/// run unchanged against <see cref="NativeTerminalPage"/>/<see cref="NativeFrameCapture"/>; output is
-/// an animated SVG. No ttyd, no Chromium.
+/// Plays a parsed tape: an interactive shell in an in-process pseudoconsole (ConPTY on Windows, a Unix
+/// PTY elsewhere), a <see cref="VtScreen"/> fed by a drain thread, and event-driven capture that
+/// snapshots the grid as output changes. The tape commands (Type/Key/Modifier/Wait/Hide/Show/Screenshot)
+/// run against <see cref="TerminalPage"/>/<see cref="FrameCapture"/>; output is routed per <c>Output</c>
+/// to SVG, raster video (GIF/MP4/WebM), or PNG.
 /// </summary>
-public sealed class NativeRecordingSession(SessionOptions options)
+public sealed class RecordingSession(SessionOptions options)
 {
     public sealed record Result(int FrameCount, double DurationSeconds,
         IReadOnlyList<string> OutputFiles, IReadOnlyList<string> ScreenshotFiles,
@@ -42,7 +42,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
         // commands into a bare REPL.
         var bareRepl = ShouldUseBareRepl(commands);
 
-        // Honor `Set Shell` via the same ShellConfiguration the browser path uses, so bash/zsh/cmd/fish
+        // Honor `Set Shell` via ShellConfiguration, so bash/zsh/cmd/fish
         // tapes run the right shell with the same args, prompt, and env. The unspecified-shell default is
         // platform-appropriate: pwsh on Windows (where ConPTY lives), bash on Unix.
         var defaultShell = OperatingSystem.IsWindows() ? "pwsh" : "bash";
@@ -59,13 +59,13 @@ public sealed class NativeRecordingSession(SessionOptions options)
         var screen = new VtScreen(cols, rows);
         var gate = new Lock();
 
-        var page = new NativeTerminalPage(pty, screen, gate, options);
+        var page = new TerminalPage(pty, screen, gate, options);
         var state = new SessionState { IsCapturing = true };
-        var frameCapture = new NativeFrameCapture(page, options, state);
+        var frameCapture = new FrameCapture(page, options, state);
 
         // Event-driven capture: the drain thread snapshots after EVERY output chunk (not on a fixed
-        // framerate timer), so no on-screen state is dropped — native sees every byte, so it must never
-        // miss a frame the way periodic sampling does (e.g. rapid arrow-key navigation). Frames are
+        // framerate timer), so no on-screen state is dropped — the engine sees every byte, so it must
+        // never miss a frame the way periodic sampling does (e.g. rapid arrow-key navigation). Frames are
         // de-duplicated, so the stream is exactly the sequence of distinct screen states. `capturing`
         // gates it on after the startup setup so the shell init never enters the recording.
         // All mutable capture state lives behind one holder so the drain-thread lambda closes over a single
@@ -96,7 +96,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
                 if (!cap || !state.IsCapturing) continue;
 
                 var content = page.Snapshot();
-                var signature = NativeTerminalRenderer.Signature(content);
+                var signature = TerminalRenderer.Signature(content);
                 lock (capture.Lock)
                 {
                     if (signature == capture.LastSignature || capture.Frames.Count >= MaxFrames) continue;
@@ -120,7 +120,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
             // app receives our Type/Key input over the PTY. There is no prompt to wait for and nothing to type
             // here — the tape's own Wait/Sleep gate when the app is ready, exactly as the pure-showcase path.
 
-            progress?.Report("Recording (native, no browser)...");
+            progress?.Report("Recording...");
             lock (capture.Lock) { capture.Capturing = true; capture.LastSignature = null; capture.Frames.Clear(); capture.Sw.Restart(); }
 
             var context = new Core.Parsing.Ast.ExecutionContext(options, state, page, frameCapture);
@@ -130,9 +130,9 @@ public sealed class NativeRecordingSession(SessionOptions options)
                 await command.ExecuteAsync(context, cancellationToken);
             }
 
-            // Let output settle so the final command's tail is captured. Use the same inactivity/max
-            // budget as the browser path, plus a minimum wait when Exec is present so we don't settle on
-            // the pre-output prompt while a slow command (e.g. `dotnet run`) is still starting up.
+            // Let output settle so the final command's tail is captured. Use the inactivity/max budget,
+            // plus a minimum wait when Exec is present so we don't settle on the pre-output prompt while a
+            // slow command (e.g. `dotnet run`) is still starting up.
             var minWait = execCommands.Count > 0 ? TimeSpan.FromSeconds(2) : TimeSpan.Zero;
             await frameCapture.WaitForBufferStableAsync(options.InactivityTimeout, options.MaxWaitForInactivity, minWait, cancellationToken);
 
@@ -142,7 +142,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
             double totalSeconds;
             lock (capture.Lock)
             {
-                var sig = NativeTerminalRenderer.Signature(finalContent);
+                var sig = TerminalRenderer.Signature(finalContent);
                 if (sig != capture.LastSignature)
                 {
                     var finalFrame = new TerminalStateWithTime { Content = finalContent, TimestampSeconds = capture.Sw.Elapsed.TotalSeconds };
@@ -171,18 +171,18 @@ public sealed class NativeRecordingSession(SessionOptions options)
                         written.Add(outPath);
                         break;
                     case ".svg":
-                        frames = await NativeSvgWriter.WriteAnimatedAsync(states, totalSeconds, options, outPath, cancellationToken);
+                        frames = await SvgWriter.WriteAnimatedAsync(states, totalSeconds, options, outPath, cancellationToken);
                         written.Add(outPath);
                         break;
                     case ".gif" or ".mp4" or ".webm" or ".png":
-                        // Rasterize each captured frame and feed FFmpeg (browserless GIF/MP4/WebM/PNG).
-                        frames = await NativeVideoWriter.WriteAsync(states, totalSeconds, options, outPath, cancellationToken);
+                        // Rasterize each captured frame and feed FFmpeg (GIF/MP4/WebM/PNG).
+                        frames = await VideoWriter.WriteAsync(states, totalSeconds, options, outPath, cancellationToken);
                         written.Add(outPath);
                         break;
                     case "":
                         // Extension-less path = a frames/ directory: rasterize each frame to a PNG sequence
-                        // plus an FFmpeg concat manifest (browserless equivalent of the old FramesEncoder).
-                        frames = await NativeVideoWriter.WriteFramesDirectoryAsync(states, totalSeconds, options, outPath, cancellationToken);
+                        // plus an FFmpeg concat manifest.
+                        frames = await VideoWriter.WriteFramesDirectoryAsync(states, totalSeconds, options, outPath, cancellationToken);
                         written.Add(outPath);
                         break;
                     default:
@@ -208,8 +208,8 @@ public sealed class NativeRecordingSession(SessionOptions options)
             Directory.CreateDirectory(directory);
 
         var renderer = new SvgRenderer(options);
-        // Crop to the measured content extent so the canvas hugs the output (matching the browser's
-        // static path) instead of leaving the default-width canvas padded with blank space.
+        // Crop to the measured content extent so the canvas hugs the output instead of leaving the
+        // default-width canvas padded with blank space.
         var extent = ContentExtent.Measure(content);
         renderer.SetContentExtent(extent.Cols, extent.Rows);
         await renderer.RenderStaticAsync(outPath, content, cancellationToken);
@@ -232,7 +232,7 @@ public sealed class NativeRecordingSession(SessionOptions options)
     internal static IReadOnlyList<string> BuildUnixArgv(ShellConfiguration config, bool bareRepl, List<ExecCommand> execCommands)
     {
         if (bareRepl)
-            return config.BuildTtydCommand();
+            return config.BuildLaunchCommand();
 
         if (execCommands.Count == 0)
             return [config.Name];
@@ -246,8 +246,8 @@ public sealed class NativeRecordingSession(SessionOptions options)
         if (bareRepl)
         {
             // No-Exec tape: reuse the shell's exact interactive invocation (flags + clean '> ' prompt +
-            // init) — the same one the browser/ttyd path uses — so input and prompt match across backends.
-            var parts = config.BuildTtydCommand();
+            // init) so input and prompt stay consistent.
+            var parts = config.BuildLaunchCommand();
             return string.Join(" ", parts.Select((p, i) => i > 0 && p.Contains(' ') ? $"\"{p}\"" : p));
         }
 

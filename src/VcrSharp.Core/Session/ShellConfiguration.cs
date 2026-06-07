@@ -24,7 +24,7 @@ public class ShellConfiguration
     public string DisplayName { get; }
 
     /// <summary>
-    /// Command-line arguments to pass to the shell for ttyd.
+    /// Command-line arguments to pass to the shell at launch.
     /// </summary>
     private readonly List<string> _commandLineArgs;
 
@@ -70,10 +70,10 @@ public class ShellConfiguration
     }
 
     /// <summary>
-    /// Builds the complete command list for ttyd to execute this shell.
+    /// Builds the complete command list to launch this shell (executable + arguments).
     /// </summary>
     /// <returns>List containing shell executable and all arguments.</returns>
-    public List<string> BuildTtydCommand()
+    public List<string> BuildLaunchCommand()
     {
         var command = new List<string> { Name };
         command.AddRange(_commandLineArgs);

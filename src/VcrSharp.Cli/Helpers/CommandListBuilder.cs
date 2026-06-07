@@ -5,7 +5,7 @@ namespace VcrSharp.Cli.Helpers;
 
 /// <summary>
 /// Builds ICommand lists programmatically from CLI settings.
-/// Allows direct capture commands to reuse the native recording session without tape files.
+/// Allows direct capture commands to reuse the recording session without tape files.
 /// </summary>
 public static class CommandListBuilder
 {

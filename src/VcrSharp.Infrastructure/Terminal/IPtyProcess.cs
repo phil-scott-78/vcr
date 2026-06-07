@@ -4,7 +4,7 @@ namespace VcrSharp.Infrastructure.Terminal;
 /// Platform-neutral pseudo-terminal handle: spawns a child attached to a fixed Cols×Rows PTY and
 /// exposes its VT output (and an input channel) as <see cref="Stream"/>s. The Windows implementation is
 /// <see cref="ConPtyProcess"/> (ConPTY); the Unix implementation is <see cref="UnixPtyProcess"/>
-/// (<c>posix_openpt</c> + <c>posix_spawn</c>). The native render path (parser + grid) is platform-neutral
+/// (<c>posix_openpt</c> + <c>posix_spawn</c>). The render path (parser + grid) is platform-neutral
 /// — only the PTY plumbing differs, which this seam isolates.
 /// </summary>
 public interface IPtyProcess : IDisposable

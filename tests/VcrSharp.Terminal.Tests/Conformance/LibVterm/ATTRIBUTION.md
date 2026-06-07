@@ -22,4 +22,4 @@ Assertions that depend on libvterm's internal callback/event model rather than t
 scoreboard. As the engine's cell model grows (P3+), more of these become evaluable.
 
 This keeps us clean of the GPL-licensed esctest suite and of any C build dependency, while reusing
-hundreds of permissively-licensed golden cases. See `docs/vt-engine-conformance.md` §4.
+hundreds of permissively-licensed golden cases. See `docs/vt-conformance-scoreboard.md`.

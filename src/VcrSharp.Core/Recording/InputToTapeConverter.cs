@@ -7,11 +7,11 @@ namespace VcrSharp.Core.Recording;
 /// <summary>
 /// Converts a captured stream of terminal input events into <c>.tape</c> file text.
 /// <para>
-/// This is a pure function (no I/O, no clock, no Playwright) so it is trivially unit-testable.
+/// This is a pure function (no I/O, no clock) so it is trivially unit-testable.
 /// It is a port of VHS's <c>inputToTape</c>, improved in two ways:
 /// </para>
 /// <list type="bullet">
-///   <item>It uses the precise per-keystroke timestamps captured from xterm.js to emit
+///   <item>It uses the precise per-keystroke timestamps captured from the input stream to emit
 ///   <c>Sleep</c> commands that reflect the user's real pauses, instead of VHS's fixed 500ms heuristic.</item>
 ///   <item>It is shell-agnostic: it only interprets the input byte-stream (identical across pwsh,
 ///   cmd, bash, zsh, fish), never shell output, so it is not limited to bash like VHS.</item>

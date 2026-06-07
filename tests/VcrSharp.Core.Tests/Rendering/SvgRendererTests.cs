@@ -374,4 +374,48 @@ public class SvgRendererTests
         svg.ShouldContain(".dim{fill-opacity:0.55}"); // class defined
         svg.ShouldContain("class=\"fg dim\"");          // and applied to the run
     }
+
+    [Fact]
+    public async Task Strikethrough_EmitsLineThroughDecoration()
+    {
+        var options = DeterministicOptions();
+        var content = Content(2, 1,
+        [
+            new TerminalCell { Character = "x", IsStrikethrough = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("text-decoration=\"line-through\"");
+    }
+
+    [Fact]
+    public async Task Underline_NowEmittedAsDecorationAttribute_NotCssClass()
+    {
+        var options = DeterministicOptions();
+        var content = Content(2, 1,
+        [
+            new TerminalCell { Character = "u", IsUnderline = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain("text-decoration=\"underline\"");
+        svg.ShouldNotContain("class=\"fg underline\""); // decoration moved off the CSS class
+    }
+
+    [Fact]
+    public async Task UnderlineAndStrikethrough_CombineInOneDecoration()
+    {
+        var options = DeterministicOptions();
+        var content = Content(2, 1,
+        [
+            new TerminalCell { Character = "z", IsUnderline = true, IsStrikethrough = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        // Both lines survive — the whole point of one combined declaration.
+        svg.ShouldContain("text-decoration=\"underline line-through\"");
+    }
 }

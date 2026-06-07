@@ -541,6 +541,12 @@ public class SvgRenderer
                         await xml.WriteAttributeStringAsync(null, "fill", null, rgb);
                 }
 
+                var decoration = BuildTextDecoration(segment);
+                if (decoration != null)
+                {
+                    await xml.WriteAttributeStringAsync(null, "text-decoration", null, decoration);
+                }
+
                 await xml.WriteStringAsync(segment.Text);
                 await xml.WriteEndElementAsync(); // text
             }
@@ -653,7 +659,8 @@ public class SvgRenderer
                 cell.IsItalic != currentRun.IsItalic ||
                 cell.IsUnderline != currentRun.IsUnderline ||
                 cell.IsReverse != currentRun.IsReverse ||
-                cell.IsDim != currentRun.IsDim
+                cell.IsDim != currentRun.IsDim ||
+                cell.IsStrikethrough != currentRun.IsStrikethrough
             );
 
             if (needNewSegment)
@@ -671,6 +678,7 @@ public class SvgRenderer
                 currentRun.IsUnderline = cell.IsUnderline;
                 currentRun.IsReverse = cell.IsReverse;
                 currentRun.IsDim = cell.IsDim;
+                currentRun.IsStrikethrough = cell.IsStrikethrough;
                 currentRun.IsCustomGlyph = isGlyph;
                 currentIsGlyph = isGlyph;
             }
@@ -808,7 +816,9 @@ public class SvgRenderer
         AppendAnsiColorStyles(css);
 
         // Style flags
-        css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}.dim{fill-opacity:0.55}");
+        // underline/strikethrough/overline are emitted as a combined text-decoration presentation
+        // attribute per run (see BuildTextDecoration), so no decoration CSS class is needed here.
+        css.Append(".bold{font-weight:bold}.italic{font-style:italic}.dim{fill-opacity:0.55}");
 
         // Cursor (follows the foreground/--vcr-fg, matching legacy behavior)
         if (!_options.DisableCursor)
@@ -1057,6 +1067,7 @@ public class SvgRenderer
             sb.Append(cell.IsUnderline ? "u" : "");
             sb.Append(cell.IsReverse ? "v" : "");
             sb.Append(cell.IsDim ? "d" : "");
+            sb.Append(cell.IsStrikethrough ? "s" : "");
         }
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var hash = MD5.HashData(bytes);
@@ -1087,12 +1098,27 @@ public class SvgRenderer
 
         if (run.IsBold) classes.Add("bold");
         if (run.IsItalic) classes.Add("italic");
-        if (run.IsUnderline) classes.Add("underline");
         // Dim is an opacity reduction independent of how the fill is set, so it composes with a
         // foreground class, an inline RGB fill, and reverse video (which dims the swapped text).
         if (run.IsDim) classes.Add("dim");
+        // Underline / strikethrough / overline are all text-decoration lines and must be able to
+        // combine, so they are emitted together via BuildTextDecoration (a single presentation
+        // attribute) rather than as conflicting CSS classes.
 
         return string.Join(" ", classes);
+    }
+
+    /// <summary>
+    /// The combined <c>text-decoration</c> value for a run (underline / line-through / overline),
+    /// or null when none apply. One declaration so the lines compose; the decoration follows the
+    /// run's text fill (currentColor) like a real terminal.
+    /// </summary>
+    private static string? BuildTextDecoration(StyleRun run)
+    {
+        var lines = new List<string>();
+        if (run.IsUnderline) lines.Add("underline");
+        if (run.IsStrikethrough) lines.Add("line-through");
+        return lines.Count > 0 ? string.Join(" ", lines) : null;
     }
 
     private static string GetAnsiColorClass(int index) => index switch
@@ -1232,6 +1258,7 @@ public class SvgRenderer
         public bool IsUnderline { get; set; }
         public bool IsReverse { get; set; }
         public bool IsDim { get; set; }
+        public bool IsStrikethrough { get; set; }
         /// <summary>
         /// Total cell width of this run (accounts for wide characters taking 2 cells).
         /// </summary>

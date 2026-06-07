@@ -63,14 +63,14 @@ dotnet test
 ```
 VcrSharp/
 ├── src/
-│   ├── VcrSharp.Core/         # Core parsing and model
-│   ├── VcrSharp.Infrastructure/ # Playwright integration
-│   └── VcrSharp.Cli/           # CLI tool
+│   ├── VcrSharp.Core/           # Parsing, AST, config, themes, grid DTOs
+│   ├── VcrSharp.Terminal/       # VtScreen — from-scratch VT500 engine
+│   ├── VcrSharp.Infrastructure/ # PTY backends, recording session, renderers
+│   └── VcrSharp.Cli/            # CLI tool
 ├── tests/
 │   ├── VcrSharp.Core.Tests/
-│   ├── VcrSharp.Infrastructure.Tests/
-│   └── VcrSharp.Cli.Tests/
-└── samples/                    # Example .tape files
+│   └── VcrSharp.Terminal.Tests/ # VtScreen unit + libvterm conformance corpus
+└── samples/                     # Example .tape files
 ```
 
 ## Code Style

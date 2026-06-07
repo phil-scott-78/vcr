@@ -46,7 +46,9 @@ Wait
 ```
 
 VCR# records once and writes all four files. The `.svg` is produced with no external tools; the `.gif`,
-`.mp4`, and `.webm` are encoded with FFmpeg.
+`.mp4`, and `.webm` are encoded with FFmpeg. Here is the `.svg` from one such tape:
+
+<VcrTape src="../demos/multiple-formats.svg" />
 
 ## Add Outputs from the CLI
 

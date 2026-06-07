@@ -22,6 +22,12 @@ VCR# ships as a .NET global tool:
 dotnet tool install --global vcr
 ```
 
+> **Need the old behavior?** VCR# was rewritten substantially after `0.0.35`. If you depend on the pre-rewrite
+> behavior and aren't ready to migrate, pin that version:
+> ```bash
+> dotnet tool install --global vcr --version 0.0.35
+> ```
+
 That's the whole install for SVG and PNG output. If you want to encode **GIF, MP4, or WebM**, also put
 [FFmpeg](https://ffmpeg.org/) on your `PATH`:
 

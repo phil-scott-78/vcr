@@ -30,6 +30,10 @@ vcr snap "echo Hello World" -o hello.svg
 
 The command waits for your shell command to finish and the terminal output to stabilize, then captures the final state.
 
+Here is a snap of a command's final output (`vcr snap` cropped to the content extent):
+
+<VcrTape src="../demos/quick-snap.svg" />
+
 ### Example: documentation screenshot
 
 ```bash
@@ -53,6 +57,10 @@ vcr capture "npm install" -o install.svg
 ```
 
 The command records frames while your shell command runs, then renders an animated SVG.
+
+Here is a capture of a command from start to finish (`vcr capture`, every frame):
+
+<VcrTape src="../demos/quick-capture.svg" />
 
 ### Example: build process recording
 

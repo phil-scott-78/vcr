@@ -150,7 +150,7 @@ Type "echo 'Helo, World!'"
 Sleep 300ms
 Left 9          # Move cursor back to the typo
 Backspace       # Delete 'o'
-Type "ll"       # Type 'll' to make 'Hello'
+Type "lo"       # Type 'lo' to make 'Hello'
 Enter
 Wait
 ```

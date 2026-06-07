@@ -136,6 +136,11 @@ Output "widget.svg"
 Exec "my-tui --render-table"
 ```
 
+Here is a static widget rendered with `Set Mode static` + `Set Size fit` — one settled
+frame, cropped to its content:
+
+<VcrTape src="../demos/static-widget.svg" />
+
 - **`Set Size fit`** crops the SVG to the measured content extent. Over-provision `Rows`
   (and `Cols`) and let the renderer size the output to whatever the command actually
   drew — no trailing blank rows or right-side blank columns.

@@ -19,6 +19,9 @@ Install VCR# as a global .NET tool:
 dotnet tool install --global vcr
 ```
 
+> [!NOTE]
+> VCR# was rewritten substantially after `0.0.35`. If you depend on the pre-rewrite behavior and aren't ready to migrate, pin that version with `dotnet tool install --global vcr --version 0.0.35`.
+
 ## What you can do
 
 - **Record tapes** — script a demo in a `.tape` file and render it to SVG, GIF, MP4, WebM, PNG, or a frame directory.

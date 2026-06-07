@@ -1,12 +1,10 @@
 # Demonstrates Exec running a real command and capturing its output.
-# Used in: docs/.../tutorials/exec-commands.md
+# Used in: tutorials/exec-commands.md and reference/tape-syntax.md
 Output "exec-real-command.svg"
 
-Set Cols 90
-Set Rows 18
-Set Theme "Dracula"
-Set TransparentBackground true
+Use doc
+Set Cols 80
+Set Rows 8
 
 Exec "dotnet --version"
 Wait
-Sleep 2s

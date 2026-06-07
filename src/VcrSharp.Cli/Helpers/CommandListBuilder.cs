@@ -22,6 +22,11 @@ public static class CommandListBuilder
         // Add the Exec command to run the shell command
         commands.Add(new ExecCommand(settings.Command));
 
+        // Wait for the command's output to settle before grabbing the frame.
+        // Without this the Screenshot fires the instant Exec launches the process —
+        // before any output has arrived — and captures an empty grid.
+        commands.Add(new WaitCommand());
+
         // Add Screenshot command to capture final frame as SVG
         commands.Add(new ScreenshotCommand(outputPath));
 

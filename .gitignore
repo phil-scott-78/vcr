@@ -496,3 +496,6 @@ scratch/
 
 # Generated sample output (samples/welcome.tape -> welcome.svg)
 /welcome.svg
+
+# Pennington static-site build output (docs/VcrSharp.Docs `dotnet run -- build`)
+docs/VcrSharp.Docs/output/

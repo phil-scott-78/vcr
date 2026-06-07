@@ -75,6 +75,12 @@ truecolor SGR; a TUI uses the alternate screen and scroll regions; an emoji in a
 right width or everything after it shifts. The engine has to get all of it right for the frame to be
 faithful.
 
+Here is the engine's SGR attribute model rendered straight to SVG — reverse, dim, strikethrough,
+overline, underline, and conceal, plus the bold/italic combinations — every attribute parsed from the
+shell's byte stream and drawn from the cell grid, with no browser anywhere in the path:
+
+<VcrTape src="../demos/vt-styles.svg" />
+
 ## Conformance, and a deliberately narrow scope
 
 Claiming a terminal engine is correct is easy; proving it is the work. `VtScreen` is conformance-tested

@@ -652,7 +652,8 @@ public class SvgRenderer
                 cell.IsBold != currentRun.IsBold ||
                 cell.IsItalic != currentRun.IsItalic ||
                 cell.IsUnderline != currentRun.IsUnderline ||
-                cell.IsReverse != currentRun.IsReverse
+                cell.IsReverse != currentRun.IsReverse ||
+                cell.IsDim != currentRun.IsDim
             );
 
             if (needNewSegment)
@@ -669,6 +670,7 @@ public class SvgRenderer
                 currentRun.IsItalic = cell.IsItalic;
                 currentRun.IsUnderline = cell.IsUnderline;
                 currentRun.IsReverse = cell.IsReverse;
+                currentRun.IsDim = cell.IsDim;
                 currentRun.IsCustomGlyph = isGlyph;
                 currentIsGlyph = isGlyph;
             }
@@ -806,7 +808,7 @@ public class SvgRenderer
         AppendAnsiColorStyles(css);
 
         // Style flags
-        css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}");
+        css.Append(".bold{font-weight:bold}.italic{font-style:italic}.underline{text-decoration:underline}.dim{fill-opacity:0.55}");
 
         // Cursor (follows the foreground/--vcr-fg, matching legacy behavior)
         if (!_options.DisableCursor)
@@ -1054,6 +1056,7 @@ public class SvgRenderer
             sb.Append(cell.IsItalic ? "i" : "");
             sb.Append(cell.IsUnderline ? "u" : "");
             sb.Append(cell.IsReverse ? "v" : "");
+            sb.Append(cell.IsDim ? "d" : "");
         }
         var bytes = Encoding.UTF8.GetBytes(sb.ToString());
         var hash = MD5.HashData(bytes);
@@ -1085,6 +1088,9 @@ public class SvgRenderer
         if (run.IsBold) classes.Add("bold");
         if (run.IsItalic) classes.Add("italic");
         if (run.IsUnderline) classes.Add("underline");
+        // Dim is an opacity reduction independent of how the fill is set, so it composes with a
+        // foreground class, an inline RGB fill, and reverse video (which dims the swapped text).
+        if (run.IsDim) classes.Add("dim");
 
         return string.Join(" ", classes);
     }
@@ -1225,6 +1231,7 @@ public class SvgRenderer
         public bool IsItalic { get; set; }
         public bool IsUnderline { get; set; }
         public bool IsReverse { get; set; }
+        public bool IsDim { get; set; }
         /// <summary>
         /// Total cell width of this run (accounts for wide characters taking 2 cells).
         /// </summary>

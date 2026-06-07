@@ -358,4 +358,20 @@ public class SvgRendererTests
         svg.ShouldContain("<rect");
         svg.ShouldContain("fill=\"#0f0\""); // foreground-colored block survives the blank-run trim
     }
+
+    [Fact]
+    public async Task Dim_EmitsReducedOpacityClass()
+    {
+        var options = DeterministicOptions();
+        var content = Content(4, 1,
+        [
+            new TerminalCell { Character = "d", IsDim = true, Width = 1 },
+            new TerminalCell { Character = "d", IsDim = true, Width = 1 },
+        ]);
+
+        var svg = await RenderStaticAsync(options, content);
+
+        svg.ShouldContain(".dim{fill-opacity:0.55}"); // class defined
+        svg.ShouldContain("class=\"fg dim\"");          // and applied to the run
+    }
 }

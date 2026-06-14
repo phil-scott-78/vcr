@@ -51,9 +51,19 @@ public static class SvgWriter
 
     /// <summary>
     /// Down-samples a timestamp-ordered state stream to at most <paramref name="fps"/> frames per second
-    /// by keeping the first state in each 1/fps window and skipping everything until the window elapses.
-    /// The final state is always kept so the settled end-of-recording output is never dropped. Returns
-    /// the input unchanged when there is nothing to thin (fps &lt;= 0 or two-or-fewer states).
+    /// by keeping the LAST state in each 1/fps window (plus the first and final states). Returns the
+    /// input unchanged when there is nothing to thin (fps &lt;= 0 or two-or-fewer states).
+    /// <para>
+    /// Keeping the last — not the first — state in each window is what makes this safe for the
+    /// event-driven capture stream. A screen redraw (a table scrolling in, a TUI repaint) is captured
+    /// as a short-lived torn intermediate frame immediately followed by the settled frame, often only
+    /// ~10&#8211;15&#160;ms apart. Both fall inside one 1/fps window. Keeping the first would freeze the
+    /// torn frame for the whole window (~one display slot, e.g. a 2&#160;s plateau) — visible corruption
+    /// where rows from two different screens overlap. Keeping the last drops the transient and shows the
+    /// settled screen, which is also what the un-quantized raster/GIF path effectively displays (the tear
+    /// only ever flashes for its true sub-frame duration there). The final settled frame is always kept so
+    /// end-of-recording output survives.
+    /// </para>
     /// </summary>
     internal static List<TerminalStateWithTime> QuantizeToFramerate(List<TerminalStateWithTime> states, int fps)
     {
@@ -61,16 +71,22 @@ public static class SvgWriter
 
         var minInterval = 1.0 / fps;
         var result = new List<TerminalStateWithTime>(states.Count);
-        var lastKept = double.NegativeInfinity;
+
+        static long Window(double ts, double minInterval) => (long)(ts / minInterval);
 
         for (var i = 0; i < states.Count; i++)
         {
+            // Keep the first state (so t=0 already shows content) and the last state (settled end).
+            // Otherwise keep a state only when it is the last one in its frame window — i.e. the next
+            // state belongs to a later window. A state superseded within the same window is a transient
+            // mid-redraw frame and is skipped in favor of the settled state it resolves into.
+            var isFirst = i == 0;
             var isLast = i == states.Count - 1;
-            if (isLast || states[i].TimestampSeconds - lastKept >= minInterval)
-            {
+            var lastInWindow = isLast ||
+                Window(states[i + 1].TimestampSeconds, minInterval) > Window(states[i].TimestampSeconds, minInterval);
+
+            if (isFirst || lastInWindow)
                 result.Add(states[i]);
-                lastKept = states[i].TimestampSeconds;
-            }
         }
 
         return result;

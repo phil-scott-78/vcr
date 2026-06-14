@@ -33,8 +33,19 @@ public static class SettingDeprecations
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
             ["Mode"] = new[] { "animated", "static" },
-            ["Size"] = new[] { "grid", "fit" },
+            // Size accepts grid | fit | fit-height (alias fit-rows). Separators are normalized away
+            // before comparison (see NormalizeEnumValue), mirroring SessionOptions.ApplySetting, so
+            // "fit-height", "fit_height" and "fitheight" all validate.
+            ["Size"] = new[] { "grid", "fit", "fit-height", "fit-rows" },
         };
+
+    /// <summary>
+    /// Strips separators and case so enum-value comparison matches how <c>SessionOptions.ApplySetting</c>
+    /// reads the value (e.g. <c>Set Size "fit-height"</c> ≡ <c>fitheight</c>). Keeps the typo lint from
+    /// false-flagging a spelling the engine actually honors.
+    /// </summary>
+    private static string NormalizeEnumValue(string? value) =>
+        (value ?? string.Empty).Replace("-", string.Empty).Replace("_", string.Empty).Trim();
 
     /// <summary>
     /// Collects deprecation warnings (and Mode/Size typo warnings) for the commands a user authored.
@@ -55,7 +66,8 @@ public static class SettingDeprecations
                     warnings.Add($"{where}'Set {set.SettingName}' is deprecated — {settingMessage}.");
                 }
                 else if (EnumSettings.TryGetValue(set.SettingName, out var allowed)
-                         && !allowed.Contains(set.Value.ToString(), StringComparer.OrdinalIgnoreCase))
+                         && !allowed.Any(a => NormalizeEnumValue(a)
+                             .Equals(NormalizeEnumValue(set.Value.ToString()), StringComparison.OrdinalIgnoreCase)))
                 {
                     warnings.Add($"{where}'Set {set.SettingName} {set.Value}' is not recognized — use {string.Join(" or ", allowed)}.");
                 }

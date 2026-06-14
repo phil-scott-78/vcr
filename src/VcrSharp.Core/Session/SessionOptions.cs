@@ -50,6 +50,15 @@ public class SessionOptions
     /// </summary>
     public bool FitToContent { get; set; }
 
+    /// <summary>
+    /// Gets or sets whether fit-to-content crops only the height, keeping the full grid
+    /// width (Cols × cell width). Set via <c>Set Size "fit-height"</c>. Use this to keep a
+    /// uniform width across a batch of screenshots — so apparent font size stays constant
+    /// when they are scaled to a fixed display width — while still trimming trailing blank
+    /// rows. Implies <see cref="FitToContent"/>. Defaults to false.
+    /// </summary>
+    public bool FitHeightOnly { get; set; }
+
     // Font Settings
 
     /// <summary>
@@ -625,9 +634,14 @@ public class SessionOptions
             case "mode": // capture mode: "animated" (default, capture frames) or "static" (one settled frame)
                 options.StaticOutput = string.Equals(value.ToString(), "static", StringComparison.OrdinalIgnoreCase);
                 break;
-            case "size": // canvas sizing: "grid" (default, exact Cols×Rows) or "fit" (crop to content + scale)
-                options.FitToContent = string.Equals(value.ToString(), "fit", StringComparison.OrdinalIgnoreCase);
+            case "size": // canvas sizing: "grid" (viewport), "fit" (crop to content), "fit-height" (keep Cols width, crop height)
+            {
+                var size = (value.ToString() ?? string.Empty).Replace("-", string.Empty).Replace("_", string.Empty).Trim();
+                options.FitHeightOnly = size.Equals("fitheight", StringComparison.OrdinalIgnoreCase)
+                    || size.Equals("fitrows", StringComparison.OrdinalIgnoreCase);
+                options.FitToContent = size.StartsWith("fit", StringComparison.OrdinalIgnoreCase);
                 break;
+            }
         }
     }
 

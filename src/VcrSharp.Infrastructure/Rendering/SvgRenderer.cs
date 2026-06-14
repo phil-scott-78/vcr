@@ -1026,6 +1026,11 @@ public class SvgRenderer
     /// </summary>
     public void SetContentExtent(int cols, int rows)
     {
+        // Fit-height mode keeps the full grid width (Cols) and crops only the height, so a
+        // batch of screenshots shares one width — and thus one apparent font size when scaled
+        // to a fixed display width. Grow, never shrink, so content wider than Cols isn't clipped.
+        if (_options.FitHeightOnly && _options.Cols.HasValue)
+            cols = Math.Max(cols, _options.Cols.Value);
         _cropCols = Math.Max(cols, 1);
         _cropRows = Math.Max(rows, 1);
         CalculateDimensions();

@@ -83,6 +83,16 @@ public class SettingDeprecationsTests
     }
 
     [Fact]
+    public void Collect_DoesNotFlagFitHeightSizeVariants()
+    {
+        // fit-height (and its separator/case variants and the fit-rows alias) are honored by
+        // ApplySetting, so the typo lint must not flag them.
+        foreach (var value in new[] { "fit-height", "fit_height", "fitheight", "fit-rows" })
+            SettingDeprecations.Collect(Parser.ParseTape($"Set Size \"{value}\"\nExec \"x\""))
+                .ShouldNotContain(w => w.Contains("not recognized"), $"Size {value} should be accepted");
+    }
+
+    [Fact]
     public void Collect_CleanModernTape_NoWarnings()
     {
         SettingDeprecations.Collect(Parser.ParseTape("Set Cols 80\nSet Mode static\nSet Size fit\nUse doc\nExec \"x\""))
